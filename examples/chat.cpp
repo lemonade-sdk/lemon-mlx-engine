@@ -102,9 +102,10 @@ int main(int argc, char* argv[]) {
 
         // Use ChatSession if chat template is available and not in raw mode.
         if (has_chat_template && !args.raw_mode) {
-            // Set --no-think extra context before moving ctx into container.
-            if (args.no_think && ctx.template_extra_context) {
-                (*ctx.template_extra_context)["enable_thinking"] = false;
+            // Qwen3 (and similar reasoning models) need enable_thinking set
+            // explicitly in the template context. Default to true unless --no-think.
+            if (ctx.template_extra_context) {
+                (*ctx.template_extra_context)["enable_thinking"] = !args.no_think;
             }
 
             auto container = std::make_shared<mlx_lm::ModelContainer>(std::move(ctx));

@@ -23,13 +23,8 @@ std::unordered_map<std::string, mlx::core::array>
 load_safetensors_from_directory(const std::string& directory) {
     std::unordered_map<std::string, mlx::core::array> all_weights;
 
-    // Check for single model.safetensors
-    auto single_path = fs::path(directory) / "model.safetensors";
-    if (fs::exists(single_path)) {
-        return load_safetensors(single_path.string());
-    }
-
-    // Check for sharded model
+    // Check for sharded model FIRST (preferred over single file, because
+    // HF Hub sometimes leaves a stub "model.safetensors" alongside shards)
     auto index_path = fs::path(directory) / "model.safetensors.index.json";
     if (fs::exists(index_path)) {
         std::ifstream f(index_path);
@@ -55,6 +50,12 @@ load_safetensors_from_directory(const std::string& directory) {
             }
             return all_weights;
         }
+    }
+
+    // Check for single model.safetensors (must be large enough to be real)
+    auto single_path = fs::path(directory) / "model.safetensors";
+    if (fs::exists(single_path) && fs::file_size(single_path) > 1024) {
+        return load_safetensors(single_path.string());
     }
 
     // Fallback: load all .safetensors files in the directory

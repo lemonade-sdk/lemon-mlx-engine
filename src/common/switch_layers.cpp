@@ -3,6 +3,7 @@
 
 #include <mlx-lm/common/switch_layers.h>
 #include <mlx-lm/common/activations.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <cmath>
 
 namespace mx = mlx::core;
@@ -60,8 +61,28 @@ mx::array SwitchLinear::operator()(
     const mx::array& indices,
     bool sorted_indices)
 {
-    auto weight_t = mx::swapaxes(weight_, -1, -2);
-    auto result = mx::gather_mm(x, weight_t, std::nullopt, indices, sorted_indices);
+    // Check if weight is quantized via the QuantizedWeightRegistry.
+    // If so, use gather_qmm (quantized gather matmul) instead of gather_mm.
+    auto* qi = QuantizedWeightRegistry::instance().find(&weight_);
+
+    mx::array result(0.0f);
+    if (qi) {
+        // Quantized path: use gather_qmm with transpose=true
+        // (weight layout is [E, N, K/pack] — gather_qmm handles the transpose)
+        result = mx::gather_qmm(
+            x, weight_, qi->scales, qi->biases,
+            /*lhs_indices=*/std::nullopt,
+            /*rhs_indices=*/std::optional<mx::array>(indices),
+            /*transpose=*/true,
+            /*group_size=*/qi->group_size,
+            /*bits=*/qi->bits,
+            /*mode=*/"affine",
+            /*sorted_indices=*/sorted_indices);
+    } else {
+        // Non-quantized path: transpose and use gather_mm
+        auto weight_t = mx::swapaxes(weight_, -1, -2);
+        result = mx::gather_mm(x, weight_t, std::nullopt, indices, sorted_indices);
+    }
 
     if (bias_.has_value()) {
         auto b = mx::take(bias_.value(), indices, 0);
