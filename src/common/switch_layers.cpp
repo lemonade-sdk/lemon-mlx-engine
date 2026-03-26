@@ -62,13 +62,12 @@ mx::array SwitchLinear::operator()(
     bool sorted_indices)
 {
     // Check if weight is quantized via the QuantizedWeightRegistry.
-    // If so, use gather_qmm (quantized gather matmul) instead of gather_mm.
     auto* qi = QuantizedWeightRegistry::instance().find(&weight_);
 
     mx::array result(0.0f);
     if (qi) {
-        // Quantized path: use gather_qmm with transpose=true
-        // (weight layout is [E, N, K/pack] — gather_qmm handles the transpose)
+        // Quantized path: use gather_qmm with the same index semantics as gather_mm.
+        // rhs_indices selects which expert's weight matrix to use per token.
         result = mx::gather_qmm(
             x, weight_, qi->scales, qi->biases,
             /*lhs_indices=*/std::nullopt,
