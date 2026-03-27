@@ -155,9 +155,13 @@ mx::array Qwen3NextAttention::operator()(const mx::array& x,
     auto output = sdpa(queries, keys, values, scale_, mask);
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
-    // Swift: oProj(sigmoidMultiply(output, gate))
-    // sigmoidMultiply = output * sigmoid(gate)
-    output = mx::multiply(output, mx::sigmoid(gate));
+    // Swift: oProj(sigmoidMultiply(output, gate)) — compiled to fuse multiply+sigmoid
+    static auto compiled_gate = mx::compile(
+        [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+            return {mx::multiply(inputs[0], mx::sigmoid(inputs[1]))};
+        },
+        /*shapeless=*/true);
+    output = compiled_gate({output, gate})[0];
     return linear_fwd(output, o_proj_weight_, o_proj_bias_);
 }
 
@@ -270,9 +274,25 @@ mx::array Qwen3NextGatedDeltaNet::operator()(
         (*cache)[0] = mx::slice(conv_input, {0, start, 0}, {B, conv_input.shape(1), conv_dim_});
     }
 
-    // Swift: silu(conv1d(convInput)) -- no special T=1 decode path
-    auto conv_out = mx::conv1d(conv_input, conv1d_weight_, 1, 0, 1, conv_dim_);
-    conv_out = silu(conv_out);
+    // Conv1d + silu. For T=1 decode, replace conv1d with compiled element-wise
+    // dot product to avoid conv overhead: conv_input is [B, K, C], weight is [C, K, 1].
+    mx::array conv_out(0.0f);
+    if (S == 1 && conv_input.shape(1) == conv_kernel_size_) {
+        // weight: [C, K, 1] → [C, K] → transpose → [K, C] → [1, K, C]
+        auto w = mx::reshape(
+            mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
+            {1, conv_kernel_size_, conv_dim_});
+        static auto compiled_conv_silu = mx::compile(
+            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+                auto dot = mx::sum(mx::multiply(inputs[0], inputs[1]), 1, true);
+                return {mx::multiply(dot, mx::sigmoid(dot))}; // silu
+            },
+            /*shapeless=*/true);
+        conv_out = compiled_conv_silu({conv_input, w})[0];
+    } else {
+        conv_out = mx::conv1d(conv_input, conv1d_weight_, 1, 0, 1, conv_dim_);
+        conv_out = silu(conv_out);
+    }
 
     // Split conv output into q, k, v
     auto q_out = mx::reshape(
@@ -285,19 +305,15 @@ mx::array Qwen3NextGatedDeltaNet::operator()(
         mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, S, conv_dim_}),
         {B, S, num_v_heads_, head_v_dim_});
 
-    // Swift Q/K norms: rmsNorm without weight (mlxNone), then multiply by scalar.
-    // rmsNorm(x, weight=None, eps=1e-6) = x / sqrt(mean(x^2) + eps)
-    // q_out = invScale^2 * rmsNorm(q)   where invScale = headKDim^-0.5
-    // k_out = invScale   * rmsNorm(k)
+    // Q/K L2-norm + scale. Equivalent to Swift's:
+    //   q = invScale^2 * rmsNorm(q, weight=None, eps=1e-6)
+    //   k = invScale   * rmsNorm(k, weight=None, eps=1e-6)
+    // Use rms_norm with constant weight vector to fuse the scale into the norm kernel.
     float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
-
-    auto q_normed = mx::multiply(q_out,
-        mx::rsqrt(mx::add(mx::mean(mx::square(q_out), -1, true), mx::array(1e-6f))));
-    q_out = mx::multiply(q_normed, mx::astype(mx::array(inv_scale * inv_scale), dtype));
-
-    auto k_normed = mx::multiply(k_out,
-        mx::rsqrt(mx::add(mx::mean(mx::square(k_out), -1, true), mx::array(1e-6f))));
-    k_out = mx::multiply(k_normed, mx::astype(mx::array(inv_scale), dtype));
+    auto q_norm_w = mx::full({head_k_dim_}, inv_scale * inv_scale, q_out.dtype());
+    auto k_norm_w = mx::full({head_k_dim_}, inv_scale, k_out.dtype());
+    q_out = mx::fast::rms_norm(q_out, q_norm_w, 1e-6f);
+    k_out = mx::fast::rms_norm(k_out, k_norm_w, 1e-6f);
 
     // Gated delta update
     std::optional<mx::array> ssm_state;
@@ -381,11 +397,16 @@ mx::array Qwen3NextSparseMoeBlock::operator()(const mx::array& x) {
     auto y = switch_mlp_(x, inds);
     auto combined = mx::sum(mx::multiply(y, mx::expand_dims(scores, -1)), -2);
 
-    // Shared expert with gating: sigmoid(gate) * shared_y + combined
+    // Shared expert: sigmoid(gate) * shared_y + combined — compiled
     auto shared_y = shared_expert_(x);
+    static auto compiled_shared_gate = mx::compile(
+        [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+            auto gated = mx::multiply(mx::sigmoid(inputs[0]), inputs[1]);
+            return {mx::add(inputs[2], gated)};
+        },
+        /*shapeless=*/true);
     auto gate_out = linear_fwd(x, shared_expert_gate_weight_);
-    auto gated = mx::multiply(mx::sigmoid(gate_out), shared_y);
-    return mx::add(combined, gated);
+    return compiled_shared_gate({gate_out, shared_y, combined})[0];
 }
 
 std::unordered_map<std::string, mx::array*> Qwen3NextSparseMoeBlock::weight_map() {
