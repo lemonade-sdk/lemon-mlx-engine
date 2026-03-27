@@ -201,31 +201,83 @@ std::pair<mx::array, mx::array> gated_delta_step_ops(
         return {results[0], results[1]};
     }
 
-    auto old_state = state;
-    mx::array decay(0.0f);
-    if (g.ndim() == 2) {
-        decay = mx::expand_dims(mx::expand_dims(g, -1), -1);
-    } else if (g.ndim() == 3) {
-        decay = mx::expand_dims(g, -2);
+    // Compiled path for g.ndim()==2 with mask (prefill with masking)
+    if (g.ndim() == 2 && mask.has_value()) {
+        static auto compiled_step_masked_2d = mx::compile(
+            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+                auto& q = inputs[0]; auto& k = inputs[1]; auto& v = inputs[2];
+                auto& g = inputs[3]; auto& beta = inputs[4]; auto& state = inputs[5];
+                auto& mask = inputs[6];
+
+                auto decay = mx::expand_dims(mx::expand_dims(g, -1), -1);
+                auto s = mx::multiply(state, decay);
+                auto kv_mem = mx::sum(mx::multiply(s, mx::expand_dims(k, -2)), -1);
+                auto delta = mx::multiply(mx::subtract(v, kv_mem), mx::expand_dims(beta, -1));
+                s = mx::add(s, mx::multiply(mx::expand_dims(k, -2), mx::expand_dims(delta, -1)));
+                auto y = mx::sum(mx::multiply(s, mx::expand_dims(q, -2)), -1);
+
+                // mask.ndim() == 1 for squeezed per-timestep mask
+                auto expanded_mask = mx::expand_dims(mx::expand_dims(mx::expand_dims(mask, -1), -1), -1);
+                s = mx::where(expanded_mask, s, state);
+                return {y, s};
+            },
+            /*shapeless=*/true);
+        auto results = compiled_step_masked_2d({q, k, v, g, beta, state, *mask});
+        return {results[0], results[1]};
     }
 
+    // Compiled path for g.ndim()==3 with mask (prefill with 3d decay)
+    if (g.ndim() == 3 && mask.has_value()) {
+        static auto compiled_step_masked_3d = mx::compile(
+            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+                auto& q = inputs[0]; auto& k = inputs[1]; auto& v = inputs[2];
+                auto& g = inputs[3]; auto& beta = inputs[4]; auto& state = inputs[5];
+                auto& mask = inputs[6];
+
+                auto decay = mx::expand_dims(g, -2);
+                auto s = mx::multiply(state, decay);
+                auto kv_mem = mx::sum(mx::multiply(s, mx::expand_dims(k, -2)), -1);
+                auto delta = mx::multiply(mx::subtract(v, kv_mem), mx::expand_dims(beta, -1));
+                s = mx::add(s, mx::multiply(mx::expand_dims(k, -2), mx::expand_dims(delta, -1)));
+                auto y = mx::sum(mx::multiply(s, mx::expand_dims(q, -2)), -1);
+
+                auto expanded_mask = mx::expand_dims(mask, -1);
+                s = mx::where(expanded_mask, s, state);
+                return {y, s};
+            },
+            /*shapeless=*/true);
+        auto results = compiled_step_masked_3d({q, k, v, g, beta, state, *mask});
+        return {results[0], results[1]};
+    }
+
+    // Unmasked paths for g.ndim()==3 (ndim==2 without mask handled above by compiled_gated_delta_step)
+    if (g.ndim() == 3 && !mask.has_value()) {
+        static auto compiled_step_3d = mx::compile(
+            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+                auto& q = inputs[0]; auto& k = inputs[1]; auto& v = inputs[2];
+                auto& g = inputs[3]; auto& beta = inputs[4]; auto& state = inputs[5];
+
+                auto decay = mx::expand_dims(g, -2);
+                auto s = mx::multiply(state, decay);
+                auto kv_mem = mx::sum(mx::multiply(s, mx::expand_dims(k, -2)), -1);
+                auto delta = mx::multiply(mx::subtract(v, kv_mem), mx::expand_dims(beta, -1));
+                s = mx::add(s, mx::multiply(mx::expand_dims(k, -2), mx::expand_dims(delta, -1)));
+                auto y = mx::sum(mx::multiply(s, mx::expand_dims(q, -2)), -1);
+                return {y, s};
+            },
+            /*shapeless=*/true);
+        auto results = compiled_step_3d({q, k, v, g, beta, state});
+        return {results[0], results[1]};
+    }
+
+    // Fallback: g.ndim()==2, no mask -- should not reach here (handled at top of function)
+    auto old_state = state;
+    mx::array decay = mx::expand_dims(mx::expand_dims(g, -1), -1);
     auto s = mx::multiply(state, decay);
     auto kv_mem = mx::sum(mx::multiply(s, mx::expand_dims(k, -2)), -1);
     auto delta = mx::multiply(mx::subtract(v, kv_mem), mx::expand_dims(beta, -1));
     s = mx::add(s, mx::multiply(mx::expand_dims(k, -2), mx::expand_dims(delta, -1)));
     auto y = mx::sum(mx::multiply(s, mx::expand_dims(q, -2)), -1);
-
-    if (mask.has_value()) {
-        mx::array expanded_mask(0.0f);
-        if (mask->ndim() == 1) {
-            expanded_mask = mx::expand_dims(mx::expand_dims(mx::expand_dims(*mask, -1), -1), -1);
-        } else if (mask->ndim() == 2) {
-            expanded_mask = mx::expand_dims(mx::expand_dims(*mask, -1), -1);
-        } else if (mask->ndim() == 3) {
-            expanded_mask = mx::expand_dims(*mask, -1);
-        }
-        s = mx::where(expanded_mask, s, old_state);
-    }
     return {y, s};
 }
 

@@ -21,8 +21,9 @@ gather_sort(const mx::array& x, const mx::array& indices) {
     auto inverse_order = mx::argsort(order);
 
     auto x_flat = mx::flatten(x, 0, x.ndim() - 3);
-    auto sorted_x = mx::take(x_flat, mx::floor_divide(order, mx::array(m)), 0);
-    auto sorted_indices = mx::take(flat_indices, order);
+    auto sorted_x = mx::contiguous(
+        mx::take(x_flat, mx::floor_divide(order, mx::array(m)), 0));
+    auto sorted_indices = mx::contiguous(mx::take(flat_indices, order));
 
     return {sorted_x, sorted_indices, inverse_order};
 }
@@ -32,7 +33,7 @@ mx::array scatter_unsort(
     const mx::array& inv_order,
     const mx::Shape* shape)
 {
-    auto result = mx::take(x, inv_order, 0);
+    auto result = mx::contiguous(mx::take(x, inv_order, 0));
     if (shape && !shape->empty()) {
         mx::Shape new_shape(*shape);
         for (int i = 1; i < result.ndim(); ++i) {

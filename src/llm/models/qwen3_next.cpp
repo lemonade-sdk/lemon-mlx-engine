@@ -458,11 +458,23 @@ mx::array Qwen3NextSparseMoeBlock::operator()(const mx::array& x) {
     auto scores = mx::take_along_axis(gates, inds, -1);
 
     if (norm_topk_prob_) {
-        scores = mx::divide(scores, mx::sum(scores, -1, true));
+        // Compile score normalization: divide + sum fused into one kernel
+        static auto compiled_normalize_scores = mx::compile(
+            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+                return {mx::divide(inputs[0], mx::sum(inputs[0], -1, true))};
+            },
+            /*shapeless=*/true);
+        scores = compiled_normalize_scores({scores})[0];
     }
 
     auto y = switch_mlp_(x, inds);
-    auto combined = mx::sum(mx::multiply(y, mx::expand_dims(scores, -1)), -2);
+    // Compile expert output weighting: expand_dims + multiply + sum fused
+    static auto compiled_expert_combine = mx::compile(
+        [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+            return {mx::sum(mx::multiply(inputs[0], mx::expand_dims(inputs[1], -1)), -2)};
+        },
+        /*shapeless=*/true);
+    auto combined = compiled_expert_combine({y, scores})[0];
 
     // Shared expert: sigmoid(gate) * shared_y + combined — compiled
     auto shared_y = shared_expert_(x);
