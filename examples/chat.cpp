@@ -85,6 +85,20 @@ int main(int argc, char* argv[]) {
 
         auto ctx = mlx_lm::load_llm(args.model_path);
 
+        // Warmup: run a dummy forward pass to prime the GPU allocator cache.
+        // Without this, the first real prompt pays ~2s of hipExtMallocWithFlags
+        // cold-start overhead. After warmup, allocations hit the buffer cache.
+        {
+            mlx_lm::GenerateParameters warmup_params;
+            warmup_params.max_tokens = 1;
+            warmup_params.temperature = 0.0f;
+            auto warmup_cache = ctx.new_cache_fn(warmup_params);
+            mx::array dummy_tokens = mx::reshape(mx::array({1}), {1, 1});
+            mlx_lm::LMInput::Text warmup_text(dummy_tokens);
+            auto warmup_out = ctx.call_fn(warmup_text, &warmup_cache, nullptr);
+            mx::eval(warmup_out.logits);
+        }
+
         std::cerr << "Model loaded. Memory: active="
                   << format_bytes(mx::get_active_memory())
                   << ", peak=" << format_bytes(mx::get_peak_memory())
