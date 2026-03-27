@@ -19,6 +19,9 @@ CLAUDE.md
 PLAN.md
 *.plan
 
+# Reference repos (not part of this project)
+mlx-swift-lm/
+
 # Compiled
 *.o
 *.a
