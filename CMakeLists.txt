@@ -193,6 +193,9 @@ target_include_directories(mlx-lm-common PUBLIC ${stb_SOURCE_DIR})
 if(MLX_LM_BUILD_EXAMPLES)
     add_executable(chat examples/chat.cpp)
     target_link_libraries(chat PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
+
+    add_executable(diagnose examples/diagnose.cpp)
+    target_link_libraries(diagnose PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
 endif()
 
 if(MLX_LM_BUILD_TESTS)
