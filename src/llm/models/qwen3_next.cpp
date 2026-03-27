@@ -201,14 +201,11 @@ Qwen3NextGatedDeltaNet::Qwen3NextGatedDeltaNet(const Qwen3NextConfiguration& arg
       out_proj_weight_(mx::zeros({args.hidden_size, value_dim_}))
 {}
 
-// Swift: createSSMMask -- returns nil when cache has conv_state (cache[0] != nil)
-static std::optional<mx::array> create_ssm_mask(int B, int S, MambaCache* cache) {
-    if (cache && (*cache)[0].has_value()) {
-        // Swift returns nil when conv_state exists (decode mode)
-        return std::nullopt;
-    }
-    // Prefill: all tokens valid
-    return mx::ones({B, S});
+// Swift: createSSMMask -- returns nil unless leftPadding is set (we don't use it).
+// MambaCache.makeMask returns nil when cache[0] exists OR no leftPadding.
+// Since we never set leftPadding, this always returns nullopt.
+static std::optional<mx::array> create_ssm_mask(int /*B*/, int /*S*/, MambaCache* /*cache*/) {
+    return std::nullopt;
 }
 
 mx::array Qwen3NextGatedDeltaNet::operator()(
@@ -289,19 +286,18 @@ mx::array Qwen3NextGatedDeltaNet::operator()(
         {B, S, num_v_heads_, head_v_dim_});
 
     // Swift Q/K norms: rmsNorm without weight (mlxNone), then multiply by scalar.
-    // rmsNorm(x, weight: mlxNone, eps: 1e-6) = x / sqrt(mean(x^2) + eps)
-    // Then: q = normed * (head_k_dim ** -0.5)
-    //        k = normed (no scalar, just the norm)
-    float q_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
+    // rmsNorm(x, weight=None, eps=1e-6) = x / sqrt(mean(x^2) + eps)
+    // q_out = invScale^2 * rmsNorm(q)   where invScale = headKDim^-0.5
+    // k_out = invScale   * rmsNorm(k)
+    float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
 
-    // Manual rms_norm without weight: x * rsqrt(mean(x^2, axis=-1, keepdims=true) + eps)
     auto q_normed = mx::multiply(q_out,
         mx::rsqrt(mx::add(mx::mean(mx::square(q_out), -1, true), mx::array(1e-6f))));
-    q_out = mx::multiply(q_normed, mx::array(q_scale));
+    q_out = mx::multiply(q_normed, mx::astype(mx::array(inv_scale * inv_scale), dtype));
 
     auto k_normed = mx::multiply(k_out,
         mx::rsqrt(mx::add(mx::mean(mx::square(k_out), -1, true), mx::array(1e-6f))));
-    k_out = k_normed;
+    k_out = mx::multiply(k_normed, mx::astype(mx::array(inv_scale), dtype));
 
     // Gated delta update
     std::optional<mx::array> ssm_state;
@@ -662,9 +658,9 @@ Qwen3NextModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
                 break;
             }
         }
-        if (is_norm && value.ndim() == 1) {
-            value = mx::add(value, mx::array(1.0f));
-        }
+        // Do not add +1: our rms_norm uses weight directly (not 1+weight).
+        // The mlx-community 4-bit safetensors stores weights as direct multipliers (~1.0).
+        (void)is_norm;
     }
 
     return weights;

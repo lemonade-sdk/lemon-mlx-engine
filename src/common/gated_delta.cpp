@@ -20,7 +20,7 @@ mx::array compute_gated_delta_g(
     auto a_log_f32 = mx::astype(a_log, mx::float32);
     auto softplus_val = mx::log(mx::add(mx::exp(mx::add(a, dt_bias)), mx::array(1.0f)));
     auto decay = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), softplus_val)));
-    return mx::astype(decay, a_log.dtype());
+    return mx::astype(decay, a.dtype());
 }
 
 // ---------------------------------------------------------------------------
