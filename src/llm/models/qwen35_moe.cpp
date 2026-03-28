@@ -656,14 +656,11 @@ Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
         }
 
         std::string new_key = key;
-        // "language_model.model.X" -> "model.X" (VLM wrapper prefix)
-        if (new_key.find("language_model.model.") == 0) {
-            new_key = "model." + new_key.substr(std::string("language_model.model.").size());
-        }
-        // Keys without "model." prefix get it added
-        // (but don't double-prefix keys that already have it)
-        else if (new_key.find("model.") != 0 && new_key != "lm_head.weight") {
-            new_key = "model." + new_key;
+        // Strip "language_model." prefix from VLM wrapper:
+        //   "language_model.model.X" -> "model.X"
+        //   "language_model.lm_head.X" -> "lm_head.X"
+        if (new_key.find("language_model.") == 0) {
+            new_key = new_key.substr(std::string("language_model.").size());
         }
         remapped.insert_or_assign(new_key, std::move(value));
     }
@@ -768,10 +765,19 @@ Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
 
 void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::array>& weights) {
     auto wmap = weight_map();
+    int loaded = 0, missing = 0;
     for (auto& [name, target] : wmap) {
         auto it = weights.find(name);
-        if (it != weights.end()) *target = it->second;
+        if (it != weights.end()) {
+            *target = it->second;
+            loaded++;
+        } else {
+            if (missing < 10) fprintf(stderr, "  MISSING: %s\n", name.c_str());
+            missing++;
+        }
     }
+    fprintf(stderr, "[Qwen35MoE] Loaded %d/%d weights (%d missing)\n",
+            loaded, loaded + missing, missing);
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35MoEModel::weight_map() {
