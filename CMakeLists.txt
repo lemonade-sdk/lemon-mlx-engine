@@ -22,8 +22,8 @@ endif()
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU support)
 FetchContent_Declare(
     mlx
-    GIT_REPOSITORY https://github.com/lemonade-sdk/lemon-mlx-core-amd.git
-    GIT_TAG        rocm-support
+    GIT_REPOSITORY https://github.com/lemonade-sdk/mlx.git
+    GIT_TAG        rocm-optimizations
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(mlx)
