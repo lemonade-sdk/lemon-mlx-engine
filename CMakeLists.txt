@@ -14,9 +14,11 @@ include(FetchContent)
 # Enable ROCm/AMD GPU backend on non-Apple platforms
 if(NOT APPLE)
     set(MLX_BUILD_ROCM ON CACHE BOOL "Build ROCm backend" FORCE)
-    set(CMAKE_HIP_ARCHITECTURES
-        "gfx908;gfx90a;gfx942;gfx1010;gfx1011;gfx1012;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201"
-        CACHE STRING "HIP architectures" FORCE)
+    if(NOT DEFINED CMAKE_HIP_ARCHITECTURES)
+        set(CMAKE_HIP_ARCHITECTURES
+            "gfx908;gfx90a;gfx942;gfx1010;gfx1011;gfx1012;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201"
+            CACHE STRING "HIP architectures" FORCE)
+    endif()
 endif()
 
 # Enable AMD XDNA NPU backend (requires XRT)
@@ -28,8 +30,8 @@ endif()
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
-    GIT_REPOSITORY https://github.com/lemonade-sdk/mlx.git
-    GIT_TAG        amd_iron_apu_support
+    GIT_REPOSITORY https://github.com/NripeshN/mlx.git
+    GIT_TAG        rocm-support
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(mlx)

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <numeric>
 #include <sstream>
+#include <iostream>
 
 namespace mlx_lm {
 
@@ -37,57 +38,12 @@ struct StreamGuard {
 // ---------------------------------------------------------------------------
 
 mx::array TopPSampler::sample_impl(const mx::array& logits) {
-    // Compiled top-p filtering — matches Python's @mx.compile on apply_top_p.
-    // Step 1: Convert logits to logprobs (matches Python's _step).
-    // Step 2: Apply compiled top-p filter (deterministic, no random ops).
-    // Step 3: Sample from filtered logprobs using compiled categorical.
-
-    if (!compiled_top_p_) {
-        float top_p = top_p_;
-        compiled_top_p_ = mx::compile(
-            [top_p](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
-                auto logprobs = inputs[0];
-                auto probs = mx::exp(logprobs);
-                // Sort in ascending order
-                auto sorted_indices = mx::argsort(logprobs, -1);
-                auto sorted_probs = mx::take_along_axis(probs, sorted_indices, -1);
-                auto cumulative_probs = mx::cumsum(sorted_probs, -1);
-
-                // Rearrange cumulative probs back to original order
-                auto inverse_indices = mx::put_along_axis(
-                    mx::zeros_like(sorted_indices),
-                    sorted_indices,
-                    mx::arange(sorted_indices.shape(-1), sorted_indices.dtype()),
-                    -1);
-                cumulative_probs = mx::take_along_axis(cumulative_probs, inverse_indices, -1);
-
-                // Select tokens with cumulative probs above threshold
-                auto neg_inf = mx::array(-std::numeric_limits<float>::infinity());
-                return {mx::where(
-                    mx::greater(cumulative_probs, mx::array(1.0f - top_p)),
-                    logprobs,
-                    neg_inf)};
-            },
-            /*shapeless=*/false);
-    }
-
-    if (!compiled_categorical_) {
-        float inv_temp = 1.0f / temperature_;
-        compiled_categorical_ = mx::compile(
-            [inv_temp](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
-                return {mx::random::categorical(mx::multiply(inputs[0], mx::array(inv_temp)))};
-            },
-            /*shapeless=*/false);
-    }
-
-    // Compute logprobs from logits (matches Python: logprobs = logits - logsumexp(logits))
-    auto logprobs = mx::subtract(logits, mx::logsumexp(logits, /*axis=*/-1, /*keepdims=*/true));
-
-    // Apply compiled top-p filter
-    auto filtered = compiled_top_p_({logprobs})[0];
-
-    // Sample from filtered logprobs
-    return compiled_categorical_({filtered})[0];
+    // top-p filtering is disabled: argsort + put_along_axis + take_along_axis
+    // on large vocab (151936) produces wrong results on the ROCm backend,
+    // causing the filter to mask out the correct tokens.
+    // Fall back to temperature-scaled categorical sampling.
+    float inv_temp = 1.0f / temperature_;
+    return mx::random::categorical(mx::multiply(logits, mx::array(inv_temp)));
 }
 
 // ---------------------------------------------------------------------------
