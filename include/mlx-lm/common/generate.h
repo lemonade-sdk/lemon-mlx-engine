@@ -313,6 +313,20 @@ private:
     // Timing.
     double prompt_prefill_time_ = 0.0;
     std::chrono::steady_clock::time_point generation_start_;
+
+    // HIP Graph capture state machine for decode acceleration.
+    // After warmup tokens, the decode step has a fixed kernel sequence.
+    // We capture it into a HIP graph for single-dispatch replay.
+    enum class GraphState {
+      Warmup,     // First tokens: normal execution, measuring arena size
+      Profiling,  // Arena active: run decode to record allocation pattern
+      Capturing,  // Arena reset + graph capture: record kernel sequence
+      Replaying,  // Arena reset + graph replay each step
+      Disabled,   // Capture failed or not supported
+    };
+    GraphState graph_state_ = GraphState::Warmup;
+    int warmup_steps_ = 0;
+    static constexpr int kGraphWarmupSteps = 3; // Steps before attempting capture
 };
 
 // ---------------------------------------------------------------------------

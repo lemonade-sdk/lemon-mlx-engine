@@ -3,6 +3,52 @@
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx/mlx.h>
 
+// Direct GPU KV cache write — bypasses MLX's functional array model.
+// Implemented in ROCm eval.cpp; only available on GPU backend.
+extern "C" void mlx_gpu_memcpy_async(void* dst, const void* src, size_t bytes);
+
+// Weak symbol so non-ROCm builds link without the implementation.
+__attribute__((weak)) void mlx_gpu_memcpy_async(void*, const void*, size_t) {}
+
+namespace {
+
+bool is_gpu_backend() {
+    return mlx::core::default_device() == mlx::core::Device::gpu;
+}
+
+// Write new_data into buffer at [offset] along axis 2, in-place via GPU memcpy.
+// buffer: [B, H, capacity, D], new_data: [B, H, n, D] — must be contiguous.
+// Only copies n*D elements per (B,H) slice — O(n) not O(capacity).
+void kv_write_inplace(
+    mlx::core::array& buffer,
+    const mlx::core::array& new_data,
+    int offset) {
+  namespace mx = mlx::core;
+
+  mx::eval(new_data);
+
+  int B = buffer.shape(0);
+  int H = buffer.shape(1);
+  int D = buffer.shape(3);
+  int capacity = buffer.shape(2);
+  int n = new_data.shape(2);
+  size_t elem_size = mx::size_of(buffer.dtype());
+  size_t slice_bytes = static_cast<size_t>(n) * D * elem_size;
+
+  for (int b = 0; b < B; b++) {
+    for (int h = 0; h < H; h++) {
+      size_t dst_off = ((static_cast<size_t>(b) * H + h) * capacity + offset) * D * elem_size;
+      size_t src_off = (static_cast<size_t>(b) * H + h) * n * D * elem_size;
+
+      auto* dst = static_cast<char*>(buffer.data<void>()) + dst_off;
+      auto* src = static_cast<const char*>(new_data.data<void>()) + src_off;
+
+      mlx_gpu_memcpy_async(dst, src, slice_bytes);
+    }
+  }
+}
+} // anonymous namespace
+
 namespace mlx_lm {
 
 namespace mx = mlx::core;
@@ -44,6 +90,7 @@ KVCacheSimple::update_impl(
         keys_ = mx::zeros({B, H, alloc_len, D}, new_keys.dtype());
         values_ = mx::zeros({B, H, alloc_len, D}, new_values.dtype());
 
+        // Write initial K/V into position 0
         keys_ = mx::slice_update(keys_.value(), new_keys,
             mx::Shape{0, 0, 0, 0}, mx::Shape{B, H, n_new, D});
         values_ = mx::slice_update(values_.value(), new_values,
@@ -60,9 +107,6 @@ KVCacheSimple::update_impl(
     int current_alloc = keys_.value().shape(2);
 
     if (offset_ + n_new <= current_alloc) {
-        // Fast path: in-place update via slice_update.
-        // SliceUpdate copies the base array — but with the donation optimization
-        // in indexing.hip, this copy is skipped when the base has a unique buffer.
         keys_ = mx::slice_update(keys_.value(), new_keys,
             mx::Shape{0, 0, offset_, 0}, mx::Shape{B, H, offset_ + n_new, D});
         values_ = mx::slice_update(values_.value(), new_values,
@@ -72,11 +116,11 @@ KVCacheSimple::update_impl(
                 mx::slice(values_.value(), mx::Shape{0,0,0,0}, mx::Shape{B,H,offset_,D})};
     }
 
-    // Grow by 2x (amortized O(1))
     int new_alloc = std::max(current_alloc * 2, offset_ + n_new);
     auto new_k = mx::zeros({B, H, new_alloc, D}, keys_.value().dtype());
     auto new_v = mx::zeros({B, H, new_alloc, D}, values_.value().dtype());
 
+    // Copy existing data + append new
     new_k = mx::slice_update(new_k,
         mx::slice(keys_.value(), mx::Shape{0,0,0,0}, mx::Shape{B,H,offset_,D}),
         mx::Shape{0,0,0,0}, mx::Shape{B,H,offset_,D});
