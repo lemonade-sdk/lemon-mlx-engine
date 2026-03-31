@@ -36,6 +36,10 @@ struct GenerateParameters {
 
     // Tokens to consider for repetition penalty.
     int repetition_context_size = 20;
+
+    // Pre-allocate KV cache for this many tokens (0=auto grow).
+    // Avoids repeated grow-and-copy during generation.
+    int ctx_size = 0;
 };
 
 } // namespace mlx_lm

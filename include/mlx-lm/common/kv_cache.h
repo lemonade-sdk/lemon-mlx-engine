@@ -40,6 +40,7 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
     friend class KVCacheBase<KVCacheSimple>;
 
     int offset_ = 0;
+    int initial_capacity_ = 256;
     std::optional<mlx::core::array> keys_;
     std::optional<mlx::core::array> values_;
 
@@ -54,6 +55,7 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
 
 public:
     KVCacheSimple() = default;
+    explicit KVCacheSimple(int initial_capacity) : initial_capacity_(initial_capacity) {}
 
     // Access stored state for KV sharing. Returns {keys, values} if populated.
     std::vector<mlx::core::array> state() const {

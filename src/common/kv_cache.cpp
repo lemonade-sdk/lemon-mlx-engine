@@ -12,24 +12,17 @@ namespace mx = mlx::core;
 mlx::core::array create_causal_mask(
     int n, int offset, std::optional<int> window_size)
 {
-
-    // rinds = 0..<(offset + n), linds = offset..<(offset + n)
     auto rinds = mx::arange(0, offset + n, mx::int32);
     auto linds = (offset != 0)
         ? mx::arange(offset, offset + n, mx::int32)
         : rinds;
-
-    // linds[:, newaxis] >= rinds[newaxis, :]
-    linds = mx::expand_dims(linds, 1);   // [n, 1]
-    rinds = mx::expand_dims(rinds, 0);   // [1, offset+n]
-
+    linds = mx::expand_dims(linds, 1);
+    rinds = mx::expand_dims(rinds, 0);
     auto mask = mx::greater_equal(linds, rinds);
-
     if (window_size.has_value()) {
         auto ws = mx::array(window_size.value(), mx::int32);
         mask = mx::logical_and(mask, mx::less(linds, mx::add(rinds, ws)));
     }
-
     return mask;
 }
 
@@ -43,12 +36,10 @@ KVCacheSimple::update_impl(
     int n_new = new_keys.shape(2);
 
     if (!keys_.has_value()) {
-        // Pre-allocate to avoid per-token reallocation via concatenate.
-        // Allocate 256 slots (default 256) upfront, grow by 2x when full.
         int B = new_keys.shape(0);
         int H = new_keys.shape(1);
         int D = new_keys.shape(3);
-        int alloc_len = std::max(n_new, 256);
+        int alloc_len = std::max(n_new, initial_capacity_);
 
         keys_ = mx::zeros({B, H, alloc_len, D}, new_keys.dtype());
         values_ = mx::zeros({B, H, alloc_len, D}, new_values.dtype());
@@ -69,7 +60,9 @@ KVCacheSimple::update_impl(
     int current_alloc = keys_.value().shape(2);
 
     if (offset_ + n_new <= current_alloc) {
-        // Fast path: in-place update, zero allocations.
+        // Fast path: in-place update via slice_update.
+        // SliceUpdate copies the base array — but with the donation optimization
+        // in indexing.hip, this copy is skipped when the base has a unique buffer.
         keys_ = mx::slice_update(keys_.value(), new_keys,
             mx::Shape{0, 0, offset_, 0}, mx::Shape{B, H, offset_ + n_new, D});
         values_ = mx::slice_update(values_.value(), new_values,
@@ -106,7 +99,6 @@ KVCacheSimple::update_impl(
 int KVCacheSimple::trim_impl(int n) {
     if (!keys_.has_value() || n <= 0) return 0;
 
-
     int seq_len = keys_.value().shape(2);
     int to_trim = std::min(n, seq_len);
 
@@ -133,7 +125,6 @@ RotatingKVCache::update_impl(
     const mlx::core::array& new_keys,
     const mlx::core::array& new_values)
 {
-
     int n_new = new_keys.shape(2);
 
     if (!keys_.has_value()) {
@@ -147,20 +138,16 @@ RotatingKVCache::update_impl(
     int current_len = keys_.value().shape(2);
 
     if (current_len + n_new <= max_size_) {
-        // Still have room, just concatenate
         keys_ = mx::concatenate({keys_.value(), new_keys}, 2);
         values_ = mx::concatenate({values_.value(), new_values}, 2);
         idx_ = current_len + n_new;
     } else {
-        // Overwrite oldest entries (after keep_ prefix)
-        // For simplicity, use concatenation and truncation
         keys_ = mx::concatenate({keys_.value(), new_keys}, 2);
         values_ = mx::concatenate({values_.value(), new_values}, 2);
 
         int total = keys_.value().shape(2);
         if (total > max_size_) {
             int excess = total - max_size_;
-            // Keep the first keep_ entries, drop excess from after keep_
             if (excess > 0 && keep_ < total) {
                 auto prefix_k = mx::slice(keys_.value(), mx::Shape{0, 0, 0, 0},
                     {keys_.value().shape(0), keys_.value().shape(1), keep_, keys_.value().shape(3)});
@@ -184,30 +171,21 @@ RotatingKVCache::update_impl(
 
 // --- QuantizedKVCache ---
 
-// Helper: quantize a [B, H, T, D] tensor along the last axis.
-// mx::quantize expects a 2D matrix, so we reshape first.
 static QuantizedKVCache::QTuple quantize_kv(
     const mx::array& tensor, int group_size, int bits)
 {
-    // tensor shape: [B, H, T, D] — flatten to [B*H*T, D] for quantize
     auto shape = tensor.shape();
     int B = shape[0], H = shape[1], T = shape[2], D = shape[3];
     auto flat = mx::reshape(tensor, {B * H * T, D});
     auto result = mx::quantize(flat, group_size, bits);
-    // result = [packed_weight, scales, biases]
-    // Reshape back to [B, H, T, ...] dimensions
-    auto& w = result[0];
-    auto& s = result[1];
-    auto& b = result[2];
-    int packed_D = w.shape(1);  // D / (32 / bits)
-    int scales_D = s.shape(1);  // D / group_size
+    auto& w = result[0]; auto& s = result[1]; auto& b = result[2];
+    int packed_D = w.shape(1); int scales_D = s.shape(1);
     w = mx::reshape(w, {B, H, T, packed_D});
     s = mx::reshape(s, {B, H, T, scales_D});
     b = mx::reshape(b, {B, H, T, scales_D});
     return {w, s, b};
 }
 
-// Helper: dequantize a QTuple back to [B, H, T, D].
 static mx::array dequantize_kv(
     const QuantizedKVCache::QTuple& qt, int group_size, int bits)
 {
@@ -226,12 +204,10 @@ QuantizedKVCache::update_impl(
     const mx::array& new_keys,
     const mx::array& new_values)
 {
-    // Quantize the incoming keys/values
     auto qk = quantize_kv(new_keys, group_size_, bits_);
     auto qv = quantize_kv(new_values, group_size_, bits_);
 
     if (keys_.has_value()) {
-        // Concatenate with existing quantized storage along sequence axis (dim 2)
         keys_ = QTuple{
             mx::concatenate({keys_->weight, qk.weight}, 2),
             mx::concatenate({keys_->scales, qk.scales}, 2),
@@ -248,8 +224,6 @@ QuantizedKVCache::update_impl(
     }
 
     offset_ += new_keys.shape(2);
-
-    // Dequantize and return full-precision KV — transparent to models
     return {dequantize_kv(keys_.value(), group_size_, bits_),
             dequantize_kv(values_.value(), group_size_, bits_)};
 }
@@ -259,17 +233,12 @@ QuantizedKVCache QuantizedKVCache::from_simple(
 {
     QuantizedKVCache qc(group_size, bits);
     qc.offset_ = simple.offset();
-
-    if (simple.raw_keys().has_value()) {
+    if (simple.raw_keys().has_value())
         qc.keys_ = quantize_kv(simple.raw_keys().value(), group_size, bits);
-    }
-    if (simple.raw_values().has_value()) {
+    if (simple.raw_values().has_value())
         qc.values_ = quantize_kv(simple.raw_values().value(), group_size, bits);
-    }
     return qc;
 }
-
-// --- maybe_quantize_kv_cache ---
 
 void maybe_quantize_kv_cache(
     std::vector<KVCache>& cache,
@@ -283,21 +252,11 @@ void maybe_quantize_kv_cache(
     if (cache[0].offset() <= quantized_kv_start) return;
 
     for (size_t i = 0; i < cache.size(); i++) {
-        // Only convert KVCacheSimple entries (RotatingKVCache conversion not yet supported)
         auto& c = cache[i];
-        // Use std::visit to check the underlying type
-        // We need to access the variant directly — use the is_quantized + offset checks
-        // Since KVCache wraps a variant, we check offset > 0 as proxy for having data
         if (!c.is_quantized() && c.offset() > 0) {
-            // Attempt conversion: create a temporary to check type
-            // The simplest approach: just wrap a new QuantizedKVCache and
-            // feed it the existing data through the public interface.
-            // However, we need the raw data. Use state() accessor.
             auto st = c.state();
             if (st.size() == 2) {
-                // Has keys + values — this is KVCacheSimple or RotatingKVCache
                 QuantizedKVCache qc(kv_group_size, kv_bits.value());
-                // Feed the existing KV data into the quantized cache
                 qc.update(st[0], st[1]);
                 cache[i] = KVCache(std::move(qc));
             }

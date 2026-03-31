@@ -69,6 +69,11 @@ public:
             for (int i = 0; i < num_layers; ++i) {
                 caches.emplace_back(RotatingKVCache(params.max_kv_size.value(), 4));
             }
+        } else if (params.ctx_size > 0) {
+            // Pre-allocate KV cache to ctx_size to avoid grow-and-copy.
+            for (int i = 0; i < num_layers; ++i) {
+                caches.emplace_back(KVCacheSimple(params.ctx_size));
+            }
         } else {
             for (int i = 0; i < num_layers; ++i) {
                 caches.emplace_back(KVCacheSimple{});

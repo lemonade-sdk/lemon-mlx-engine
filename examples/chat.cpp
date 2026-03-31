@@ -34,6 +34,7 @@ struct CliArgs {
     bool raw_mode = false;  // Skip chat template, use raw encoding
     int kv_bits = 0;        // KV cache quantization bits (0=off, 4 or 8)
     int kv_group_size = 64; // KV cache quantization group size
+    int ctx_size = 0;       // Context size for KV cache pre-allocation (0=auto)
 };
 
 static CliArgs parse_args(int argc, char* argv[]) {
@@ -49,7 +50,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
                   << "  --no-think              Disable thinking/reasoning (Qwen3)\n"
                   << "  --raw                   Skip chat template, raw encoding\n"
                   << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
-                  << "  --kv-group-size N       KV cache quant group size (default: 64)\n";
+                  << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
+                  << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n";
         std::exit(1);
     }
     args.model_path = argv[1];
@@ -75,6 +77,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.kv_bits = std::stoi(argv[++i]);
         } else if (flag == "--kv-group-size" && i + 1 < argc) {
             args.kv_group_size = std::stoi(argv[++i]);
+        } else if (flag == "--ctx-size" && i + 1 < argc) {
+            args.ctx_size = std::stoi(argv[++i]);
         }
     }
     return args;
@@ -120,6 +124,9 @@ int main(int argc, char* argv[]) {
         params.max_tokens = args.max_tokens;
         if (args.repetition_penalty > 0.0f) {
             params.repetition_penalty = args.repetition_penalty;
+        }
+        if (args.ctx_size > 0) {
+            params.ctx_size = args.ctx_size;
         }
         if (args.kv_bits > 0) {
             params.kv_bits = args.kv_bits;
