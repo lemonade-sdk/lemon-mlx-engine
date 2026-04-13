@@ -9,7 +9,7 @@ on:
       gfx_target:
         description: 'AMD GPU targets for ROCm builds (comma-separated)'
         required: false
-        default: 'gfx1151,gfx1150,gfx120X,gfx110X,gfx103X'
+        default: 'gfx1151,gfx1150,gfx120X,gfx110X,gfx103X,gfx115X_gfx120X'
       rocm_version:
         description: 'ROCm version (e.g., 7.13.0a20260318) or "latest" to auto-detect'
         required: false
@@ -28,7 +28,7 @@ on:
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
-  GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx1151,gfx1150,gfx120X,gfx110X,gfx103X' }}
+  GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx1151,gfx1150,gfx120X,gfx110X,gfx103X,gfx115X_gfx120X' }}
   ROCM_VERSION: ${{ github.event.inputs.rocm_version || 'latest' }}
 
 jobs:
@@ -113,38 +113,60 @@ jobs:
         rocm_version="${{ env.ROCM_VERSION }}"
         current_target="${{ matrix.gfx_target }}"
 
-        # Map target to S3 naming
-        s3_target="$current_target"
-        if [ "$current_target" = "gfx103X" ]; then
-          s3_target="${current_target}-dgpu"
-        elif [ "$current_target" = "gfx110X" ] || [ "$current_target" = "gfx120X" ]; then
-          s3_target="${current_target}-all"
-        fi
+        download_rocm_tarball() {
+          local target="$1"
+          local dest="$2"
 
-        if [ "$rocm_version" = "latest" ]; then
-          echo "Auto-detecting latest ROCm version for target: $current_target"
-          # List S3 and find latest version
-          files=$(curl -s "https://therock-nightly-tarball.s3.amazonaws.com/?prefix=therock-dist-linux-$s3_target-7" \
-            | grep -oP 'therock-dist-linux-'"$s3_target"'-[^<]+\.tar\.gz' \
-            | sort -V | tail -1)
-
-          if [ -z "$files" ]; then
-            echo "Error: No ROCm tarballs found for target $s3_target"
-            exit 1
+          # Map target to S3 naming
+          local s3_target="$target"
+          if [ "$target" = "gfx103X" ]; then
+            s3_target="${target}-dgpu"
+          elif [ "$target" = "gfx110X" ] || [ "$target" = "gfx120X" ]; then
+            s3_target="${target}-all"
           fi
 
-          rocm_url="https://therock-nightly-tarball.s3.amazonaws.com/$files"
-          rocm_version=$(echo "$files" | grep -oP '\d+\.\d+\.\d+[a-z]*\d*')
-          echo "Detected latest ROCm version: $rocm_version"
+          local url
+          if [ "$rocm_version" = "latest" ]; then
+            echo "Auto-detecting latest ROCm version for target: $target"
+            local files
+            files=$(curl -s "https://therock-nightly-tarball.s3.amazonaws.com/?prefix=therock-dist-linux-$s3_target-7" \
+              | grep -oP 'therock-dist-linux-'"$s3_target"'-[^<]+\.tar\.gz' \
+              | sort -V | tail -1)
+
+            if [ -z "$files" ]; then
+              echo "Error: No ROCm tarballs found for target $s3_target"
+              return 1
+            fi
+
+            url="https://therock-nightly-tarball.s3.amazonaws.com/$files"
+            rocm_version=$(echo "$files" | grep -oP '\d+\.\d+\.\d+[a-z]*\d*')
+            echo "Detected latest ROCm version: $rocm_version"
+          else
+            url="https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-${s3_target}-${rocm_version}.tar.gz"
+          fi
+
+          echo "Downloading ROCm from: $url"
+          sudo mkdir -p "$dest"
+          curl -sL "$url" | sudo tar --use-compress-program=gzip -xf - -C "$dest" --strip-components=1
+        }
+
+        sudo mkdir -p /opt/rocm
+
+        if [ "$current_target" = "gfx115X_gfx120X" ]; then
+          # Combined RDNA 3.5 + RDNA 4 build: merge rocblas kernels from all targets
+          download_rocm_tarball "gfx1150" "/opt/rocm"
+          for extra_target in gfx1151 gfx120X; do
+            download_rocm_tarball "$extra_target" "/tmp/rocm-extra"
+            if [ -d /tmp/rocm-extra/lib/rocblas/library ]; then
+              sudo cp -n /tmp/rocm-extra/lib/rocblas/library/* /opt/rocm/lib/rocblas/library/ 2>/dev/null || true
+            fi
+            rm -rf /tmp/rocm-extra
+          done
         else
-          rocm_url="https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-${s3_target}-${rocm_version}.tar.gz"
+          download_rocm_tarball "$current_target" "/opt/rocm"
         fi
 
         echo "DETECTED_ROCM_VERSION=$rocm_version" >> $GITHUB_ENV
-
-        echo "Downloading ROCm from: $rocm_url"
-        sudo mkdir -p /opt/rocm
-        curl -sL "$rocm_url" | sudo tar --use-compress-program=gzip -xf - -C /opt/rocm --strip-components=1
 
     - name: Map GPU targets
       id: map-targets
@@ -156,6 +178,7 @@ jobs:
           gfx1151) mapped="gfx1151" ;;
           gfx1150) mapped="gfx1150" ;;
           gfx120X) mapped="gfx1200;gfx1201" ;;
+          gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1200;gfx1201" ;;
           *) mapped="$current_target" ;;
         esac
         echo "mapped_target=$mapped" >> $GITHUB_OUTPUT
