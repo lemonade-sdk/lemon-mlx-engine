@@ -160,7 +160,7 @@ jobs:
             if [ -d /tmp/rocm-extra/lib/rocblas/library ]; then
               sudo cp -n /tmp/rocm-extra/lib/rocblas/library/* /opt/rocm/lib/rocblas/library/ 2>/dev/null || true
             fi
-            rm -rf /tmp/rocm-extra
+            sudo rm -rf /tmp/rocm-extra
           done
         else
           download_rocm_tarball "$current_target" "/opt/rocm"
