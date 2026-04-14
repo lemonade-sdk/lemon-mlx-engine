@@ -239,7 +239,7 @@ jobs:
         cp build/diagnose output/ 2>/dev/null || true
 
         # Bundle small non-ROCm libs for portability (ROCm libs come from system install)
-        for lib in libopenblas.so* liblapacke.so*; do
+        for lib in libopenblas.so* liblapacke.so* libgfortran.so*; do
           cp /usr/lib/x86_64-linux-gnu/$lib output/ 2>/dev/null || true
         done
 
@@ -310,6 +310,11 @@ jobs:
         cp build/server output/
         cp build/chat output/
         cp build/diagnose output/ 2>/dev/null || true
+
+        # Bundle runtime libs for portability
+        for lib in libopenblas.so* liblapacke.so* libgfortran.so*; do
+          cp /usr/lib/x86_64-linux-gnu/$lib output/ 2>/dev/null || true
+        done
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
