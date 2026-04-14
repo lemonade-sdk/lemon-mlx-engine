@@ -11,13 +11,13 @@ on:
         required: false
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
       rocm_channel:
-        description: 'ROCm channel: stable (AMD apt 7.2.1) or dev (TheRock nightlies)'
+        description: 'ROCm channel: stable (AMD apt) or tech-preview (TheRock nightlies, version from .github/rocm-channels.json)'
         required: false
         default: 'stable'
         type: choice
         options:
           - stable
-          - dev
+          - tech-preview
       create_release:
         description: 'Create a GitHub release after successful build'
         required: false
@@ -30,13 +30,13 @@ on:
   schedule:
     # Daily: stable channel
     - cron: '0 14 * * *'
-    # Weekly Monday: dev channel
+    # Weekly Monday: tech-preview channel
     - cron: '0 16 * * 1'
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
   GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
-  ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'dev') || 'stable' }}
+  ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'tech-preview') || 'stable' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -119,7 +119,8 @@ jobs:
     - name: Install ROCm (stable channel)
       if: env.ROCM_CHANNEL == 'stable'
       run: |
-        rocm_version="7.2.1"
+        rocm_version=$(jq -r '.stable.version' .github/rocm-channels.json)
+        echo "Stable ROCm version from config: $rocm_version"
 
         # Add ROCm apt repository
         sudo mkdir --parents --mode=0755 /etc/apt/keyrings
@@ -141,14 +142,17 @@ jobs:
         echo "DETECTED_ROCM_VERSION=$rocm_version" >> $GITHUB_ENV
         echo "DETECTED_ROCM_CHANNEL=stable" >> $GITHUB_ENV
 
-    - name: Install ROCm (dev channel — TheRock nightlies)
-      if: env.ROCM_CHANNEL == 'dev'
+    - name: Install ROCm (tech-preview channel — TheRock nightlies)
+      if: env.ROCM_CHANNEL == 'tech-preview'
       run: |
         current_target="${{ matrix.gfx_target }}"
+        version_prefix=$(jq -r '.["tech-preview"].version_prefix' .github/rocm-channels.json)
+        echo "Tech-preview version prefix from config: $version_prefix"
 
         download_rocm_tarball() {
           local target="$1"
           local dest="$2"
+          local ver_prefix="$3"
 
           # Map target to S3 naming
           local s3_target="$target"
@@ -156,21 +160,21 @@ jobs:
             s3_target="${target}-all"
           fi
 
-          echo "Auto-detecting latest ROCm dev version for target: $target"
+          echo "Finding latest ROCm $ver_prefix.x tarball for target: $s3_target"
           local files
-          files=$(curl -s "https://therock-nightly-tarball.s3.amazonaws.com/?prefix=therock-dist-linux-$s3_target-7" \
+          files=$(curl -s "https://therock-nightly-tarball.s3.amazonaws.com/?prefix=therock-dist-linux-$s3_target-$ver_prefix" \
             | grep -oP 'therock-dist-linux-'"$s3_target"'-[^<]+\.tar\.gz' \
             | sort -V | tail -1)
 
           if [ -z "$files" ]; then
-            echo "Error: No ROCm tarballs found for target $s3_target"
+            echo "Error: No ROCm tarballs found for target $s3_target with prefix $ver_prefix"
             return 1
           fi
 
           local url="https://therock-nightly-tarball.s3.amazonaws.com/$files"
           local version
           version=$(echo "$files" | grep -oP '\d+\.\d+\.\d+[a-z]*\d*')
-          echo "Detected ROCm dev version: $version"
+          echo "Detected ROCm tech-preview version: $version"
           echo "DETECTED_ROCM_VERSION=$version" >> $GITHUB_ENV
 
           echo "Downloading ROCm from: $url"
@@ -181,19 +185,19 @@ jobs:
         sudo mkdir -p /opt/rocm
 
         if [ "$current_target" = "gfx115X_gfx120X" ]; then
-          download_rocm_tarball "gfx1150" "/opt/rocm"
+          download_rocm_tarball "gfx1150" "/opt/rocm" "$version_prefix"
           for extra_target in gfx1151 gfx120X; do
-            download_rocm_tarball "$extra_target" "/tmp/rocm-extra"
+            download_rocm_tarball "$extra_target" "/tmp/rocm-extra" "$version_prefix"
             if [ -d /tmp/rocm-extra/lib/rocblas/library ]; then
               sudo cp -n /tmp/rocm-extra/lib/rocblas/library/* /opt/rocm/lib/rocblas/library/ 2>/dev/null || true
             fi
             sudo rm -rf /tmp/rocm-extra
           done
         else
-          download_rocm_tarball "$current_target" "/opt/rocm"
+          download_rocm_tarball "$current_target" "/opt/rocm" "$version_prefix"
         fi
 
-        echo "DETECTED_ROCM_CHANNEL=dev" >> $GITHUB_ENV
+        echo "DETECTED_ROCM_CHANNEL=tech-preview" >> $GITHUB_ENV
 
     - name: Map GPU targets
       id: map-targets
@@ -404,7 +408,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         channel="${{ env.ROCM_CHANNEL }}"
-        # Match tags for this channel: b1000-stable, b1001-dev, etc.
+        # Match tags for this channel: b1000-stable, b1001-tech-preview, etc.
         existing_tags=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' \
           | grep -E "^b[0-9]{4}(-${channel})?$" | sed 's/-.*$//' | sort -V || echo "")
 

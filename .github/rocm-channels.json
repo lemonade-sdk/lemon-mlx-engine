@@ -1,0 +1,12 @@
+{
+  "stable": {
+    "version": "7.2.1",
+    "source": "apt",
+    "description": "AMD official ROCm release from repo.radeon.com"
+  },
+  "tech-preview": {
+    "version_prefix": "7.12",
+    "source": "therock-s3",
+    "description": "TheRock nightly tarballs from S3, pinned to a base version series"
+  }
+}
