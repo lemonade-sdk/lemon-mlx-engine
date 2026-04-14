@@ -398,7 +398,10 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        existing_tags=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' | grep -E '^b[0-9]{4}$' | sort -V || echo "")
+        channel="${{ env.ROCM_CHANNEL }}"
+        # Match tags for this channel: b1000-stable, b1001-dev, etc.
+        existing_tags=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' \
+          | grep -E "^b[0-9]{4}(-${channel})?$" | sed 's/-.*$//' | sort -V || echo "")
 
         if [ -z "$existing_tags" ]; then
           next_number=1000
@@ -410,7 +413,7 @@ jobs:
           echo "Highest existing tag: $highest_tag (number: $highest_number)"
         fi
 
-        TAG=$(printf "b%04d" $next_number)
+        TAG=$(printf "b%04d-${channel}" $next_number)
         echo "tag=${TAG}" >> $GITHUB_OUTPUT
         echo "Generated release tag: ${TAG}"
 
@@ -488,7 +491,7 @@ jobs:
         echo "Files to upload: $upload_files"
 
         gh release create "$TAG" \
-          --title "${TAG}-${ROCM_CHANNEL}" \
+          --title "$TAG" \
           --notes "**Build Number**: $TAG
         **ROCm Channel**: $ROCM_CHANNEL
         **ROCm Version**: $ROCM_VERSION
