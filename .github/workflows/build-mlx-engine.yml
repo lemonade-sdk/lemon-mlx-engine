@@ -10,10 +10,14 @@ on:
         description: 'AMD GPU targets for ROCm builds (comma-separated)'
         required: false
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
-      rocm_version:
-        description: 'ROCm version (e.g., 7.2.1)'
+      rocm_channel:
+        description: 'ROCm channel: stable (AMD apt 7.2.1) or dev (TheRock nightlies)'
         required: false
-        default: '7.2.1'
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - dev
       create_release:
         description: 'Create a GitHub release after successful build'
         required: false
@@ -24,12 +28,15 @@ on:
     types: [opened, synchronize, reopened]
 
   schedule:
+    # Daily: stable channel
     - cron: '0 14 * * *'
+    # Weekly Monday: dev channel
+    - cron: '0 16 * * 1'
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
   GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
-  ROCM_VERSION: ${{ github.event.inputs.rocm_version || '7.2.1' }}
+  ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'dev') || 'stable' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -95,6 +102,7 @@ jobs:
       fail-fast: false
     outputs:
       rocm_version: ${{ steps.set-outputs.outputs.rocm_version }}
+      rocm_channel: ${{ steps.set-outputs.outputs.rocm_channel }}
 
     steps:
     - name: Checkout repository
@@ -102,9 +110,16 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install build dependencies and ROCm
+    - name: Install build dependencies
       run: |
-        rocm_version="${{ env.ROCM_VERSION }}"
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build patchelf unzip curl \
+          libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
+
+    - name: Install ROCm (stable channel)
+      if: env.ROCM_CHANNEL == 'stable'
+      run: |
+        rocm_version="7.2.1"
 
         # Add ROCm apt repository
         sudo mkdir --parents --mode=0755 /etc/apt/keyrings
@@ -114,19 +129,71 @@ jobs:
         echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${rocm_version} jammy main" \
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
-        # Prioritize ROCm repo packages
         printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
           | sudo tee /etc/apt/preferences.d/rocm-pin-600
 
         sudo apt-get update
-        sudo apt-get install -y cmake ninja-build patchelf \
-          libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config \
+        sudo apt-get install -y \
           hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
           rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
 
-        echo "Installed ROCm version: $rocm_version"
+        echo "Installed ROCm stable: $rocm_version"
         echo "DETECTED_ROCM_VERSION=$rocm_version" >> $GITHUB_ENV
-        ls /opt/rocm/lib/rocblas/library/ | head -20
+        echo "DETECTED_ROCM_CHANNEL=stable" >> $GITHUB_ENV
+
+    - name: Install ROCm (dev channel — TheRock nightlies)
+      if: env.ROCM_CHANNEL == 'dev'
+      run: |
+        current_target="${{ matrix.gfx_target }}"
+
+        download_rocm_tarball() {
+          local target="$1"
+          local dest="$2"
+
+          # Map target to S3 naming
+          local s3_target="$target"
+          if [ "$target" = "gfx110X" ] || [ "$target" = "gfx120X" ]; then
+            s3_target="${target}-all"
+          fi
+
+          echo "Auto-detecting latest ROCm dev version for target: $target"
+          local files
+          files=$(curl -s "https://therock-nightly-tarball.s3.amazonaws.com/?prefix=therock-dist-linux-$s3_target-7" \
+            | grep -oP 'therock-dist-linux-'"$s3_target"'-[^<]+\.tar\.gz' \
+            | sort -V | tail -1)
+
+          if [ -z "$files" ]; then
+            echo "Error: No ROCm tarballs found for target $s3_target"
+            return 1
+          fi
+
+          local url="https://therock-nightly-tarball.s3.amazonaws.com/$files"
+          local version
+          version=$(echo "$files" | grep -oP '\d+\.\d+\.\d+[a-z]*\d*')
+          echo "Detected ROCm dev version: $version"
+          echo "DETECTED_ROCM_VERSION=$version" >> $GITHUB_ENV
+
+          echo "Downloading ROCm from: $url"
+          sudo mkdir -p "$dest"
+          curl -sL "$url" | sudo tar --use-compress-program=gzip -xf - -C "$dest" --strip-components=1
+        }
+
+        sudo mkdir -p /opt/rocm
+
+        if [ "$current_target" = "gfx115X_gfx120X" ]; then
+          download_rocm_tarball "gfx1150" "/opt/rocm"
+          for extra_target in gfx1151 gfx120X; do
+            download_rocm_tarball "$extra_target" "/tmp/rocm-extra"
+            if [ -d /tmp/rocm-extra/lib/rocblas/library ]; then
+              sudo cp -n /tmp/rocm-extra/lib/rocblas/library/* /opt/rocm/lib/rocblas/library/ 2>/dev/null || true
+            fi
+            sudo rm -rf /tmp/rocm-extra
+          done
+        else
+          download_rocm_tarball "$current_target" "/opt/rocm"
+        fi
+
+        echo "DETECTED_ROCM_CHANNEL=dev" >> $GITHUB_ENV
 
     - name: Map GPU targets
       id: map-targets
@@ -164,7 +231,6 @@ jobs:
 
     - name: Package build artifacts
       run: |
-        current_target="${{ matrix.gfx_target }}"
         mkdir -p output
 
         # Copy binaries
@@ -172,64 +238,31 @@ jobs:
         cp build/chat output/
         cp build/diagnose output/ 2>/dev/null || true
 
-        # Copy ROCm shared libraries needed at runtime
-        for lib in libamdhip64.so* librocblas.so* libhipblas*.so* libhipblaslt*.so* \
-                   librocsolver.so* libamd_comgr.so* libhsa-runtime64.so* \
-                   librocprofiler-register.so* libroctx64.so* librocroller.so* \
-                   libhiprtc.so* libamd_comgr_loader.so*; do
-          cp /opt/rocm/lib/$lib output/ 2>/dev/null || true
+        # Bundle small non-ROCm libs for portability (ROCm libs come from system install)
+        for lib in libopenblas.so* liblapacke.so*; do
+          cp /usr/lib/x86_64-linux-gnu/$lib output/ 2>/dev/null || true
         done
 
-        # Copy rocblas kernels — filter to only the targets we need
-        if [ -d /opt/rocm/lib/rocblas/library ]; then
-          mkdir -p output/rocblas/library
-
-          # Determine which gfx targets to include
-          case "$current_target" in
-            gfx110X) kernel_filter="gfx110" ;;
-            gfx103X) kernel_filter="gfx103" ;;
-            gfx1151) kernel_filter="gfx1151" ;;
-            gfx1150) kernel_filter="gfx1150" ;;
-            gfx120X) kernel_filter="gfx120" ;;
-            gfx115X_gfx120X) kernel_filter="gfx115\|gfx120" ;;
-            *) kernel_filter="" ;;
-          esac
-
-          # Copy metadata files (always needed)
-          cp /opt/rocm/lib/rocblas/library/TensileManifest.txt output/rocblas/library/ 2>/dev/null || true
-
-          # Copy only matching kernel files + non-target-specific files
-          for f in /opt/rocm/lib/rocblas/library/*; do
-            fname=$(basename "$f")
-            if [ -z "$kernel_filter" ]; then
-              cp "$f" output/rocblas/library/
-            elif echo "$fname" | grep -qE "^Tensile(Manifest|Library)" ; then
-              cp "$f" output/rocblas/library/
-            elif echo "$fname" | grep -q "$kernel_filter"; then
-              cp "$f" output/rocblas/library/
-            fi
-          done
-
-          echo "Rocblas kernels copied for target $current_target (filter: $kernel_filter):"
-          ls output/rocblas/library/ | wc -l
-        fi
-
-        # Set RPATH for portable distribution
-        for binary in output/server output/chat; do
+        # Set RPATH: check local dir first, then system ROCm
+        for binary in output/server output/chat output/diagnose; do
           if [ -f "$binary" ]; then
-            patchelf --set-rpath '$ORIGIN' "$binary" 2>/dev/null || true
+            patchelf --set-rpath '$ORIGIN:/opt/rocm/lib' "$binary" 2>/dev/null || true
           fi
         done
+
+        echo "Packaged artifacts (no ROCm libs bundled — requires system ROCm):"
+        ls -lh output/
 
     - name: Set outputs
       id: set-outputs
       run: |
         echo "rocm_version=${{ env.DETECTED_ROCM_VERSION }}" >> $GITHUB_OUTPUT
+        echo "rocm_channel=${{ env.ROCM_CHANNEL }}" >> $GITHUB_OUTPUT
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: mlx-engine-ubuntu-rocm-${{ matrix.gfx_target }}-x64
+        name: mlx-engine-ubuntu-rocm-${{ env.ROCM_CHANNEL }}-${{ matrix.gfx_target }}-x64
         path: output/
         retention-days: 30
 
@@ -397,19 +430,20 @@ jobs:
       run: |
         TAG="${{ steps.generate-tag.outputs.tag }}"
         targets="${{ env.GFX_TARGETS }}"
+        channel="${{ env.ROCM_CHANNEL }}"
 
-        echo "Processing artifacts for release $TAG"
+        echo "Processing artifacts for release $TAG (channel: $channel)"
 
         # ROCm builds
         IFS=',' read -ra TARGET_ARRAY <<< "$targets"
         for target in "${TARGET_ARRAY[@]}"; do
           target=$(echo "$target" | xargs)
-          artifact_dir="./all-artifacts/mlx-engine-ubuntu-rocm-${target}-x64"
-          archive_name="mlx-engine-${TAG}-ubuntu-rocm-${target}-x64"
+          artifact_dir="./all-artifacts/mlx-engine-ubuntu-rocm-${channel}-${target}-x64"
+          archive_name="mlx-engine-${TAG}-ubuntu-rocm-${channel}-${target}-x64"
           if [ -d "$artifact_dir" ]; then
             echo "Creating archive: ${archive_name}.zip"
             cd "$artifact_dir"
-            zip -r "../../${archive_name}.zip" *
+            zip -9 -r "../../${archive_name}.zip" *
             cd ../../
           fi
         done
@@ -418,7 +452,7 @@ jobs:
         if [ -d "./all-artifacts/mlx-engine-ubuntu-cpu-x64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-ubuntu-cpu-x64.zip"
           cd "./all-artifacts/mlx-engine-ubuntu-cpu-x64"
-          zip -r "../../mlx-engine-${TAG}-ubuntu-cpu-x64.zip" *
+          zip -9 -r "../../mlx-engine-${TAG}-ubuntu-cpu-x64.zip" *
           cd ../../
         fi
 
@@ -426,7 +460,7 @@ jobs:
         if [ -d "./all-artifacts/mlx-engine-macos-arm64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-macos-arm64.zip"
           cd "./all-artifacts/mlx-engine-macos-arm64"
-          zip -r "../../mlx-engine-${TAG}-macos-arm64.zip" *
+          zip -9 -r "../../mlx-engine-${TAG}-macos-arm64.zip" *
           cd ../../
         fi
 
@@ -440,6 +474,7 @@ jobs:
       run: |
         TAG="${{ steps.generate-tag.outputs.tag }}"
         ROCM_VERSION="${{ needs.build-ubuntu-rocm.outputs.rocm_version }}"
+        ROCM_CHANNEL="${{ needs.build-ubuntu-rocm.outputs.rocm_channel }}"
         targets="${{ env.GFX_TARGETS }}"
 
         # Collect all zip files
@@ -453,16 +488,18 @@ jobs:
         echo "Files to upload: $upload_files"
 
         gh release create "$TAG" \
-          --title "$TAG" \
+          --title "${TAG}-${ROCM_CHANNEL}" \
           --notes "**Build Number**: $TAG
-        **GPU Target(s)**: $targets
+        **ROCm Channel**: $ROCM_CHANNEL
         **ROCm Version**: $ROCM_VERSION
+        **GPU Target(s)**: $targets
         **Build Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
         MLX Engine binaries with ROCm, CPU, and macOS support.
+        **Requires system ROCm installation** — ROCm libraries are not bundled.
 
         ### Downloads
-        - **Ubuntu ROCm**: mlx-engine-${TAG}-ubuntu-rocm-{target}-x64.zip
+        - **Ubuntu ROCm**: mlx-engine-${TAG}-ubuntu-rocm-${ROCM_CHANNEL}-{target}-x64.zip
         - **Ubuntu CPU**: mlx-engine-${TAG}-ubuntu-cpu-x64.zip
         - **macOS ARM64**: mlx-engine-${TAG}-macos-arm64.zip" \
           $upload_files
