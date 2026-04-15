@@ -45,7 +45,6 @@
 #include <mlx-lm/llm/models/lfm2.h>
 #include <mlx-lm/llm/models/nemotron_h.h>
 #include <mlx-lm/llm/models/granite_moe_hybrid.h>
-#include <mlx-lm/llm/models/bitnet.h>
 #include <mlx-lm/common/base_config.h>
 #include <mlx-lm/common/safetensors.h>
 #include <mlx-lm/common/hub_api.h>
@@ -156,7 +155,7 @@ static std::unordered_map<std::string, LLMLoaderFn>& llm_loaders() {
         {"lfm2",         load_typed_model<LFM2Configuration, LFM2Model>},
         {"nemotron_h",   load_typed_model<NemotronHConfiguration, NemotronHModel>},
         {"granitemoehybrid", load_typed_model<GraniteMoeHybridConfiguration, GraniteMoeHybridModel>},
-        {"bitnet",       load_typed_model<BitNetConfiguration, BitNetModel>},
+        {"bitnet",       load_typed_model<LlamaConfiguration, LlamaModel>},
     };
     return loaders;
 }
@@ -215,7 +214,7 @@ ModelTypeRegistry& llm_type_registry() {
         {"lfm2",         create_model<LFM2Configuration, LFM2Model>},
         {"nemotron_h",   create_model<NemotronHConfiguration, NemotronHModel>},
         {"granitemoehybrid", create_model<GraniteMoeHybridConfiguration, GraniteMoeHybridModel>},
-        {"bitnet",       create_model<BitNetConfiguration, BitNetModel>},
+        {"bitnet",       create_model<LlamaConfiguration, LlamaModel>},
     });
     return registry;
 }
