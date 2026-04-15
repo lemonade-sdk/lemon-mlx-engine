@@ -1,5 +1,6 @@
 // BitNet 1.58-bit model implementation for lemon-mlx-engine
 // Llama architecture with relu_squared activation and ternary weights
+// Dequantizes uint8 packed ternary weights in sanitize_impl
 // "Little bones" — Gord Downie
 
 #include <mlx-lm/llm/models/bitnet.h>
@@ -9,31 +10,13 @@
 #include <mlx/mlx.h>
 #include <cmath>
 #include <iostream>
+#include <vector>
 
 namespace mx = mlx::core;
 
 namespace mlx_lm {
 
-// --- JSON deserialization (reuse Llama's with BitNet extras) ---
-
-void from_json(const nlohmann::json& j, BitNetConfiguration& c) {
-    // Reuse Llama config parsing
-    c.hidden_size = j.at("hidden_size").get<int>();
-    c.num_hidden_layers = j.at("num_hidden_layers").get<int>();
-    c.intermediate_size = j.at("intermediate_size").get<int>();
-    c.num_attention_heads = j.at("num_attention_heads").get<int>();
-    if (j.contains("head_dim") && !j["head_dim"].is_null())
-        c.head_dim = j["head_dim"].get<int>();
-    c.rms_norm_eps = j.at("rms_norm_eps").get<float>();
-    c.vocab_size = j.at("vocab_size").get<int>();
-    c.num_key_value_heads = j.value("num_key_value_heads", c.num_attention_heads);
-    if (j.contains("max_position_embeddings"))
-        c.max_position_embeddings = j["max_position_embeddings"].get<int>();
-    if (j.contains("rope_theta"))
-        c.rope_theta = j["rope_theta"].get<float>();
-    if (j.contains("tie_word_embeddings"))
-        c.tie_word_embeddings = j["tie_word_embeddings"].get<bool>();
-}
+// BitNet reuses Llama's from_json since BitNetConfiguration = LlamaConfiguration
 
 // --- RMS Norm helper ---
 
@@ -41,6 +24,42 @@ static mx::array rms_norm(const mx::array& x, const mx::array& weight, float eps
     auto ms = mx::mean(mx::square(x), {-1}, true);
     auto norm = x * mx::rsqrt(ms + eps);
     return norm * weight;
+}
+
+// --- BitNet ternary dequantization ---
+
+mx::array dequantize_bitnet_weight(
+    const mx::array& packed_weight,
+    const mx::array& weight_scale,
+    int out_features) {
+
+    auto packed = mx::astype(packed_weight, mx::int32);
+    int packed_rows = packed_weight.shape(0);
+    int in_features = packed_weight.shape(1);
+
+    // Extract 4 ternary values from each byte along row dimension
+    auto v0 = mx::bitwise_and(packed, mx::array(0x03));
+    auto v1 = mx::bitwise_and(mx::right_shift(packed, mx::array(2)), mx::array(0x03));
+    auto v2 = mx::bitwise_and(mx::right_shift(packed, mx::array(4)), mx::array(0x03));
+    auto v3 = mx::bitwise_and(mx::right_shift(packed, mx::array(6)), mx::array(0x03));
+
+    // Stack along row dim: [packed_rows, 4, in_features] → [out_features, in_features]
+    auto stacked = mx::stack({v0, v1, v2, v3}, 1);
+    auto flat = mx::reshape(stacked, {out_features, in_features});
+
+    // Map 0→-1, 1→0, 2→+1
+    auto ternary = mx::astype(flat - 1, mx::float16);
+    auto scale = mx::astype(weight_scale, mx::float16);
+    return ternary * scale;
+}
+
+// --- Quantized-aware linear (same as Llama) ---
+
+static mx::array linear_fwd(
+    const mx::array& x,
+    const mx::array& weight,
+    const std::optional<mx::array>& bias = std::nullopt) {
+    return linear_forward(x, weight, bias.has_value() ? &bias.value() : nullptr);
 }
 
 // --- BitNet Attention ---
@@ -52,103 +71,121 @@ BitNetAttention::BitNetAttention(const BitNetConfiguration& args)
             args.max_position_embeddings,
             args.rope_traditional,
             args.rope_theta),
-      q_proj_(args.hidden_size, args.num_attention_heads * args.resolved_head_dim(), false),
-      k_proj_(args.hidden_size, args.num_key_value_heads * args.resolved_head_dim(), false),
-      v_proj_(args.hidden_size, args.num_key_value_heads * args.resolved_head_dim(), false),
-      o_proj_(args.num_attention_heads * args.resolved_head_dim(), args.hidden_size, false) {}
+      q_proj_w_(mx::zeros({args.num_attention_heads * args.resolved_head_dim(), args.hidden_size})),
+      k_proj_w_(mx::zeros({args.num_key_value_heads * args.resolved_head_dim(), args.hidden_size})),
+      v_proj_w_(mx::zeros({args.num_key_value_heads * args.resolved_head_dim(), args.hidden_size})),
+      o_proj_w_(mx::zeros({args.hidden_size, args.num_attention_heads * args.resolved_head_dim()})),
+      attn_sub_norm_weight_(mx::zeros({args.hidden_size})) {}
 
 void BitNetAttention::load_weights(
     const std::unordered_map<std::string, mx::array>& weights,
     const std::string& prefix) {
-    q_proj_.load_weights(weights, prefix + "q_proj.");
-    k_proj_.load_weights(weights, prefix + "k_proj.");
-    v_proj_.load_weights(weights, prefix + "v_proj.");
-    o_proj_.load_weights(weights, prefix + "o_proj.");
-    // BitNet sub-layer norm
+    q_proj_w_ = weights.at(prefix + "q_proj.weight");
+    k_proj_w_ = weights.at(prefix + "k_proj.weight");
+    v_proj_w_ = weights.at(prefix + "v_proj.weight");
+    o_proj_w_ = weights.at(prefix + "o_proj.weight");
+
     auto it = weights.find(prefix + "attn_sub_norm.weight");
     if (it != weights.end()) {
         attn_sub_norm_weight_ = it->second;
     }
 }
 
+std::unordered_map<std::string, mx::array*>
+BitNetAttention::weight_map(const std::string& prefix) {
+    std::unordered_map<std::string, mx::array*> map;
+    map[prefix + "q_proj.weight"] = &q_proj_w_;
+    map[prefix + "k_proj.weight"] = &k_proj_w_;
+    map[prefix + "v_proj.weight"] = &v_proj_w_;
+    map[prefix + "o_proj.weight"] = &o_proj_w_;
+    map[prefix + "attn_sub_norm.weight"] = &attn_sub_norm_weight_;
+    return map;
+}
+
 mx::array BitNetAttention::operator()(
-    const mx::array& x, const mx::array& mask, KVCache* cache) {
+    const mx::array& x, const AttentionMask& mask, KVCache* cache) {
     int B = x.shape(0);
     int L = x.shape(1);
     int head_dim = args_.resolved_head_dim();
 
-    auto queries = q_proj_(x);
-    auto keys = k_proj_(x);
-    auto values = v_proj_(x);
+    auto queries = linear_fwd(x, q_proj_w_);
+    auto keys = linear_fwd(x, k_proj_w_);
+    auto values = linear_fwd(x, v_proj_w_);
 
-    queries = mx::reshape(queries, {B, L, args_.num_attention_heads, head_dim});
-    keys = mx::reshape(keys, {B, L, args_.num_key_value_heads, head_dim});
-    values = mx::reshape(values, {B, L, args_.num_key_value_heads, head_dim});
+    // [B, L, n_heads, head_dim] → [B, n_heads, L, head_dim]
+    queries = mx::transpose(mx::reshape(queries, {B, L, args_.num_attention_heads, head_dim}), {0, 2, 1, 3});
+    keys = mx::transpose(mx::reshape(keys, {B, L, args_.num_key_value_heads, head_dim}), {0, 2, 1, 3});
+    values = mx::transpose(mx::reshape(values, {B, L, args_.num_key_value_heads, head_dim}), {0, 2, 1, 3});
 
     int offset = cache ? cache->offset() : 0;
     queries = rope_(queries, offset);
     keys = rope_(keys, offset);
 
     if (cache) {
-        auto [k, v] = cache->update_and_fetch(keys, values);
+        auto [k, v] = cache->update(keys, values);
         keys = k;
         values = v;
     }
 
-    auto output = scaled_dot_product_attention(
-        queries, keys, values, scale_, mask);
+    auto output = sdpa(queries, keys, values, scale_, mask);
 
-    output = mx::reshape(output, {B, L, -1});
+    // [B, n_heads, L, head_dim] → [B, L, n_heads * head_dim]
+    output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
-    // BitNet: apply sub-layer norm before output projection
+    // BitNet: sub-layer norm before output projection
     if (attn_sub_norm_weight_.size() > 0) {
         output = rms_norm(output, attn_sub_norm_weight_, args_.rms_norm_eps);
     }
 
-    return o_proj_(output);
+    return linear_fwd(output, o_proj_w_);
 }
 
-// --- BitNet MLP (relu_squared instead of SiLU) ---
-
-BitNetMLP::BitNetMLP(int hidden_size, int intermediate_size)
-    : gate_proj_(hidden_size, intermediate_size, false),
-      down_proj_(intermediate_size, hidden_size, false),
-      up_proj_(hidden_size, intermediate_size, false) {}
+// --- BitNet MLP (relu_squared) ---
 
 void BitNetMLP::load_weights(
     const std::unordered_map<std::string, mx::array>& weights,
     const std::string& prefix) {
-    gate_proj_.load_weights(weights, prefix + "gate_proj.");
-    down_proj_.load_weights(weights, prefix + "down_proj.");
-    up_proj_.load_weights(weights, prefix + "up_proj.");
+    gate_proj_w_ = weights.at(prefix + "gate_proj.weight");
+    down_proj_w_ = weights.at(prefix + "down_proj.weight");
+    up_proj_w_ = weights.at(prefix + "up_proj.weight");
+
     auto it = weights.find(prefix + "ffn_sub_norm.weight");
     if (it != weights.end()) {
         ffn_sub_norm_weight_ = it->second;
     }
 }
 
-mx::array BitNetMLP::operator()(const mx::array& x) {
-    // BitNet uses relu_squared: relu(x)^2 instead of SiLU
-    auto gate = relu_squared(gate_proj_(x));
-    auto up = up_proj_(x);
-    auto hidden = gate * up;
-
-    // BitNet: apply sub-layer norm before down projection
-    if (ffn_sub_norm_weight_.size() > 0) {
-        hidden = rms_norm(hidden, ffn_sub_norm_weight_, 1e-5f);
-    }
-
-    return down_proj_(hidden);
+std::unordered_map<std::string, mx::array*>
+BitNetMLP::weight_map(const std::string& prefix) {
+    std::unordered_map<std::string, mx::array*> map;
+    map[prefix + "gate_proj.weight"] = &gate_proj_w_;
+    map[prefix + "down_proj.weight"] = &down_proj_w_;
+    map[prefix + "up_proj.weight"] = &up_proj_w_;
+    map[prefix + "ffn_sub_norm.weight"] = &ffn_sub_norm_weight_;
+    return map;
 }
 
-// --- BitNet Decoder Layer ---
+mx::array BitNetMLP::operator()(const mx::array& x) {
+    auto gate = relu_squared(linear_fwd(x, gate_proj_w_));
+    auto up = linear_fwd(x, up_proj_w_);
+    auto hidden = gate * up;
 
-BitNetDecoderLayer::BitNetDecoderLayer(const BitNetConfiguration& args)
-    : self_attn_(args),
-      mlp_(args.hidden_size, args.intermediate_size),
+    if (ffn_sub_norm_weight_.size() > 0) {
+        hidden = rms_norm(hidden, ffn_sub_norm_weight_, rms_norm_eps_);
+    }
+
+    return linear_fwd(hidden, down_proj_w_);
+}
+
+// --- BitNet Transformer Block ---
+
+BitNetTransformerBlock::BitNetTransformerBlock(const BitNetConfiguration& args)
+    : self_attn_(args), mlp_(args.rms_norm_eps),
+      input_layernorm_weight_(mx::zeros({args.hidden_size})),
+      post_attention_layernorm_weight_(mx::zeros({args.hidden_size})),
       rms_norm_eps_(args.rms_norm_eps) {}
 
-void BitNetDecoderLayer::load_weights(
+void BitNetTransformerBlock::load_weights(
     const std::unordered_map<std::string, mx::array>& weights,
     const std::string& prefix) {
     self_attn_.load_weights(weights, prefix + "self_attn.");
@@ -157,65 +194,176 @@ void BitNetDecoderLayer::load_weights(
     post_attention_layernorm_weight_ = weights.at(prefix + "post_attention_layernorm.weight");
 }
 
-mx::array BitNetDecoderLayer::operator()(
-    const mx::array& x, const mx::array& mask, KVCache* cache) {
-    auto residual = x;
-    auto hidden = rms_norm(x, input_layernorm_weight_, rms_norm_eps_);
-    hidden = self_attn_(hidden, mask, cache);
-    hidden = residual + hidden;
-
-    residual = hidden;
-    hidden = rms_norm(hidden, post_attention_layernorm_weight_, rms_norm_eps_);
-    hidden = mlp_(hidden);
-    hidden = residual + hidden;
-
-    return hidden;
+std::unordered_map<std::string, mx::array*>
+BitNetTransformerBlock::weight_map(const std::string& prefix) {
+    auto map = self_attn_.weight_map(prefix + "self_attn.");
+    auto mlp_map = mlp_.weight_map(prefix + "mlp.");
+    map.insert(mlp_map.begin(), mlp_map.end());
+    map[prefix + "input_layernorm.weight"] = &input_layernorm_weight_;
+    map[prefix + "post_attention_layernorm.weight"] = &post_attention_layernorm_weight_;
+    return map;
 }
 
-// --- BitNet Model ---
+mx::array BitNetTransformerBlock::operator()(
+    const mx::array& x, const AttentionMask& mask, KVCache* cache) {
+    auto r = self_attn_(rms_norm(x, input_layernorm_weight_, rms_norm_eps_), mask, cache);
+    auto h = x + r;
+    r = mlp_(rms_norm(h, post_attention_layernorm_weight_, rms_norm_eps_));
+    return h + r;
+}
 
-BitNetModel::BitNetModel(const BitNetConfiguration& config)
-    : config_(config) {
-    for (int i = 0; i < config.num_hidden_layers; i++) {
-        layers_.emplace_back(config);
+// --- BitNet Model Inner ---
+
+BitNetModelInner::BitNetModelInner(const BitNetConfiguration& args)
+    : embed_tokens_weight_(mx::zeros({args.vocab_size, args.hidden_size})),
+      norm_weight_(mx::zeros({args.hidden_size})),
+      rms_norm_eps_(args.rms_norm_eps) {
+    for (int i = 0; i < args.num_hidden_layers; i++) {
+        layers_.emplace_back(args);
     }
+}
+
+mx::array BitNetModelInner::operator()(
+    const mx::array& inputs, std::vector<KVCache>* cache) {
+    auto h = mx::take(embed_tokens_weight_, inputs, 0);
+
+    auto mask = create_attention_mask(h, cache && !cache->empty() ? &(*cache)[0] : nullptr);
+
+    for (int i = 0; i < static_cast<int>(layers_.size()); i++) {
+        KVCache* layer_cache = (cache && !cache->empty()) ? &(*cache)[i] : nullptr;
+        h = layers_[i](h, mask, layer_cache);
+    }
+
+    return rms_norm(h, norm_weight_, rms_norm_eps_);
+}
+
+mx::array BitNetModelInner::embed_as_linear(const mx::array& x) const {
+    return linear_forward(x, embed_tokens_weight_);
+}
+
+std::unordered_map<std::string, mx::array*> BitNetModelInner::weight_map() {
+    std::unordered_map<std::string, mx::array*> map;
+    map["embed_tokens.weight"] = &embed_tokens_weight_;
+    map["norm.weight"] = &norm_weight_;
+
+    for (int i = 0; i < static_cast<int>(layers_.size()); i++) {
+        std::string prefix = "layers." + std::to_string(i) + ".";
+        auto layer_map = layers_[i].weight_map(prefix);
+        map.insert(layer_map.begin(), layer_map.end());
+    }
+
+    return map;
+}
+
+// --- BitNet Top-Level Model ---
+
+BitNetModel::BitNetModel(const BitNetConfiguration& args)
+    : config_(args), model_(args) {
+    kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
+}
+
+PrepareResult BitNetModel::prepare_impl(
+    const LMInput& input, std::vector<KVCache>& cache, int window_size) {
+    return llm_default_prepare(*this, input, cache, window_size);
+}
+
+LMOutput BitNetModel::call_impl(
+    const LMInput::Text& input,
+    std::vector<KVCache>* cache,
+    const LMOutput::State* /*state*/) {
+    auto logits = forward_impl(input.tokens, cache);
+    return LMOutput(logits);
+}
+
+mx::array BitNetModel::forward_impl(
+    const mx::array& inputs, std::vector<KVCache>* cache) {
+    auto out = model_(inputs, cache);
+    if (lm_head_weight_.has_value()) {
+        return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+    } else {
+        return model_.embed_as_linear(out);
+    }
+}
+
+std::unordered_map<std::string, mx::array>
+BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
+    // Dequantize uint8 ternary weights at sanitize time
+    std::vector<std::string> to_remove;
+    std::vector<std::pair<std::string, mx::array>> to_add;
+
+    for (auto& [key, val] : weights) {
+        const std::string suffix = ".weight_scale";
+        if (key.size() > suffix.size() &&
+            key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            auto prefix = key.substr(0, key.size() - suffix.size());
+            auto weight_key = prefix + ".weight";
+
+            auto w_it = weights.find(weight_key);
+            if (w_it != weights.end() && w_it->second.dtype() == mx::uint8) {
+                int packed_rows = w_it->second.shape(0);
+                int out_features = packed_rows * 4;
+
+                std::cout << "[BitNet] Dequantizing " << weight_key
+                          << " (" << packed_rows << "x" << w_it->second.shape(1)
+                          << " uint8 -> " << out_features << "x" << w_it->second.shape(1)
+                          << " float16)" << std::endl;
+
+                to_add.emplace_back(weight_key, dequantize_bitnet_weight(
+                    w_it->second, val, out_features));
+                to_remove.push_back(key);
+            }
+        }
+    }
+
+    for (auto& [k, v] : to_add) {
+        weights.insert_or_assign(k, std::move(v));
+    }
+    for (const auto& k : to_remove) {
+        weights.erase(k);
+    }
+
+    // Remove unused rotary embeddings
+    std::vector<std::string> rotary_remove;
+    for (auto& [k, v] : weights) {
+        if (k.find("self_attn.rotary_emb.inv_freq") != std::string::npos) {
+            rotary_remove.push_back(k);
+        }
+    }
+    for (const auto& k : rotary_remove) {
+        weights.erase(k);
+    }
+
+    return weights;
 }
 
 void BitNetModel::load_weights(
     const std::unordered_map<std::string, mx::array>& weights) {
-    embed_tokens_ = weights.at("model.embed_tokens.weight");
-    norm_weight_ = weights.at("model.norm.weight");
-
-    auto lm_it = weights.find("lm_head.weight");
-    if (lm_it != weights.end()) {
-        lm_head_weight_ = lm_it->second;
+    auto wmap = weight_map();
+    for (auto& [name, target] : wmap) {
+        auto it = weights.find(name);
+        if (it != weights.end()) {
+            *target = it->second;
+        }
     }
 
-    for (int i = 0; i < static_cast<int>(layers_.size()); i++) {
-        std::string prefix = "model.layers." + std::to_string(i) + ".";
-        layers_[i].load_weights(weights, prefix);
-    }
+    std::cout << "[BitNet] Loaded " << config_.num_hidden_layers << " layers, "
+              << "hidden_size=" << config_.hidden_size
+              << ", intermediate_size=" << config_.intermediate_size
+              << ", vocab_size=" << config_.vocab_size << std::endl;
 }
 
-mx::array BitNetModel::operator()(const mx::array& inputs, KVCacheVector& cache) {
-    auto x = mx::take(embed_tokens_, inputs, 0);
+std::unordered_map<std::string, mx::array*> BitNetModel::weight_map() {
+    std::unordered_map<std::string, mx::array*> map;
 
-    auto mask = create_causal_mask(x.shape(1),
-        cache.empty() ? 0 : cache[0]->offset());
-
-    for (int i = 0; i < static_cast<int>(layers_.size()); i++) {
-        x = layers_[i](x, mask, cache.empty() ? nullptr : cache[i].get());
+    for (auto& [k, v] : model_.weight_map()) {
+        map["model." + k] = v;
     }
-
-    x = rms_norm(x, norm_weight_, config_.rms_norm_eps);
 
     if (lm_head_weight_.has_value()) {
-        x = mx::matmul(x, mx::transpose(*lm_head_weight_));
-    } else if (config_.tie_word_embeddings) {
-        x = mx::matmul(x, mx::transpose(embed_tokens_));
+        map["lm_head.weight"] = &lm_head_weight_.value();
     }
 
-    return x;
+    return map;
 }
 
 } // namespace mlx_lm

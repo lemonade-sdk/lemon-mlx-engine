@@ -42,6 +42,7 @@
 #include <mlx-lm/llm/models/lfm2_moe.h>
 #include <mlx-lm/llm/models/baichuan_m1.h>
 #include <mlx-lm/llm/models/falcon_h1.h>
+#include <mlx-lm/llm/models/bitnet.h>
 #include <mlx-lm/llm/models/lfm2.h>
 #include <mlx-lm/llm/models/nemotron_h.h>
 #include <mlx-lm/llm/models/granite_moe_hybrid.h>
@@ -155,7 +156,7 @@ static std::unordered_map<std::string, LLMLoaderFn>& llm_loaders() {
         {"lfm2",         load_typed_model<LFM2Configuration, LFM2Model>},
         {"nemotron_h",   load_typed_model<NemotronHConfiguration, NemotronHModel>},
         {"granitemoehybrid", load_typed_model<GraniteMoeHybridConfiguration, GraniteMoeHybridModel>},
-        {"bitnet",       load_typed_model<LlamaConfiguration, LlamaModel>},
+        {"bitnet",       load_typed_model<BitNetConfiguration, BitNetModel>},
     };
     return loaders;
 }
