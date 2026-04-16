@@ -38,6 +38,33 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DMLX_BUILD_ROCM=ON
 make -j
 ```
 
+### ROCm runtime setup
+
+Stock ROCm ships generic Tensile kernels that do not cover every `gfx` target. On architectures like **gfx1151 (Strix Halo)**, running the engine against system rocBLAS produces:
+
+```
+rocBLAS error: Could not initialize Tensile host: regex_error(error_backref)
+```
+
+Two fixes, in order of preference:
+
+**1. Native Tensile kernels via [TheRock](https://github.com/ROCm/TheRock)** — builds rocBLAS from source with kernels generated for your exact `gfx` target. Point lemon-mlx-engine at them at runtime:
+
+```bash
+export ROCBLAS_TENSILE_LIBPATH=$HOME/therock/build/math-libs/BLAS/rocBLAS/dist/lib/rocblas/library
+export LD_LIBRARY_PATH=$HOME/therock/build/math-libs/BLAS/rocBLAS/dist/lib:/opt/rocm/lib
+```
+
+A full TheRock build recipe for gfx1151 (including GCC 15 patches, required Python packages, and the minimum flag set) is documented at [stampby/rocm-cpp](https://github.com/stampby/rocm-cpp) — see [`docs/02-therock-build.md`](https://github.com/stampby/rocm-cpp/blob/main/docs/02-therock-build.md).
+
+**2. GFX version override** — use kernels compiled for a related target:
+
+```bash
+export HSA_OVERRIDE_GFX_VERSION=11.0.0   # or the closest supported gfx
+```
+
+Override works for basic inference but leaves performance on the table compared to native Tensile kernels. For Strix Halo, expect roughly **+13–32% throughput** when using TheRock-built kernels vs. stock ROCm — the delta is GEMM-shape dependent and largest on LLM FFN shapes.
+
 ## Interactive Chat
 
 ```
