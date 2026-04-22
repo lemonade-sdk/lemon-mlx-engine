@@ -11,13 +11,13 @@ on:
         required: false
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
       rocm_channel:
-        description: 'ROCm channel: stable (AMD apt) or tech-preview (TheRock nightlies, version from .github/rocm-channels.json)'
+        description: 'ROCm channel: preview (7.2.1 from AMD apt) or stable (7.12.x from AMD apt). Both sourced directly from https://repo.radeon.com/rocm/apt/. Only these two values are accepted.'
         required: false
-        default: 'stable'
+        default: 'preview'
         type: choice
         options:
+          - preview
           - stable
-          - tech-preview
       create_release:
         description: 'Create a GitHub release after successful build'
         required: false
@@ -28,15 +28,15 @@ on:
     types: [opened, synchronize, reopened]
 
   schedule:
-    # Daily: stable channel
+    # Daily: preview channel (ROCm 7.2.1 from AMD apt)
     - cron: '0 14 * * *'
-    # Weekly Monday: tech-preview channel
+    # Weekly Monday: stable channel (ROCm 7.12.x from AMD apt)
     - cron: '0 16 * * 1'
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
   GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
-  ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'tech-preview') || 'stable' }}
+  ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'stable') || 'preview' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -116,20 +116,61 @@ jobs:
         sudo apt-get install -y cmake ninja-build patchelf unzip curl \
           libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
 
-    - name: Install ROCm (stable channel)
-      if: env.ROCM_CHANNEL == 'stable'
+    - name: Validate ROCm channel
+      env:
+        CHANNEL: ${{ env.ROCM_CHANNEL }}
       run: |
-        rocm_version=$(jq -r '.stable.version' .github/rocm-channels.json)
-        echo "Stable ROCm version from config: $rocm_version"
+        # Allowlist: only 'preview' (7.2.1) or 'stable' (7.12.x) are accepted.
+        # Both channels must resolve to https://repo.radeon.com/rocm/apt/. Any
+        # other channel or source (distro packages, TheRock S3, nightlies, etc.)
+        # is rejected here before any install step runs.
+        case "$CHANNEL" in
+          preview|stable) ;;
+          *)
+            echo "::error::Unsupported ROCm channel '$CHANNEL'."
+            echo "::error::Allowed channels: preview (ROCm 7.2.1), stable (ROCm 7.12.x)."
+            echo "::error::Both channels are sourced from https://repo.radeon.com/rocm/apt/."
+            exit 1
+            ;;
+        esac
+        config_channels=$(jq -r '._allowed_channels | join(",")' .github/rocm-channels.json)
+        echo "Config allowlist: $config_channels"
+        echo "Selected channel: $CHANNEL"
 
-        # Add ROCm apt repository
+    - name: Install ROCm (preview channel - 7.2.1 from AMD apt)
+      if: env.ROCM_CHANNEL == 'preview'
+      run: |
+        rocm_version=$(jq -r '.preview.version' .github/rocm-channels.json)
+        rocm_source=$(jq -r '.preview.source' .github/rocm-channels.json)
+        rocm_apt_url=$(jq -r '.preview.apt_url' .github/rocm-channels.json)
+
+        if [ "$rocm_source" != "amd-apt" ]; then
+          echo "::error::preview channel source must be 'amd-apt', got '$rocm_source'"
+          exit 1
+        fi
+        if [ "$rocm_version" != "7.2.1" ]; then
+          echo "::error::preview channel version is pinned to 7.2.1, got '$rocm_version'"
+          exit 1
+        fi
+        case "$rocm_apt_url" in
+          https://repo.radeon.com/rocm/apt/*) ;;
+          *)
+            echo "::error::apt_url must point at https://repo.radeon.com/rocm/apt/, got '$rocm_apt_url'"
+            exit 1
+            ;;
+        esac
+
+        echo "Installing ROCm $rocm_version from AMD apt: $rocm_apt_url"
+
+        # Add AMD-official ROCm apt repository (repo.radeon.com).
         sudo mkdir --parents --mode=0755 /etc/apt/keyrings
         wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
           gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
 
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${rocm_version} jammy main" \
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] ${rocm_apt_url} jammy main" \
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
+        # Pin packages to repo.radeon.com only - block any distro ROCm package.
         printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
           | sudo tee /etc/apt/preferences.d/rocm-pin-600
 
@@ -138,66 +179,74 @@ jobs:
           hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
           rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
 
-        echo "Installed ROCm stable: $rocm_version"
+        echo "Installed ROCm preview: $rocm_version (source: $rocm_apt_url)"
         echo "DETECTED_ROCM_VERSION=$rocm_version" >> $GITHUB_ENV
-        echo "DETECTED_ROCM_CHANNEL=stable" >> $GITHUB_ENV
+        echo "DETECTED_ROCM_CHANNEL=preview" >> $GITHUB_ENV
 
-    - name: Install ROCm (tech-preview channel — TheRock nightlies)
-      if: env.ROCM_CHANNEL == 'tech-preview'
+    - name: Install ROCm (stable channel - 7.12.x from AMD apt)
+      if: env.ROCM_CHANNEL == 'stable'
       run: |
-        current_target="${{ matrix.gfx_target }}"
-        version_prefix=$(jq -r '.["tech-preview"].version_prefix' .github/rocm-channels.json)
-        echo "Tech-preview version prefix from config: $version_prefix"
+        version_prefix=$(jq -r '.stable.version_prefix' .github/rocm-channels.json)
+        rocm_source=$(jq -r '.stable.source' .github/rocm-channels.json)
+        apt_url_prefix=$(jq -r '.stable.apt_url_prefix' .github/rocm-channels.json)
 
-        download_rocm_tarball() {
-          local target="$1"
-          local dest="$2"
-          local ver_prefix="$3"
-
-          # Map target to S3 naming
-          local s3_target="$target"
-          if [ "$target" = "gfx110X" ] || [ "$target" = "gfx120X" ]; then
-            s3_target="${target}-all"
-          fi
-
-          echo "Finding latest ROCm $ver_prefix.x tarball for target: $s3_target"
-          local files
-          files=$(curl -s "https://therock-nightly-tarball.s3.amazonaws.com/?prefix=therock-dist-linux-$s3_target-$ver_prefix" \
-            | grep -oP 'therock-dist-linux-'"$s3_target"'-[^<]+\.tar\.gz' \
-            | sort -V | tail -1)
-
-          if [ -z "$files" ]; then
-            echo "Error: No ROCm tarballs found for target $s3_target with prefix $ver_prefix"
-            return 1
-          fi
-
-          local url="https://therock-nightly-tarball.s3.amazonaws.com/$files"
-          local version
-          version=$(echo "$files" | grep -oP '\d+\.\d+\.\d+[a-z]*\d*')
-          echo "Detected ROCm tech-preview version: $version"
-          echo "DETECTED_ROCM_VERSION=$version" >> $GITHUB_ENV
-
-          echo "Downloading ROCm from: $url"
-          sudo mkdir -p "$dest"
-          curl -sL "$url" | sudo tar --use-compress-program=gzip -xf - -C "$dest" --strip-components=1
-        }
-
-        sudo mkdir -p /opt/rocm
-
-        if [ "$current_target" = "gfx115X_gfx120X" ]; then
-          download_rocm_tarball "gfx1150" "/opt/rocm" "$version_prefix"
-          for extra_target in gfx1151 gfx120X; do
-            download_rocm_tarball "$extra_target" "/tmp/rocm-extra" "$version_prefix"
-            if [ -d /tmp/rocm-extra/lib/rocblas/library ]; then
-              sudo cp -n /tmp/rocm-extra/lib/rocblas/library/* /opt/rocm/lib/rocblas/library/ 2>/dev/null || true
-            fi
-            sudo rm -rf /tmp/rocm-extra
-          done
-        else
-          download_rocm_tarball "$current_target" "/opt/rocm" "$version_prefix"
+        if [ "$rocm_source" != "amd-apt" ]; then
+          echo "::error::stable channel source must be 'amd-apt', got '$rocm_source'"
+          exit 1
         fi
+        if [ "$version_prefix" != "7.12" ]; then
+          echo "::error::stable channel version_prefix is pinned to 7.12, got '$version_prefix'"
+          exit 1
+        fi
+        case "$apt_url_prefix" in
+          https://repo.radeon.com/rocm/apt/*) ;;
+          *)
+            echo "::error::apt_url_prefix must point at https://repo.radeon.com/rocm/apt/, got '$apt_url_prefix'"
+            exit 1
+            ;;
+        esac
 
-        echo "DETECTED_ROCM_CHANNEL=tech-preview" >> $GITHUB_ENV
+        # Resolve latest 7.12.x patch version published at repo.radeon.com by
+        # parsing the deb-mirror directory listing. This is the single source of
+        # truth; no fallback to distro packages or nightly tarballs is allowed.
+        echo "Resolving latest 7.12.x at https://repo.radeon.com/rocm/apt/"
+        listing=$(curl -fsSL https://repo.radeon.com/rocm/apt/ || true)
+        resolved_version=$(echo "$listing" \
+          | grep -oE 'href="7\.12(\.[0-9]+)?/"' \
+          | sed -E 's/.*"(7\.12(\.[0-9]+)?)\/".*/\1/' \
+          | sort -V | tail -1)
+
+        if [ -z "$resolved_version" ]; then
+          echo "::error::ROCm 7.12.x is not yet published at https://repo.radeon.com/rocm/apt/."
+          echo "::error::The stable channel is pinned to AMD's official deb mirror; no"
+          echo "::error::fallback to distro packages or TheRock S3 nightlies is permitted."
+          echo "::error::Retry once AMD publishes 7.12. For local dev use the preview channel (7.2.1)."
+          exit 1
+        fi
+        rocm_apt_url="https://repo.radeon.com/rocm/apt/${resolved_version}"
+
+        echo "Resolved stable ROCm version: $resolved_version"
+        echo "Installing from AMD apt: $rocm_apt_url"
+
+        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+        wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
+          gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] ${rocm_apt_url} jammy main" \
+          | sudo tee /etc/apt/sources.list.d/rocm.list
+
+        # Pin packages to repo.radeon.com only - block any distro ROCm package.
+        printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+          | sudo tee /etc/apt/preferences.d/rocm-pin-600
+
+        sudo apt-get update
+        sudo apt-get install -y \
+          hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
+          rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
+
+        echo "Installed ROCm stable: $resolved_version (source: $rocm_apt_url)"
+        echo "DETECTED_ROCM_VERSION=$resolved_version" >> $GITHUB_ENV
+        echo "DETECTED_ROCM_CHANNEL=stable" >> $GITHUB_ENV
 
     - name: Map GPU targets
       id: map-targets
@@ -408,7 +457,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         channel="${{ env.ROCM_CHANNEL }}"
-        # Match tags for this channel: b1000-stable, b1001-tech-preview, etc.
+        # Match tags for this channel: b1000-stable, b1001-preview, etc.
         existing_tags=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' \
           | grep -E "^b[0-9]{4}(-${channel})?$" | sed 's/-.*$//' | sort -V || echo "")
 
