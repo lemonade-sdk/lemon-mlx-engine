@@ -1,18 +1,17 @@
 {
-  "_comment": "Only two channels are supported: 'preview' (ROCm 7.2.1) and 'stable' (ROCm 7.12.x). Both pull binaries directly from AMD's official deb mirror at https://repo.radeon.com/rocm/apt/. Any other version or source must be rejected by the install step.",
-  "_source_of_truth": "https://repo.radeon.com/rocm/apt/",
-  "_allowed_channels": ["preview", "stable"],
+  "_comment": "Only two channels are supported: 'stable' (ROCm 7.12.0) and 'preview' (ROCm 7.2.1). Both pull prebuilt TheRock distribution tarballs directly from AMD's official repo at https://repo.amd.com/rocm/tarball/. Any other version or source must be rejected by the install step. This matches the pattern used by lemonade-sdk/whisper.cpp-rocm.",
+  "_source_of_truth": "https://repo.amd.com/rocm/tarball/",
+  "_allowed_channels": ["stable", "preview"],
+  "stable": {
+    "version": "7.12.0",
+    "source": "amd-tarball",
+    "tarball_base_url": "https://repo.amd.com/rocm/tarball",
+    "description": "AMD-official ROCm 7.12.0 TheRock tarball from repo.amd.com"
+  },
   "preview": {
     "version": "7.2.1",
-    "source": "amd-apt",
-    "apt_url": "https://repo.radeon.com/rocm/apt/7.2.1",
-    "description": "AMD-official ROCm 7.2.1 from repo.radeon.com"
-  },
-  "stable": {
-    "version_prefix": "7.12",
-    "source": "amd-apt",
-    "apt_url_prefix": "https://repo.radeon.com/rocm/apt/7.12",
-    "description": "AMD-official ROCm 7.12.x from repo.radeon.com (latest 7.12 patch release)",
-    "note": "As of 2026-04-22, 7.12 is not yet published at repo.radeon.com/rocm/apt/. Workflow fails fast until AMD publishes; no fallback to distro packages or TheRock S3."
+    "source": "amd-tarball",
+    "tarball_base_url": "https://repo.amd.com/rocm/tarball",
+    "description": "AMD-official ROCm 7.2.1 TheRock tarball from repo.amd.com"
   }
 }
