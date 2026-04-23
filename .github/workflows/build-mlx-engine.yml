@@ -9,6 +9,10 @@ on:
       gfx_target:
         description: 'AMD GPU targets for ROCm builds (comma-separated)'
         required: false
+        # TODO: per #14 (thelittlefireman) — once AMD publishes per-arch tarballs
+        # for gfx1152 + gfx1153 at https://repo.amd.com/rocm/tarball/ and hardware
+        # validation lands, swap the live default for the staged one below:
+        # default: 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X'
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
       rocm_channel:
         description: 'ROCm channel: preview (7.2.1 from AMD apt) or stable (7.12.x from AMD apt). Both sourced directly from https://repo.radeon.com/rocm/apt/. Only these two values are accepted.'
@@ -35,6 +39,9 @@ on:
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
+  # TODO: per #14 (thelittlefireman) — commented-out future form, activate
+  # once AMD tarballs exist for gfx1152 + gfx1153 and HW validation lands:
+  # GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X' }}
   GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
   ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'stable') || 'preview' }}
 
@@ -218,9 +225,18 @@ jobs:
         case "$current_target" in
           gfx110X) mapped="gfx1100;gfx1101;gfx1102" ;;
           gfx103X) mapped="gfx1030;gfx1031;gfx1032;gfx1034" ;;
+          # TODO: per #14 (thelittlefireman) — the two arms below are staged
+          # pending AMD per-arch tarballs for gfx1152 / gfx1153 at
+          # https://repo.amd.com/rocm/tarball/ + hardware validation. Drop the
+          # leading '#' to activate.
+          #gfx1153) mapped="gfx1153" ;;
+          #gfx1152) mapped="gfx1152" ;;
           gfx1151) mapped="gfx1151" ;;
           gfx1150) mapped="gfx1150" ;;
           gfx120X) mapped="gfx1200;gfx1201" ;;
+          # TODO: per #14 — once gfx1152 / gfx1153 are enabled above, the
+          # combined arm below should become:
+          #   gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201" ;;
           gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1200;gfx1201" ;;
           *) mapped="$current_target" ;;
         esac
