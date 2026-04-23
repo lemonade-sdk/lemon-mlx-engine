@@ -288,6 +288,19 @@ jobs:
         echo "mapped_target=$mapped" >> $GITHUB_OUTPUT
         echo "Mapped target: $mapped"
 
+    # Cache the MLX source tree that CMake FetchContent clones from
+    # NripeshN/mlx. The clone is pinned in CMakeLists.txt by GIT_TAG, so the
+    # CMakeLists.txt hash is the correct cache key — a source change there
+    # busts the cache, anything else is a hit. Saves ~1 GB over the wire
+    # and insulates us from GitHub-side 500s (see issue #18).
+    - name: Cache FetchContent MLX source
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/_deps/mlx-src
+          build/_deps/mlx-subbuild
+        key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
+
     - name: Locate or install rocWMMA
       id: rocwmma
       run: |
@@ -422,6 +435,14 @@ jobs:
         sudo apt-get install -y cmake ninja-build \
           libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
 
+    - name: Cache FetchContent MLX source
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/_deps/mlx-src
+          build/_deps/mlx-subbuild
+        key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
+
     - name: Build MLX Engine (CPU only)
       run: |
         mkdir -p build && cd build
@@ -476,6 +497,14 @@ jobs:
     - name: Install build dependencies
       run: |
         brew install cmake ninja curl
+
+    - name: Cache FetchContent MLX source
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/_deps/mlx-src
+          build/_deps/mlx-subbuild
+        key: mlx-src-macos-${{ hashFiles('CMakeLists.txt') }}
 
     - name: Build MLX Engine (macOS)
       run: |
