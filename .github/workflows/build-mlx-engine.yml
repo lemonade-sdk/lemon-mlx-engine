@@ -276,8 +276,6 @@ jobs:
           build/_deps/mlx-src
           build/_deps/mlx-subbuild
         key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
-        restore-keys: |
-          mlx-src-linux-
 
     - name: Build MLX Engine + ROCm
       run: |
@@ -361,8 +359,6 @@ jobs:
           build/_deps/mlx-src
           build/_deps/mlx-subbuild
         key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
-        restore-keys: |
-          mlx-src-linux-
 
     - name: Build MLX Engine (CPU only)
       run: |
@@ -426,8 +422,6 @@ jobs:
           build/_deps/mlx-src
           build/_deps/mlx-subbuild
         key: mlx-src-macos-${{ hashFiles('CMakeLists.txt') }}
-        restore-keys: |
-          mlx-src-macos-
 
     - name: Build MLX Engine (macOS)
       run: |
