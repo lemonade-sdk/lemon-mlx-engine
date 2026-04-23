@@ -306,12 +306,17 @@ jobs:
           echo "Found rocWMMA config in tarball: $CONFIG_FILE"
         else
           echo "rocWMMA config not found in tarball — vendoring from ROCm/rocWMMA GitHub release."
-          # Pin to a rocWMMA release compatible with ROCm 7.x. The rocm-X.Y.Z
-          # tag scheme on ROCm/rocWMMA tracks the parent ROCm release; rocm-6.4.1
-          # is the last tag that reliably ships on 7.x tarball consumers (no
-          # 7.x tag exists at time of writing) and is header-only so the ABI
-          # concern is moot. Revisit when ROCm/rocWMMA ships a 7.x tag.
-          ROCWMMA_TAG="${ROCWMMA_TAG:-rocm-6.4.1}"
+          # Pin to rocm-7.2.2. This tag is required (not 6.4.1) because:
+          #   1. gfx1150/gfx1151 WMMA arch defines (ROCWMMA_ARCH_GFX1151 etc.)
+          #      are only present in rocm-7.2.x+ — header compile silently
+          #      emits zero/wrong codegen on older tags for Strix Halo.
+          #   2. rocm_export_targets(roc::rocwmma NAMESPACE roc::) was added in
+          #      rocm-7.2.0 — pre-7.2 tags never generate rocwmma-config.cmake,
+          #      so the post-install find(CONFIG) misses and MLX's
+          #      find_package(rocwmma REQUIRED CONFIG) then fails identically.
+          # Revisit on ROCm/rocWMMA releases, keep matched to the ROCm major
+          # we ship in rocm-channels.json.
+          ROCWMMA_TAG="${ROCWMMA_TAG:-rocm-7.2.2}"
           TMPDIR=$(mktemp -d)
           git clone --depth 1 --branch "$ROCWMMA_TAG" \
             https://github.com/ROCm/rocWMMA.git "$TMPDIR/rocWMMA"
