@@ -1,7 +1,8 @@
 {
-  "_comment": "Only two channels are supported: 'stable' (ROCm 7.12.0) and 'preview' (ROCm 7.2.1). Both pull prebuilt TheRock distribution tarballs directly from AMD's official repo at https://repo.amd.com/rocm/tarball/. Any other version or source must be rejected by the install step. This matches the pattern used by lemonade-sdk/whisper.cpp-rocm.",
+  "_comment": "Only two channels are supported: 'stable' (ROCm 7.12.0) and 'preview' (ROCm 7.9.0rc1). Both pull prebuilt TheRock distribution tarballs directly from AMD's official repo at https://repo.amd.com/rocm/tarball/. Any other version or source must be rejected by the install step. This matches the pattern used by lemonade-sdk/whisper.cpp-rocm.",
   "_source_of_truth": "https://repo.amd.com/rocm/tarball/",
   "_allowed_channels": ["stable", "preview"],
+  "_history": "Prior to 2026-04-23 'preview' was pinned to 7.2.1, which does not exist at repo.amd.com/rocm/tarball/ (HEAD 403). Repinned to 7.9.0rc1, the newest pre-release TheRock tarball actually published for gfx1151 as of 2026-04-23. Revisit when AMD publishes a newer RC.",
   "stable": {
     "version": "7.12.0",
     "source": "amd-tarball",
@@ -9,9 +10,9 @@
     "description": "AMD-official ROCm 7.12.0 TheRock tarball from repo.amd.com"
   },
   "preview": {
-    "version": "7.2.1",
+    "version": "7.9.0rc1",
     "source": "amd-tarball",
     "tarball_base_url": "https://repo.amd.com/rocm/tarball",
-    "description": "AMD-official ROCm 7.2.1 TheRock tarball from repo.amd.com"
+    "description": "AMD-official ROCm 7.9.0rc1 TheRock pre-release tarball from repo.amd.com"
   }
 }

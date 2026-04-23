@@ -15,7 +15,7 @@ on:
         # default: 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X'
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
       rocm_channel:
-        description: 'ROCm channel: preview (7.2.1 from AMD apt) or stable (7.12.x from AMD apt). Both sourced directly from https://repo.radeon.com/rocm/apt/. Only these two values are accepted.'
+        description: 'ROCm channel: preview (7.9.0rc1 TheRock RC tarball) or stable (7.12.0 TheRock tarball). Both sourced directly from https://repo.amd.com/rocm/tarball/. Only these two values are accepted.'
         required: false
         default: 'preview'
         type: choice
@@ -32,9 +32,9 @@ on:
     types: [opened, synchronize, reopened]
 
   schedule:
-    # Daily: preview channel (ROCm 7.2.1 from AMD apt)
+    # Daily: preview channel (ROCm 7.9.0rc1 TheRock tarball from repo.amd.com)
     - cron: '0 14 * * *'
-    # Weekly Monday: stable channel (ROCm 7.12.x from AMD apt)
+    # Weekly Monday: stable channel (ROCm 7.12.0 TheRock tarball from repo.amd.com)
     - cron: '0 16 * * 1'
 
 env:
@@ -127,7 +127,7 @@ jobs:
       env:
         CHANNEL: ${{ env.ROCM_CHANNEL }}
       run: |
-        # Allowlist: only 'preview' (7.2.1) or 'stable' (7.12.0) are accepted.
+        # Allowlist: only 'preview' (7.9.0rc1) or 'stable' (7.12.0) are accepted.
         # Both channels must resolve to https://repo.amd.com/rocm/tarball/. Any
         # other channel or source (distro packages, apt-PPA, nightlies, etc.)
         # is rejected here before any install step runs. Mirrors the pattern
@@ -136,7 +136,7 @@ jobs:
           preview|stable) ;;
           *)
             echo "::error::Unsupported ROCm channel '$CHANNEL'."
-            echo "::error::Allowed channels: preview (ROCm 7.2.1), stable (ROCm 7.12.0)."
+            echo "::error::Allowed channels: preview (ROCm 7.9.0rc1), stable (ROCm 7.12.0)."
             echo "::error::Both channels are sourced from https://repo.amd.com/rocm/tarball/."
             exit 1
             ;;
