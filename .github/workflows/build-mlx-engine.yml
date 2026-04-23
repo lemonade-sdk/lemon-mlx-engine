@@ -288,6 +288,56 @@ jobs:
         echo "mapped_target=$mapped" >> $GITHUB_OUTPUT
         echo "Mapped target: $mapped"
 
+    - name: Locate or install rocWMMA
+      id: rocwmma
+      run: |
+        # MLX's ROCm backend does find_package(rocwmma REQUIRED CONFIG) when
+        # any target arch matches gfx1[12]xx (WMMA-capable RDNA3/3.5/4). The
+        # TheRock 7.9.0rc1 slim tarball skips rocWMMA, so we probe first and
+        # fall back to vendoring it from the ROCm/rocWMMA GitHub release
+        # matching the ROCm major/minor — rocWMMA is header-only plus a tiny
+        # cmake config, so this is cheap.
+        set -euxo pipefail
+
+        CONFIG_FILE=$(find /opt/rocm -iname 'rocwmma-config.cmake' -o -iname 'rocwmmaConfig.cmake' 2>/dev/null | head -1 || true)
+
+        if [ -n "$CONFIG_FILE" ]; then
+          ROCWMMA_DIR=$(dirname "$CONFIG_FILE")
+          echo "Found rocWMMA config in tarball: $CONFIG_FILE"
+        else
+          echo "rocWMMA config not found in tarball — vendoring from ROCm/rocWMMA GitHub release."
+          # Pin to a rocWMMA release compatible with ROCm 7.x. The rocm-X.Y.Z
+          # tag scheme on ROCm/rocWMMA tracks the parent ROCm release; rocm-6.4.1
+          # is the last tag that reliably ships on 7.x tarball consumers (no
+          # 7.x tag exists at time of writing) and is header-only so the ABI
+          # concern is moot. Revisit when ROCm/rocWMMA ships a 7.x tag.
+          ROCWMMA_TAG="${ROCWMMA_TAG:-rocm-6.4.1}"
+          TMPDIR=$(mktemp -d)
+          git clone --depth 1 --branch "$ROCWMMA_TAG" \
+            https://github.com/ROCm/rocWMMA.git "$TMPDIR/rocWMMA"
+          cd "$TMPDIR/rocWMMA"
+          # Header-only + cmake config install; no compile needed.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_PREFIX_PATH=/opt/rocm \
+            -DCMAKE_CXX_COMPILER="${{ steps.rocm-paths.outputs.clangxx }}" \
+            -DROCWMMA_BUILD_TESTS=OFF \
+            -DROCWMMA_BUILD_SAMPLES=OFF \
+            -DROCWMMA_BUILD_DOCS=OFF
+          sudo cmake --build build --target install
+          CONFIG_FILE=$(find /opt/rocm -iname 'rocwmma-config.cmake' -o -iname 'rocwmmaConfig.cmake' 2>/dev/null | head -1)
+          if [ -z "$CONFIG_FILE" ]; then
+            echo "::error::rocWMMA install completed but config not discoverable. Listing /opt/rocm/lib/cmake:"
+            ls -la /opt/rocm/lib/cmake 2>/dev/null || true
+            exit 1
+          fi
+          ROCWMMA_DIR=$(dirname "$CONFIG_FILE")
+        fi
+
+        echo "rocwmma_dir=$ROCWMMA_DIR" >> $GITHUB_OUTPUT
+        echo "rocWMMA CMake dir: $ROCWMMA_DIR"
+
     - name: Build MLX Engine + ROCm
       run: |
         export HIP_PATH=/opt/rocm
@@ -301,7 +351,8 @@ jobs:
           -DCMAKE_C_COMPILER="${{ steps.rocm-paths.outputs.clang }}" \
           -DCMAKE_CXX_COMPILER="${{ steps.rocm-paths.outputs.clangxx }}" \
           -DCMAKE_HIP_FLAGS="--rocm-path=/opt/rocm --rocm-device-lib-path=${{ steps.rocm-paths.outputs.bitcode }}" \
-          -DCMAKE_PREFIX_PATH=/opt/rocm \
+          -DCMAKE_PREFIX_PATH="/opt/rocm;${{ steps.rocwmma.outputs.rocwmma_dir }}" \
+          -Drocwmma_DIR="${{ steps.rocwmma.outputs.rocwmma_dir }}" \
           -DCMAKE_HIP_ARCHITECTURES="${{ steps.map-targets.outputs.mapped_target }}" \
           -DMLX_BUILD_ROCM=ON \
           -DMLX_LM_BUILD_TESTS=OFF \
