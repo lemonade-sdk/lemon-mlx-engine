@@ -185,28 +185,73 @@ jobs:
     - name: Locate ROCm clang + bitcode
       id: rocm-paths
       run: |
-        # TheRock tarball layout can vary between releases (llvm/bin vs lib/llvm/bin).
-        # Discover the actual clang and bitcode paths instead of hardcoding.
-        CLANG_PATH=$(find /opt/rocm -type f -name clang -executable -path '*/llvm/bin/*' -print -quit)
+        # TheRock tarball layout varies between releases:
+        #   - 7.12.0 populates both /opt/rocm/llvm/bin/ and /opt/rocm/lib/llvm/bin/
+        #   - 7.9.0rc1 populates only /opt/rocm/lib/llvm/bin/
+        # Inside lib/llvm/bin/, 7.9.0rc1 ships clang/clang++/amdclang as SYMLINKS
+        # (clang -> clang-20, clang++ -> clang, amdclang -> amdllvm). The previous
+        # probe used `find -type f`, which silently skips symlinks, hence the
+        # "Could not locate clang" failure despite the files being present.
+        #
+        # Resilient cascade:
+        #   1. Match files *or* symlinks (-xtype f follows the link to a file).
+        #   2. Try several name candidates in AMD-preferred order.
+        #   3. Emit actionable diagnostics on miss instead of bare "not found".
+        find_bin() {
+          local name="$1"
+          find /opt/rocm \( -type f -o -type l \) -name "$name" \
+            -path '*/llvm/bin/*' 2>/dev/null | head -n 1
+        }
+
+        CLANG_PATH=""
+        for candidate in clang amdclang clang-20 clang-19 clang-18 clang-17; do
+          CLANG_PATH=$(find_bin "$candidate")
+          if [ -n "$CLANG_PATH" ]; then
+            echo "Found C compiler via candidate '$candidate': $CLANG_PATH"
+            break
+          fi
+        done
+
         if [ -z "$CLANG_PATH" ]; then
-          CLANG_PATH=$(find /opt/rocm -type f -name amdclang -executable -path '*/llvm/bin/*' -print -quit)
-        fi
-        if [ -z "$CLANG_PATH" ]; then
-          echo "::error::Could not locate clang under /opt/rocm/**/llvm/bin"
-          find /opt/rocm -maxdepth 5 -type d -name bin
+          echo "::error::No clang-family binary found under /opt/rocm/**/llvm/bin/"
+          echo "Tried: clang, amdclang, clang-20, clang-19, clang-18, clang-17"
+          echo "--- /opt/rocm/**/llvm/bin directory listings ---"
+          for d in $(find /opt/rocm -maxdepth 5 -type d -path '*/llvm/bin' 2>/dev/null); do
+            echo "[$d]"
+            ls -la "$d" | head -40 || true
+          done
+          echo "--- all bin dirs under /opt/rocm ---"
+          find /opt/rocm -maxdepth 5 -type d -name bin 2>/dev/null
           exit 1
         fi
-        CLANGXX_PATH="${CLANG_PATH}++"
-        if [ ! -x "$CLANGXX_PATH" ]; then
-          # amdclang uses amdclang++
-          CLANGXX_PATH="${CLANG_PATH%clang}clang++"
-          [ -x "$CLANGXX_PATH" ] || CLANGXX_PATH="${CLANG_PATH}++"
+
+        # Resolve matching clang++: prefer sibling clang++ (same dir), else fall
+        # back to the ${name}++ variant (amdclang -> amdclang++).
+        CLANG_DIR=$(dirname "$CLANG_PATH")
+        CLANG_NAME=$(basename "$CLANG_PATH")
+        CLANGXX_PATH=""
+        case "$CLANG_NAME" in
+          amdclang*) CLANGXX_CANDIDATES="amdclang++ ${CLANG_NAME}++ clang++" ;;
+          clang|clang-*) CLANGXX_CANDIDATES="clang++ ${CLANG_NAME}++ amdclang++" ;;
+          *) CLANGXX_CANDIDATES="clang++ amdclang++ ${CLANG_NAME}++" ;;
+        esac
+        for candidate in $CLANGXX_CANDIDATES; do
+          if [ -e "$CLANG_DIR/$candidate" ]; then
+            CLANGXX_PATH="$CLANG_DIR/$candidate"
+            break
+          fi
+        done
+        if [ -z "$CLANGXX_PATH" ]; then
+          echo "::error::No clang++ sibling for $CLANG_PATH"
+          echo "Tried in $CLANG_DIR: $CLANGXX_CANDIDATES"
+          ls -la "$CLANG_DIR" | head -40 || true
+          exit 1
         fi
 
         BITCODE_PATH=$(find /opt/rocm -type d -name bitcode -print -quit)
         if [ -z "$BITCODE_PATH" ]; then
           echo "::error::Could not find 'bitcode' directory in /opt/rocm"
-          find /opt/rocm -maxdepth 5
+          find /opt/rocm -maxdepth 5 -type d 2>/dev/null | head -60
           exit 1
         fi
 
