@@ -84,6 +84,13 @@ FetchContent_MakeAvailable(tokenizers_cpp)
 
 # minja — Jinja2 template engine for HF chat templates (header-only)
 set(MINJA_TEST_ENABLED OFF CACHE BOOL "" FORCE)
+# Skip minja's demo executables (chat-template, raw). We consume minja as a
+# header-only library — the examples are upstream demos for minja users, not
+# part of our build. Turning them off also sidesteps ROCm 7.12.0's clang-tidy
+# segfaulting during the upstream-configured lint pass on those TUs (minja
+# sets CXX_CLANG_TIDY when it finds clang-tidy, and TheRock's libclang-cpp
+# crashes on exit — llvm-project bug, not minja's).
+set(MINJA_EXAMPLE_ENABLED OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     minja
     GIT_REPOSITORY https://github.com/google/minja.git
