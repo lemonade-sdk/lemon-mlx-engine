@@ -11,6 +11,27 @@ option(MLX_LM_BUILD_EXAMPLES "Build example programs" ON)
 # Third-party dependencies
 include(FetchContent)
 
+# Disable clang-tidy for all FetchContent dependencies.
+#
+# Our own source tree doesn't run clang-tidy (no CMAKE_CXX_CLANG_TIDY set
+# in this file), so a blanket default-off is safe. Two signals together
+# cover the common patterns deps use to auto-enable tidy:
+#
+#   CMAKE_CXX_CLANG_TIDY=""       — disables the target-property hook for
+#                                   any dep that defers to the parent.
+#   CLANG_TIDY_EXE=…-NOTFOUND     — poisons the `find_program(CLANG_TIDY_EXE
+#                                   NAMES clang-tidy)` cache hit used by
+#                                   deps that auto-detect and conditionally
+#                                   enable tidy (minja is one; the pattern
+#                                   is widespread).
+#
+# Motivation: ROCm 7.12.0 ships a clang-tidy whose libclang-cpp destructor
+# segfaults at exit (llvm-project bug — stack ends in __cxa_finalize →
+# llvm::StringSet::~StringSet). Linting upstream dep TUs isn't our
+# concern; skip it wholesale rather than patch each dep one at a time.
+set(CMAKE_CXX_CLANG_TIDY "" CACHE STRING "" FORCE)
+set(CLANG_TIDY_EXE "CLANG_TIDY_EXE-NOTFOUND" CACHE FILEPATH "" FORCE)
+
 # Enable ROCm/AMD GPU backend on non-Apple platforms (default ON, can be overridden)
 if(NOT APPLE)
     if(NOT DEFINED MLX_BUILD_ROCM)
@@ -84,12 +105,8 @@ FetchContent_MakeAvailable(tokenizers_cpp)
 
 # minja — Jinja2 template engine for HF chat templates (header-only)
 set(MINJA_TEST_ENABLED OFF CACHE BOOL "" FORCE)
-# Skip minja's demo executables (chat-template, raw). We consume minja as a
-# header-only library — the examples are upstream demos for minja users, not
-# part of our build. Turning them off also sidesteps ROCm 7.12.0's clang-tidy
-# segfaulting during the upstream-configured lint pass on those TUs (minja
-# sets CXX_CLANG_TIDY when it finds clang-tidy, and TheRock's libclang-cpp
-# crashes on exit — llvm-project bug, not minja's).
+# We consume minja as a header-only library; its chat-template/raw demo
+# executables aren't linked into anything we ship, so skip compiling them.
 set(MINJA_EXAMPLE_ENABLED OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     minja
