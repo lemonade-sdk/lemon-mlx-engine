@@ -8,67 +8,43 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(MLX_LM_BUILD_TESTS "Build tests" ON)
 option(MLX_LM_BUILD_EXAMPLES "Build example programs" ON)
 
-# Third-party dependencies
 include(FetchContent)
 
-# Disable clang-tidy for all FetchContent dependencies.
-#
-# Our own source tree doesn't run clang-tidy (no CMAKE_CXX_CLANG_TIDY set
-# in this file), so a blanket default-off is safe. Two signals together
-# cover the common patterns deps use to auto-enable tidy:
-#
-#   CMAKE_CXX_CLANG_TIDY=""       — disables the target-property hook for
-#                                   any dep that defers to the parent.
-#   CLANG_TIDY_EXE=…-NOTFOUND     — poisons the `find_program(CLANG_TIDY_EXE
-#                                   NAMES clang-tidy)` cache hit used by
-#                                   deps that auto-detect and conditionally
-#                                   enable tidy (minja is one; the pattern
-#                                   is widespread).
-#
-# Motivation: ROCm 7.12.0 ships a clang-tidy whose libclang-cpp destructor
-# segfaults at exit (llvm-project bug — stack ends in __cxa_finalize →
-# llvm::StringSet::~StringSet). Linting upstream dep TUs isn't our
-# concern; skip it wholesale rather than patch each dep one at a time.
+# Disable clang-tidy in dep subtrees. ROCm 7.12.0's clang-tidy segfaults at
+# exit (libclang-cpp destructor); our own code doesn't run tidy anyway. The
+# CLANG_TIDY_EXE-NOTFOUND cache poisons `find_program`-based auto-detection
+# (e.g. minja's) that would re-enable tidy inside its own scope.
 set(CMAKE_CXX_CLANG_TIDY "" CACHE STRING "" FORCE)
 set(CLANG_TIDY_EXE "CLANG_TIDY_EXE-NOTFOUND" CACHE FILEPATH "" FORCE)
 
-# Enable ROCm/AMD GPU backend on non-Apple platforms (default ON, can be overridden)
 if(NOT APPLE)
     if(NOT DEFINED MLX_BUILD_ROCM)
         set(MLX_BUILD_ROCM ON CACHE BOOL "Build ROCm backend")
     endif()
     if(NOT DEFINED CMAKE_HIP_ARCHITECTURES)
-        # gfx1153 pending — add to list when AMD ROCm ships the device libs
-        # for it (per #14 thelittlefireman). Activated form:
-        #   "...;gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201"
+        # gfx1153 pending AMD device libs (see #14).
         set(CMAKE_HIP_ARCHITECTURES
             "gfx908;gfx90a;gfx942;gfx1010;gfx1011;gfx1012;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201"
             CACHE STRING "HIP architectures" FORCE)
     endif()
 endif()
 
-# Enable AMD XDNA NPU backend (requires XRT)
 option(MLX_LM_BUILD_NPU "Build AMD XDNA NPU backend via IRON" OFF)
 if(MLX_LM_BUILD_NPU)
     set(MLX_BUILD_NPU ON CACHE BOOL "Build NPU backend" FORCE)
 endif()
 
-# MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    # Pin MLX to pre-merge of ml-explore/mlx:main at d999ca61 (2026-04-23).
-    # The post-merge tree references mlx::core::gpu::clear_streams() from
-    # scheduler.cpp, which the ROCm backend doesn't implement yet. Pinning
-    # to soloish90's 8-bit QMV fix (last known-good) keeps CI green until
-    # NripeshN lands the ROCm clear_streams() shim. See lemonade-sdk/
-    # lemon-mlx-engine#19 discussion.
+    # Pre-merge of ml-explore/mlx:main at d999ca61 — the post-merge tree calls
+    # mlx::core::gpu::clear_streams() which the ROCm backend doesn't implement.
+    # Unpin once NripeshN lands the shim. See #19.
     GIT_TAG        39fac95d901c72175fce4baf973e375d4a054ba7
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
 
-# nlohmann/json (MLX may already provide this)
 if(NOT TARGET nlohmann_json::nlohmann_json)
     FetchContent_Declare(
         nlohmann_json
@@ -79,7 +55,6 @@ if(NOT TARGET nlohmann_json::nlohmann_json)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-# stb (image loading)
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
@@ -88,10 +63,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb)
 
-# Find libcurl for Hub client
 find_package(CURL REQUIRED)
 
-# tokenizers-cpp (HuggingFace tokenizers via Rust + C++ wrapper)
 set(MSGPACK_USE_BOOST OFF CACHE BOOL "" FORCE)
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER OFF CACHE BOOL "" FORCE)
 set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
@@ -103,10 +76,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tokenizers_cpp)
 
-# minja — Jinja2 template engine for HF chat templates (header-only)
 set(MINJA_TEST_ENABLED OFF CACHE BOOL "" FORCE)
-# We consume minja as a header-only library; its chat-template/raw demo
-# executables aren't linked into anything we ship, so skip compiling them.
 set(MINJA_EXAMPLE_ENABLED OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     minja
@@ -116,7 +86,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(minja)
 
-# cpp-httplib — header-only HTTP server (OpenAI-compatible API)
 FetchContent_Declare(
     httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
@@ -125,10 +94,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(httplib)
 
-# Global include path (enables #include <mlx-lm/...>)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Core library (MLX wrappers and helpers)
 add_library(mlx-lm-core
     src/core/module.cpp
 )
@@ -137,7 +104,6 @@ target_include_directories(mlx-lm-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Common library (shared infrastructure)
 add_library(mlx-lm-common
     src/common/kv_cache.cpp
     src/common/attention_utils.cpp
@@ -163,12 +129,10 @@ target_link_libraries(mlx-lm-common PUBLIC
 )
 target_include_directories(mlx-lm-common PUBLIC ${minja_SOURCE_DIR}/include)
 
-# Propagate ROCm flag as compile definition so C++ code can use #if defined(MLX_BUILD_ROCM)
 if(MLX_BUILD_ROCM)
     target_compile_definitions(mlx-lm-common PUBLIC MLX_BUILD_ROCM)
 endif()
 
-# LLM library
 add_library(mlx-lm-llm
     src/llm/llm_factory.cpp
     src/llm/models/llama.cpp
@@ -218,7 +182,6 @@ add_library(mlx-lm-llm
 )
 target_link_libraries(mlx-lm-llm PUBLIC mlx-lm-common)
 
-# Embedders library
 add_library(mlx-lm-embedders
     src/embedders/pooling.cpp
     src/embedders/bert.cpp
@@ -228,7 +191,6 @@ add_library(mlx-lm-embedders
 )
 target_link_libraries(mlx-lm-embedders PUBLIC mlx-lm-common)
 
-# VLM library
 add_library(mlx-lm-vlm
     src/vlm/media_processing.cpp
     src/vlm/qwen_vl_utils.cpp
@@ -246,7 +208,6 @@ add_library(mlx-lm-vlm
 )
 target_link_libraries(mlx-lm-vlm PUBLIC mlx-lm-common)
 
-# stb include path (header-only)
 target_include_directories(mlx-lm-common PUBLIC ${stb_SOURCE_DIR})
 
 if(MLX_LM_BUILD_EXAMPLES)

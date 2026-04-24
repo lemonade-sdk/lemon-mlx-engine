@@ -9,10 +9,6 @@ on:
       gfx_target:
         description: 'AMD GPU targets for ROCm builds (comma-separated)'
         required: false
-        # TODO: per #14 (thelittlefireman) — once AMD publishes per-arch tarballs
-        # for gfx1152 + gfx1153 at https://repo.amd.com/rocm/tarball/ and hardware
-        # validation lands, swap the live default for the staged one below:
-        # default: 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X'
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
       rocm_channel:
         description: 'ROCm channel: stable (latest 7.2.x from AMD apt at repo.radeon.com) or preview (latest 7.12.x from AMD TheRock tarball at repo.amd.com). Each channel auto-discovers the newest patch of its version_prefix.'
@@ -32,23 +28,17 @@ on:
     types: [opened, synchronize, reopened]
 
   schedule:
-    # Daily: preview channel (latest 7.12.x TheRock tarball from repo.amd.com)
+    # Daily preview, weekly-Monday stable. The ROCM_CHANNEL default below
+    # keys off the Monday cron expression to pick stable.
     - cron: '0 14 * * *'
-    # Weekly Monday: stable channel (latest 7.2.x apt from repo.radeon.com)
     - cron: '0 16 * * 1'
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
-  # TODO: per #14 (thelittlefireman) — commented-out future form, activate
-  # once AMD tarballs exist for gfx1152 + gfx1153 and HW validation lands:
-  # GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X' }}
   GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
   ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'stable') || 'preview' }}
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Prepare build matrices
-  # ---------------------------------------------------------------------------
   prepare-matrix:
     runs-on: ubuntu-22.04
     outputs:
@@ -66,7 +56,6 @@ jobs:
         echo "Input targets: $targets"
         echo "Input operating systems: $operating_systems"
 
-        # Convert targets to JSON array for ROCm matrix
         matrix_targets=$(echo "$targets" \
           | tr ',' '\n' \
           | sed 's/^ *//;s/ *$//' \
@@ -97,9 +86,6 @@ jobs:
         echo "Ubuntu CPU build: $should_build_ubuntu_cpu"
         echo "macOS build: $should_build_macos"
 
-  # ---------------------------------------------------------------------------
-  # Ubuntu + ROCm build (per GPU target)
-  # ---------------------------------------------------------------------------
   build-ubuntu-rocm:
     runs-on: ubuntu-22.04
     needs: prepare-matrix
@@ -127,11 +113,6 @@ jobs:
       env:
         CHANNEL: ${{ env.ROCM_CHANNEL }}
       run: |
-        # Allowlist: only 'stable' (latest 7.2.x, apt from repo.radeon.com)
-        # or 'preview' (latest 7.12.x, TheRock tarball from repo.amd.com)
-        # are accepted. Each channel is a (version_prefix, source, base_url)
-        # triple in .github/rocm-channels.json; any drift from that shape,
-        # or any other channel name, is rejected here before network I/O.
         case "$CHANNEL" in
           preview|stable) ;;
           *)
@@ -150,9 +131,7 @@ jobs:
         rocm_source=$(jq -r ".${channel}.source" .github/rocm-channels.json)
         version_prefix=$(jq -r ".${channel}.version_prefix" .github/rocm-channels.json)
 
-        # Each channel has a fixed expected source. Config drift (e.g. preview
-        # flipped to amd-apt) must fail loudly here, not silently change what
-        # the rest of the job installs.
+        # Channel → source mapping is fixed; guard against rocm-channels.json drift.
         case "$channel" in
           stable)  expected_source="amd-apt" ;;
           preview) expected_source="amd-tarball" ;;
@@ -189,9 +168,6 @@ jobs:
             ;;
         esac
 
-        # Auto-discover the latest ${prefix}.x patch by scraping the apt
-        # directory index at repo.radeon.com. Stable patches only — the deb
-        # mirror doesn't ship rc/alpha/pre-release versioned subdirs.
         echo "Resolving latest ${prefix}.x at ${apt_base}/"
         listing=$(curl -fsSL "${apt_base}/" || true)
         prefix_re=$(printf '%s' "$prefix" | sed 's/\./\\./g')
@@ -216,7 +192,7 @@ jobs:
         echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] ${rocm_apt_url} jammy main" \
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
-        # Pin packages to repo.radeon.com only — block any distro ROCm package.
+        # Pin to repo.radeon.com only — blocks any distro ROCm package.
         printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
           | sudo tee /etc/apt/preferences.d/rocm-pin-600
 
@@ -232,9 +208,6 @@ jobs:
     - name: Install ROCm from AMD tarball (preview channel, latest 7.12.x)
       if: env.ROCM_SOURCE == 'amd-tarball'
       run: |
-        # ci/resolve-rocm-version.sh accepts a bare prefix (e.g. 7.12) and
-        # scrapes https://repo.amd.com/rocm/tarball/ for the newest matching
-        # patch, or an exact X.Y.Z[rcN] spec for pinning.
         source ci/resolve-rocm-version.sh linux "${{ matrix.gfx_target }}" "${{ env.ROCM_VERSION_PREFIX }}"
         echo "DETECTED_ROCM_VERSION=$ROCM_RESOLVED_VERSION" >> $GITHUB_ENV
         echo "DETECTED_ROCM_CHANNEL=${{ env.ROCM_CHANNEL }}" >> $GITHUB_ENV
@@ -254,32 +227,19 @@ jobs:
     - name: Locate ROCm clang + bitcode
       id: rocm-paths
       run: |
-        # TheRock tarball layout varies between releases:
-        #   - 7.12.0 populates both /opt/rocm/llvm/bin/ and /opt/rocm/lib/llvm/bin/
-        #   - 7.9.0rc1 populates only /opt/rocm/lib/llvm/bin/
-        # Inside lib/llvm/bin/, 7.9.0rc1 ships clang/clang++/amdclang as SYMLINKS
-        # (clang -> clang-20, clang++ -> clang, amdclang -> amdllvm). The previous
-        # probe used `find -type f`, which silently skips symlinks, hence the
-        # "Could not locate clang" failure despite the files being present.
-        #
-        # Resilient cascade:
-        #   1. Match files *or* symlinks (-xtype f follows the link to a file).
-        #   2. Try several name candidates in AMD-preferred order.
-        #   3. Emit actionable diagnostics on miss instead of bare "not found".
+        # TheRock tarballs vary: some releases populate /opt/rocm/llvm/bin,
+        # others only /opt/rocm/lib/llvm/bin, and some ship the binaries as
+        # symlinks — so match both -type f and -type l across all llvm/bin
+        # directories rather than hardcoding a path.
         find_bin() {
           local name="$1"
           find /opt/rocm \( -type f -o -type l \) -name "$name" \
             -path '*/llvm/bin/*' 2>/dev/null | head -n 1
         }
 
-        # Prefer amdclang over bare clang: amdclang is the HIP-aware
-        # driver wrapper. rocWMMA's CheckF8.cmake passes `-xhip` via
-        # COMPILE_DEFINITIONS, which amdclang honours as a driver mode
-        # switch; bare clang++ treats it as a `#define -xhip` and
-        # compiles without HIP semantics, so the `__hip_fp8_e4m3`
-        # struct decl fails and CheckF8 emits the bogus
-        # "ROCm does not support __hip_fp8" FATAL_ERROR. Geramy flagged
-        # this 2026-04-23.
+        # Prefer amdclang: it's the HIP-aware driver wrapper, and rocWMMA's
+        # CheckF8.cmake probe relies on -xhip being honored as driver mode
+        # (bare clang treats it as a #define and the probe misfires).
         CLANG_PATH=""
         for candidate in amdclang clang clang-20 clang-19 clang-18 clang-17; do
           CLANG_PATH=$(find_bin "$candidate")
@@ -302,8 +262,6 @@ jobs:
           exit 1
         fi
 
-        # Resolve matching clang++: prefer sibling clang++ (same dir), else fall
-        # back to the ${name}++ variant (amdclang -> amdclang++).
         CLANG_DIR=$(dirname "$CLANG_PATH")
         CLANG_NAME=$(basename "$CLANG_PATH")
         CLANGXX_PATH=""
@@ -347,29 +305,17 @@ jobs:
         case "$current_target" in
           gfx110X) mapped="gfx1100;gfx1101;gfx1102" ;;
           gfx103X) mapped="gfx1030;gfx1031;gfx1032;gfx1034" ;;
-          # TODO: per #14 (thelittlefireman) — the two arms below are staged
-          # pending AMD per-arch tarballs for gfx1152 / gfx1153 at
-          # https://repo.amd.com/rocm/tarball/ + hardware validation. Drop the
-          # leading '#' to activate.
-          #gfx1153) mapped="gfx1153" ;;
-          #gfx1152) mapped="gfx1152" ;;
           gfx1151) mapped="gfx1151" ;;
           gfx1150) mapped="gfx1150" ;;
           gfx120X) mapped="gfx1200;gfx1201" ;;
-          # TODO: per #14 — once gfx1152 / gfx1153 are enabled above, the
-          # combined arm below should become:
-          #   gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201" ;;
           gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1200;gfx1201" ;;
           *) mapped="$current_target" ;;
         esac
         echo "mapped_target=$mapped" >> $GITHUB_OUTPUT
         echo "Mapped target: $mapped"
 
-    # Cache the MLX source tree that CMake FetchContent clones from
-    # NripeshN/mlx. The clone is pinned in CMakeLists.txt by GIT_TAG, so the
-    # CMakeLists.txt hash is the correct cache key — a source change there
-    # busts the cache, anything else is a hit. Saves ~1 GB over the wire
-    # and insulates us from GitHub-side 500s (see issue #18).
+    # MLX is pinned in CMakeLists.txt by GIT_TAG, so its hash is a sound
+    # cache key. Saves ~1 GB and insulates from upstream git flakes (#18).
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
       with:
@@ -378,18 +324,14 @@ jobs:
           build/_deps/mlx-subbuild
         key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
 
+    # MLX's ROCm backend does find_package(rocwmma REQUIRED CONFIG) for any
+    # gfx1[12]xx target. Both active channels ship rocWMMA in-box, so the
+    # probe normally hits first. The vendor-from-source fallback is kept as
+    # insurance for future slim tarballs; it sed-patches upstream rocWMMA's
+    # broken CheckF8.cmake (-xhip misrouted via COMPILE_DEFINITIONS).
     - name: Locate or install rocWMMA
       id: rocwmma
       run: |
-        # MLX's ROCm backend does find_package(rocwmma REQUIRED CONFIG) when
-        # any target arch matches gfx1[12]xx (WMMA-capable RDNA3/3.5/4). Both
-        # active channels ship rocWMMA in-box: the stable channel's
-        # rocwmma-dev apt package installs it to /opt/rocm/lib/cmake, and
-        # the preview channel's 7.12.x TheRock tarball ships the same
-        # CMake config. The probe below hits on the first find() and the
-        # vendor fallback stays dormant. The fallback is insurance against
-        # a future slim tarball without rocWMMA — clone ROCm/rocWMMA, patch
-        # its broken CheckF8.cmake, cmake-install — not the hot path.
         set -euxo pipefail
 
         CONFIG_FILE=$(find /opt/rocm -iname 'rocwmma-config.cmake' -o -iname 'rocwmmaConfig.cmake' 2>/dev/null | head -1 || true)
@@ -399,45 +341,23 @@ jobs:
           echo "Found rocWMMA config at: $CONFIG_FILE"
         else
           echo "rocWMMA config not found under /opt/rocm — vendoring from ROCm/rocWMMA GitHub release."
-          # Pin to rocm-7.2.2. This tag is required (not 6.4.1) because:
-          #   1. gfx1150/gfx1151 WMMA arch defines (ROCWMMA_ARCH_GFX1151 etc.)
-          #      are only present in rocm-7.2.x+ — header compile silently
-          #      emits zero/wrong codegen on older tags for Strix Halo.
-          #   2. rocm_export_targets(roc::rocwmma NAMESPACE roc::) was added in
-          #      rocm-7.2.0 — pre-7.2 tags never generate rocwmma-config.cmake,
-          #      so the post-install find(CONFIG) misses and MLX's
-          #      find_package(rocwmma REQUIRED CONFIG) then fails identically.
-          # Revisit on ROCm/rocWMMA releases, keep matched to the ROCm major
-          # we ship in rocm-channels.json.
+          # rocm-7.2.2 is the oldest tag that both (a) defines the gfx1150/1151
+          # WMMA arch macros and (b) exports rocwmma-config.cmake. Keep matched
+          # to the ROCm major shipped in rocm-channels.json.
           ROCWMMA_TAG="${ROCWMMA_TAG:-rocm-7.2.2}"
           TMPDIR=$(mktemp -d)
           git clone --depth 1 --branch "$ROCWMMA_TAG" \
             https://github.com/ROCm/rocWMMA.git "$TMPDIR/rocWMMA"
           cd "$TMPDIR/rocWMMA"
 
-          # Patch rocWMMA's CheckF8.cmake — upstream bug.
-          #
-          # The macro (cmake/Macros/CheckF8.cmake) does:
-          #   try_compile(HAS_F8 ... COMPILE_DEFINITIONS -xhip)
-          # which CMake turns into `-D-xhip` at compile time (the
-          # COMPILE_DEFINITIONS slot -D-prefixes every item). `-xhip` is
-          # a driver flag, not a define — the probe never runs with HIP
-          # semantics, `hip/hip_fp8.h`'s struct decls don't parse, and
-          # CheckF8 emits the bogus "ROCm does not support __hip_fp8"
-          # FATAL_ERROR. This is the same error every rocWMMA consumer
-          # on a TheRock-distributed ROCm hits (Geramy flagged it
-          # 2026-04-23; the agent that ran the log diff confirmed).
-          # Swap COMPILE_DEFINITIONS -> CMAKE_FLAGS
-          # -DCMAKE_CXX_FLAGS=-xhip so try_compile passes -xhip as a
-          # compiler flag (amdclang picks it up as driver-mode).
+          # Upstream CheckF8.cmake passes -xhip via COMPILE_DEFINITIONS, which
+          # CMake -D-prefixes into `-D-xhip`; reroute it to CMAKE_CXX_FLAGS so
+          # the try_compile actually runs in HIP driver mode.
           if [ -f cmake/Macros/CheckF8.cmake ]; then
             sed -i 's|COMPILE_DEFINITIONS -xhip|CMAKE_FLAGS "-DCMAKE_CXX_FLAGS=-xhip"|g' \
               cmake/Macros/CheckF8.cmake
-            echo "Patched CheckF8.cmake:"
-            grep -n "CMAKE_FLAGS\|COMPILE_DEFINITIONS" cmake/Macros/CheckF8.cmake || true
           fi
 
-          # Header-only + cmake config install; no compile needed.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/opt/rocm \
@@ -485,17 +405,17 @@ jobs:
       run: |
         mkdir -p output
 
-        # Copy binaries
         cp build/server output/
         cp build/chat output/
         cp build/diagnose output/ 2>/dev/null || true
 
-        # Bundle small non-ROCm libs for portability (ROCm libs come from system install)
+        # Bundle only non-ROCm runtime libs; ROCm is provided by the host.
         for lib in libopenblas.so* liblapacke.so* libgfortran.so*; do
           cp /usr/lib/x86_64-linux-gnu/$lib output/ 2>/dev/null || true
         done
 
-        # Set RPATH: check local dir first, then system ROCm
+        # RPATH: local dir first, then system ROCm — lets users ship a
+        # drop-in zip without relocating the ROCm tree.
         for binary in output/server output/chat output/diagnose; do
           if [ -f "$binary" ]; then
             patchelf --set-rpath '$ORIGIN:/opt/rocm/lib' "$binary" 2>/dev/null || true
@@ -518,9 +438,6 @@ jobs:
         path: output/
         retention-days: 30
 
-  # ---------------------------------------------------------------------------
-  # Ubuntu CPU-only build
-  # ---------------------------------------------------------------------------
   build-ubuntu-cpu:
     runs-on: ubuntu-22.04
     needs: prepare-matrix
@@ -583,9 +500,6 @@ jobs:
         path: output/
         retention-days: 30
 
-  # ---------------------------------------------------------------------------
-  # macOS build (Metal / CPU)
-  # ---------------------------------------------------------------------------
   build-macos:
     runs-on: macos-latest
     needs: prepare-matrix
@@ -640,9 +554,6 @@ jobs:
         path: output/
         retention-days: 30
 
-  # ---------------------------------------------------------------------------
-  # Create Release
-  # ---------------------------------------------------------------------------
   create-release:
     needs: [prepare-matrix, build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
     runs-on: ubuntu-22.04
@@ -672,7 +583,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         channel="${{ env.ROCM_CHANNEL }}"
-        # Match tags for this channel: b1000-stable, b1001-preview, etc.
+        # Tags are formatted bNNNN-<channel> (e.g. b1042-preview).
         existing_tags=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' \
           | grep -E "^b[0-9]{4}(-${channel})?$" | sed 's/-.*$//' | sort -V || echo "")
 
@@ -710,7 +621,6 @@ jobs:
 
         echo "Processing artifacts for release $TAG (channel: $channel)"
 
-        # ROCm builds
         IFS=',' read -ra TARGET_ARRAY <<< "$targets"
         for target in "${TARGET_ARRAY[@]}"; do
           target=$(echo "$target" | xargs)
@@ -724,7 +634,6 @@ jobs:
           fi
         done
 
-        # CPU build
         if [ -d "./all-artifacts/mlx-engine-ubuntu-cpu-x64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-ubuntu-cpu-x64.zip"
           cd "./all-artifacts/mlx-engine-ubuntu-cpu-x64"
@@ -732,7 +641,6 @@ jobs:
           cd ../../
         fi
 
-        # macOS build
         if [ -d "./all-artifacts/mlx-engine-macos-arm64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-macos-arm64.zip"
           cd "./all-artifacts/mlx-engine-macos-arm64"
@@ -753,7 +661,6 @@ jobs:
         ROCM_CHANNEL="${{ needs.build-ubuntu-rocm.outputs.rocm_channel }}"
         targets="${{ env.GFX_TARGETS }}"
 
-        # Collect all zip files
         upload_files=$(ls *.zip 2>/dev/null | tr '\n' ' ')
 
         if [ -z "$upload_files" ]; then
