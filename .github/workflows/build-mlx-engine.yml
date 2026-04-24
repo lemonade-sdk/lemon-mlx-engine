@@ -9,7 +9,7 @@ on:
       gfx_target:
         description: 'AMD GPU targets for ROCm builds (comma-separated)'
         required: false
-        default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
+        default: 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X'
       rocm_channel:
         description: 'ROCm channel: preview (7.2.1 from AMD apt) or stable (7.12.x from AMD apt). Both sourced directly from https://repo.radeon.com/rocm/apt/. Only these two values are accepted.'
         required: false
@@ -35,8 +35,8 @@ on:
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
-  GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
   ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'stable') || 'preview' }}
+  GFX_TARGETS: ${{ github.event.inputs.gfx_target || (env.ROCM_CHANNEL == 'stable' && 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X') || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -255,10 +255,12 @@ jobs:
         case "$current_target" in
           gfx110X) mapped="gfx1100;gfx1101;gfx1102" ;;
           gfx103X) mapped="gfx1030;gfx1031;gfx1032;gfx1034" ;;
+          gfx1153) mapped="gfx1153" ;;
+          gfx1152) mapped="gfx1152" ;;
           gfx1151) mapped="gfx1151" ;;
           gfx1150) mapped="gfx1150" ;;
           gfx120X) mapped="gfx1200;gfx1201" ;;
-          gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1200;gfx1201" ;;
+          gfx115X_gfx120X) mapped="gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201" ;;
           *) mapped="$current_target" ;;
         esac
         echo "mapped_target=$mapped" >> $GITHUB_OUTPUT
