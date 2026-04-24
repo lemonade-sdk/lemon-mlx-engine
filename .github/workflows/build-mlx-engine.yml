@@ -342,6 +342,29 @@ jobs:
           git clone --depth 1 --branch "$ROCWMMA_TAG" \
             https://github.com/ROCm/rocWMMA.git "$TMPDIR/rocWMMA"
           cd "$TMPDIR/rocWMMA"
+
+          # Patch rocWMMA's CheckF8.cmake — upstream bug.
+          #
+          # The macro (cmake/Macros/CheckF8.cmake) does:
+          #   try_compile(HAS_F8 ... COMPILE_DEFINITIONS -xhip)
+          # which CMake turns into `-D-xhip` at compile time (the
+          # COMPILE_DEFINITIONS slot -D-prefixes every item). `-xhip` is
+          # a driver flag, not a define — the probe never runs with HIP
+          # semantics, `hip/hip_fp8.h`'s struct decls don't parse, and
+          # CheckF8 emits the bogus "ROCm does not support __hip_fp8"
+          # FATAL_ERROR. This is the same error every rocWMMA consumer
+          # on a TheRock-distributed ROCm hits (Geramy flagged it
+          # 2026-04-23; the agent that ran the log diff confirmed).
+          # Swap COMPILE_DEFINITIONS -> CMAKE_FLAGS
+          # -DCMAKE_CXX_FLAGS=-xhip so try_compile passes -xhip as a
+          # compiler flag (amdclang picks it up as driver-mode).
+          if [ -f cmake/Macros/CheckF8.cmake ]; then
+            sed -i 's|COMPILE_DEFINITIONS -xhip|CMAKE_FLAGS "-DCMAKE_CXX_FLAGS=-xhip"|g' \
+              cmake/Macros/CheckF8.cmake
+            echo "Patched CheckF8.cmake:"
+            grep -n "CMAKE_FLAGS\|COMPILE_DEFINITIONS" cmake/Macros/CheckF8.cmake || true
+          fi
+
           # Header-only + cmake config install; no compile needed.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
