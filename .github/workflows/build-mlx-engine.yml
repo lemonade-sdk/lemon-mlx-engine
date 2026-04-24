@@ -203,8 +203,16 @@ jobs:
             -path '*/llvm/bin/*' 2>/dev/null | head -n 1
         }
 
+        # Prefer amdclang over bare clang: amdclang is the HIP-aware
+        # driver wrapper. rocWMMA's CheckF8.cmake passes `-xhip` via
+        # COMPILE_DEFINITIONS, which amdclang honours as a driver mode
+        # switch; bare clang++ treats it as a `#define -xhip` and
+        # compiles without HIP semantics, so the `__hip_fp8_e4m3`
+        # struct decl fails and CheckF8 emits the bogus
+        # "ROCm does not support __hip_fp8" FATAL_ERROR. Geramy flagged
+        # this 2026-04-23.
         CLANG_PATH=""
-        for candidate in clang amdclang clang-20 clang-19 clang-18 clang-17; do
+        for candidate in amdclang clang clang-20 clang-19 clang-18 clang-17; do
           CLANG_PATH=$(find_bin "$candidate")
           if [ -n "$CLANG_PATH" ]; then
             echo "Found C compiler via candidate '$candidate': $CLANG_PATH"
