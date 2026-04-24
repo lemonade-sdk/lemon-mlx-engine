@@ -1,18 +1,20 @@
 {
-  "_comment": "Only two channels are supported: 'stable' (ROCm 7.12.0) and 'preview' (ROCm 7.9.0rc1). Both pull prebuilt TheRock distribution tarballs directly from AMD's official repo at https://repo.amd.com/rocm/tarball/. Any other version or source must be rejected by the install step. This matches the pattern used by lemonade-sdk/whisper.cpp-rocm.",
-  "_source_of_truth": "https://repo.amd.com/rocm/tarball/",
+  "_comment": "Two channels with distinct delivery sources. 'stable' pulls the latest 7.2.x ROCm release from AMD's official apt mirror at https://repo.radeon.com/rocm/apt/ — 7.2.x is not published as a TheRock tarball, apt is the only channel AMD ships it on. 'preview' pulls the latest 7.12.x TheRock distribution tarball from https://repo.amd.com/rocm/tarball/ — 7.12.x is not yet on the apt mirror, tarball is the only channel AMD ships it on. Each channel auto-discovers the newest patch release of its version_prefix by parsing the respective AMD directory index; no 'latest' pseudo-version is accepted. Any other channel, source, or version_prefix must be rejected by the install step.",
+  "_sources_of_truth": {
+    "amd-apt": "https://repo.radeon.com/rocm/apt/",
+    "amd-tarball": "https://repo.amd.com/rocm/tarball/"
+  },
   "_allowed_channels": ["stable", "preview"],
-  "_history": "Prior to 2026-04-23 'preview' was pinned to 7.2.1, which does not exist at repo.amd.com/rocm/tarball/ (HEAD 403). Repinned to 7.9.0rc1, the newest pre-release TheRock tarball actually published for gfx1151 as of 2026-04-23. Revisit when AMD publishes a newer RC.",
   "stable": {
-    "version": "7.12.0",
-    "source": "amd-tarball",
-    "tarball_base_url": "https://repo.amd.com/rocm/tarball",
-    "description": "AMD-official ROCm 7.12.0 TheRock tarball from repo.amd.com"
+    "version_prefix": "7.2",
+    "source": "amd-apt",
+    "apt_base_url": "https://repo.radeon.com/rocm/apt",
+    "description": "Latest 7.2.x ROCm release from AMD's apt mirror at repo.radeon.com. Auto-discovers the newest patch (e.g. 7.2.2 as of 2026-04-24)."
   },
   "preview": {
-    "version": "7.9.0rc1",
+    "version_prefix": "7.12",
     "source": "amd-tarball",
     "tarball_base_url": "https://repo.amd.com/rocm/tarball",
-    "description": "AMD-official ROCm 7.9.0rc1 TheRock pre-release tarball from repo.amd.com"
+    "description": "Latest 7.12.x TheRock distribution tarball from repo.amd.com. Auto-discovers the newest patch (e.g. 7.12.0 as of 2026-04-24)."
   }
 }

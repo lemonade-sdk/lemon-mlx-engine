@@ -15,7 +15,7 @@ on:
         # default: 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X'
         default: 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X'
       rocm_channel:
-        description: 'ROCm channel: preview (7.9.0rc1 TheRock RC tarball) or stable (7.12.0 TheRock tarball). Both sourced directly from https://repo.amd.com/rocm/tarball/. Only these two values are accepted.'
+        description: 'ROCm channel: stable (latest 7.2.x from AMD apt at repo.radeon.com) or preview (latest 7.12.x from AMD TheRock tarball at repo.amd.com). Each channel auto-discovers the newest patch of its version_prefix.'
         required: false
         default: 'preview'
         type: choice
@@ -32,9 +32,9 @@ on:
     types: [opened, synchronize, reopened]
 
   schedule:
-    # Daily: preview channel (ROCm 7.9.0rc1 TheRock tarball from repo.amd.com)
+    # Daily: preview channel (latest 7.12.x TheRock tarball from repo.amd.com)
     - cron: '0 14 * * *'
-    # Weekly Monday: stable channel (ROCm 7.12.0 TheRock tarball from repo.amd.com)
+    # Weekly Monday: stable channel (latest 7.2.x apt from repo.radeon.com)
     - cron: '0 16 * * 1'
 
 env:
@@ -127,17 +127,16 @@ jobs:
       env:
         CHANNEL: ${{ env.ROCM_CHANNEL }}
       run: |
-        # Allowlist: only 'preview' (7.9.0rc1) or 'stable' (7.12.0) are accepted.
-        # Both channels must resolve to https://repo.amd.com/rocm/tarball/. Any
-        # other channel or source (distro packages, apt-PPA, nightlies, etc.)
-        # is rejected here before any install step runs. Mirrors the pattern
-        # used by lemonade-sdk/whisper.cpp-rocm.
+        # Allowlist: only 'stable' (latest 7.2.x, apt from repo.radeon.com)
+        # or 'preview' (latest 7.12.x, TheRock tarball from repo.amd.com)
+        # are accepted. Each channel is a (version_prefix, source, base_url)
+        # triple in .github/rocm-channels.json; any drift from that shape,
+        # or any other channel name, is rejected here before network I/O.
         case "$CHANNEL" in
           preview|stable) ;;
           *)
             echo "::error::Unsupported ROCm channel '$CHANNEL'."
-            echo "::error::Allowed channels: preview (ROCm 7.9.0rc1), stable (ROCm 7.12.0)."
-            echo "::error::Both channels are sourced from https://repo.amd.com/rocm/tarball/."
+            echo "::error::Allowed channels: stable (latest 7.2.x apt) or preview (latest 7.12.x tarball)."
             exit 1
             ;;
         esac
@@ -145,28 +144,90 @@ jobs:
         echo "Config allowlist: $config_channels"
         echo "Selected channel: $CHANNEL"
 
-    - name: Resolve ROCm version for channel
-      id: resolve-rocm
+    - name: Resolve ROCm source + version_prefix for channel
       run: |
         channel="${{ env.ROCM_CHANNEL }}"
-        rocm_version=$(jq -r ".${channel}.version" .github/rocm-channels.json)
         rocm_source=$(jq -r ".${channel}.source" .github/rocm-channels.json)
+        version_prefix=$(jq -r ".${channel}.version_prefix" .github/rocm-channels.json)
 
-        if [ "$rocm_source" != "amd-tarball" ]; then
-          echo "::error::${channel} channel source must be 'amd-tarball', got '$rocm_source'"
+        case "$rocm_source" in
+          amd-apt|amd-tarball) ;;
+          *)
+            echo "::error::${channel} channel source must be 'amd-apt' or 'amd-tarball', got '$rocm_source'"
+            exit 1
+            ;;
+        esac
+        if [ -z "$version_prefix" ] || [ "$version_prefix" = "null" ]; then
+          echo "::error::${channel} channel is missing version_prefix in rocm-channels.json"
           exit 1
         fi
-        if [ -z "$rocm_version" ] || [ "$rocm_version" = "null" ]; then
-          echo "::error::${channel} channel is missing a pinned version in rocm-channels.json"
-          exit 1
-        fi
 
-        echo "Channel $channel → ROCm $rocm_version (source: $rocm_source)"
-        echo "ROCM_VERSION=$rocm_version" >> $GITHUB_ENV
+        echo "Channel $channel → source=$rocm_source, version_prefix=$version_prefix"
+        echo "ROCM_SOURCE=$rocm_source" >> $GITHUB_ENV
+        echo "ROCM_VERSION_PREFIX=$version_prefix" >> $GITHUB_ENV
 
-    - name: Download and extract ROCm tarball to /opt/rocm
+    - name: Install ROCm from AMD apt (stable channel, latest 7.2.x)
+      if: env.ROCM_SOURCE == 'amd-apt'
       run: |
-        source ci/resolve-rocm-version.sh linux "${{ matrix.gfx_target }}" "${{ env.ROCM_VERSION }}"
+        channel="${{ env.ROCM_CHANNEL }}"
+        prefix="${{ env.ROCM_VERSION_PREFIX }}"
+        apt_base=$(jq -r ".${channel}.apt_base_url" .github/rocm-channels.json)
+
+        case "$apt_base" in
+          https://repo.radeon.com/rocm/apt) ;;
+          *)
+            echo "::error::apt_base_url must be https://repo.radeon.com/rocm/apt, got '$apt_base'"
+            exit 1
+            ;;
+        esac
+
+        # Auto-discover the latest ${prefix}.x patch by scraping the apt
+        # directory index at repo.radeon.com. Stable patches only — the deb
+        # mirror doesn't ship rc/alpha/pre-release versioned subdirs.
+        echo "Resolving latest ${prefix}.x at ${apt_base}/"
+        listing=$(curl -fsSL "${apt_base}/" || true)
+        prefix_re=$(printf '%s' "$prefix" | sed 's/\./\\./g')
+        resolved_version=$(printf '%s\n' "$listing" \
+          | grep -oE "href=\"${prefix_re}\.[0-9]+/\"" \
+          | sed -E 's#href="([0-9.]+)/"#\1#' \
+          | sort -uV | tail -1)
+
+        if [ -z "$resolved_version" ]; then
+          echo "::error::No ${prefix}.x release published at ${apt_base}/."
+          echo "::error::Retry once AMD publishes ${prefix}.x there, or switch channels."
+          exit 1
+        fi
+        rocm_apt_url="${apt_base}/${resolved_version}"
+        echo "Resolved ${channel} ROCm version: ${resolved_version}"
+        echo "Installing from AMD apt: ${rocm_apt_url}"
+
+        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+        wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
+          gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] ${rocm_apt_url} jammy main" \
+          | sudo tee /etc/apt/sources.list.d/rocm.list
+
+        # Pin packages to repo.radeon.com only — block any distro ROCm package.
+        printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+          | sudo tee /etc/apt/preferences.d/rocm-pin-600
+
+        sudo apt-get update
+        sudo apt-get install -y \
+          hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
+          rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
+
+        echo "Installed ROCm ${resolved_version} (channel: ${channel}) from ${rocm_apt_url}"
+        echo "DETECTED_ROCM_VERSION=${resolved_version}" >> $GITHUB_ENV
+        echo "DETECTED_ROCM_CHANNEL=${channel}" >> $GITHUB_ENV
+
+    - name: Install ROCm from AMD tarball (preview channel, latest 7.12.x)
+      if: env.ROCM_SOURCE == 'amd-tarball'
+      run: |
+        # ci/resolve-rocm-version.sh accepts a bare prefix (e.g. 7.12) and
+        # scrapes https://repo.amd.com/rocm/tarball/ for the newest matching
+        # patch, or an exact X.Y.Z[rcN] spec for pinning.
+        source ci/resolve-rocm-version.sh linux "${{ matrix.gfx_target }}" "${{ env.ROCM_VERSION_PREFIX }}"
         echo "DETECTED_ROCM_VERSION=$ROCM_RESOLVED_VERSION" >> $GITHUB_ENV
         echo "DETECTED_ROCM_CHANNEL=${{ env.ROCM_CHANNEL }}" >> $GITHUB_ENV
 
@@ -313,11 +374,14 @@ jobs:
       id: rocwmma
       run: |
         # MLX's ROCm backend does find_package(rocwmma REQUIRED CONFIG) when
-        # any target arch matches gfx1[12]xx (WMMA-capable RDNA3/3.5/4). The
-        # TheRock 7.9.0rc1 slim tarball skips rocWMMA, so we probe first and
-        # fall back to vendoring it from the ROCm/rocWMMA GitHub release
-        # matching the ROCm major/minor — rocWMMA is header-only plus a tiny
-        # cmake config, so this is cheap.
+        # any target arch matches gfx1[12]xx (WMMA-capable RDNA3/3.5/4). Both
+        # active channels ship rocWMMA in-box: the stable channel's
+        # rocwmma-dev apt package installs it to /opt/rocm/lib/cmake, and
+        # the preview channel's 7.12.x TheRock tarball ships the same
+        # CMake config. The probe below hits on the first find() and the
+        # vendor fallback stays dormant. The fallback is insurance against
+        # a future slim tarball without rocWMMA — clone ROCm/rocWMMA, patch
+        # its broken CheckF8.cmake, cmake-install — not the hot path.
         set -euxo pipefail
 
         CONFIG_FILE=$(find /opt/rocm -iname 'rocwmma-config.cmake' -o -iname 'rocwmmaConfig.cmake' 2>/dev/null | head -1 || true)
@@ -404,20 +468,9 @@ jobs:
           -Drocwmma_DIR="${{ steps.rocwmma.outputs.rocwmma_dir }}" \
           -DCMAKE_HIP_ARCHITECTURES="${{ steps.map-targets.outputs.mapped_target }}" \
           -DMLX_BUILD_ROCM=ON \
-          -DMLX_HAS_ROCM_WMMA=OFF \
           -DMLX_LM_BUILD_TESTS=OFF \
           -DMLX_LM_BUILD_EXAMPLES=ON
 
-        # MLX_HAS_ROCM_WMMA=OFF: NripeshN/mlx rocm-support auto-enables this
-        # whenever any target arch matches gfx1[12]xx and then hard-requires
-        # find_package(rocwmma CONFIG). rocWMMA 7.2.2's CheckF8 cmake macro
-        # fails under the TheRock 7.9.0rc1 CMAKE_CXX_COMPILER because
-        # -xhip is smuggled via COMPILE_DEFINITIONS instead of CMAKE_CXX_FLAGS,
-        # so the try_compile never runs with HIP semantics. Skipping the
-        # WMMA path drops one flash-attention kernel (MLX falls back to the
-        # non-WMMA attention) but unblocks the build; 0.1.x gets a proper
-        # fix (either patch MLX to respect this env var cleanly, or wire
-        # amdclang++ as CMAKE_CXX_COMPILER so the probe succeeds).
         cmake --build . -j $(nproc)
 
     - name: Package build artifacts
