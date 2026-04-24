@@ -150,15 +150,23 @@ jobs:
         rocm_source=$(jq -r ".${channel}.source" .github/rocm-channels.json)
         version_prefix=$(jq -r ".${channel}.version_prefix" .github/rocm-channels.json)
 
-        case "$rocm_source" in
-          amd-apt|amd-tarball) ;;
+        # Each channel has a fixed expected source. Config drift (e.g. preview
+        # flipped to amd-apt) must fail loudly here, not silently change what
+        # the rest of the job installs.
+        case "$channel" in
+          stable)  expected_source="amd-apt" ;;
+          preview) expected_source="amd-tarball" ;;
           *)
-            echo "::error::${channel} channel source must be 'amd-apt' or 'amd-tarball', got '$rocm_source'"
+            echo "::error::Unsupported channel '$channel'"
             exit 1
             ;;
         esac
-        if [ -z "$version_prefix" ] || [ "$version_prefix" = "null" ]; then
-          echo "::error::${channel} channel is missing version_prefix in rocm-channels.json"
+        if [ "$rocm_source" != "$expected_source" ]; then
+          echo "::error::${channel} channel source drift in rocm-channels.json: expected '$expected_source', got '$rocm_source'"
+          exit 1
+        fi
+        if [[ ! "$version_prefix" =~ ^[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::${channel} channel has invalid version_prefix '$version_prefix' in rocm-channels.json (want <major>.<minor>, e.g. 7.2 or 7.12)"
           exit 1
         fi
 
@@ -388,9 +396,9 @@ jobs:
 
         if [ -n "$CONFIG_FILE" ]; then
           ROCWMMA_DIR=$(dirname "$CONFIG_FILE")
-          echo "Found rocWMMA config in tarball: $CONFIG_FILE"
+          echo "Found rocWMMA config at: $CONFIG_FILE"
         else
-          echo "rocWMMA config not found in tarball — vendoring from ROCm/rocWMMA GitHub release."
+          echo "rocWMMA config not found under /opt/rocm — vendoring from ROCm/rocWMMA GitHub release."
           # Pin to rocm-7.2.2. This tag is required (not 6.4.1) because:
           #   1. gfx1150/gfx1151 WMMA arch defines (ROCWMMA_ARCH_GFX1151 etc.)
           #      are only present in rocm-7.2.x+ — header compile silently
