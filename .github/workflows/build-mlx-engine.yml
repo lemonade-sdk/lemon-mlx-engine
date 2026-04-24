@@ -324,60 +324,19 @@ jobs:
           build/_deps/mlx-subbuild
         key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
 
-    # MLX's ROCm backend does find_package(rocwmma REQUIRED CONFIG) for any
-    # gfx1[12]xx target. Both active channels ship rocWMMA in-box, so the
-    # probe normally hits first. The vendor-from-source fallback is kept as
-    # insurance for future slim tarballs; it sed-patches upstream rocWMMA's
-    # broken CheckF8.cmake (-xhip misrouted via COMPILE_DEFINITIONS).
-    - name: Locate or install rocWMMA
+    - name: Locate rocWMMA
       id: rocwmma
       run: |
-        set -euxo pipefail
-
+        set -euo pipefail
         CONFIG_FILE=$(find /opt/rocm -iname 'rocwmma-config.cmake' -o -iname 'rocwmmaConfig.cmake' 2>/dev/null | head -1 || true)
-
-        if [ -n "$CONFIG_FILE" ]; then
-          ROCWMMA_DIR=$(dirname "$CONFIG_FILE")
-          echo "Found rocWMMA config at: $CONFIG_FILE"
-        else
-          echo "rocWMMA config not found under /opt/rocm — vendoring from ROCm/rocWMMA GitHub release."
-          # rocm-7.2.2 is the oldest tag that both (a) defines the gfx1150/1151
-          # WMMA arch macros and (b) exports rocwmma-config.cmake. Keep matched
-          # to the ROCm major shipped in rocm-channels.json.
-          ROCWMMA_TAG="${ROCWMMA_TAG:-rocm-7.2.2}"
-          TMPDIR=$(mktemp -d)
-          git clone --depth 1 --branch "$ROCWMMA_TAG" \
-            https://github.com/ROCm/rocWMMA.git "$TMPDIR/rocWMMA"
-          cd "$TMPDIR/rocWMMA"
-
-          # Upstream CheckF8.cmake passes -xhip via COMPILE_DEFINITIONS, which
-          # CMake -D-prefixes into `-D-xhip`; reroute it to CMAKE_CXX_FLAGS so
-          # the try_compile actually runs in HIP driver mode.
-          if [ -f cmake/Macros/CheckF8.cmake ]; then
-            sed -i 's|COMPILE_DEFINITIONS -xhip|CMAKE_FLAGS "-DCMAKE_CXX_FLAGS=-xhip"|g' \
-              cmake/Macros/CheckF8.cmake
-          fi
-
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=/opt/rocm \
-            -DCMAKE_PREFIX_PATH=/opt/rocm \
-            -DCMAKE_CXX_COMPILER="${{ steps.rocm-paths.outputs.clangxx }}" \
-            -DROCWMMA_BUILD_TESTS=OFF \
-            -DROCWMMA_BUILD_SAMPLES=OFF \
-            -DROCWMMA_BUILD_DOCS=OFF
-          sudo cmake --build build --target install
-          CONFIG_FILE=$(find /opt/rocm -iname 'rocwmma-config.cmake' -o -iname 'rocwmmaConfig.cmake' 2>/dev/null | head -1)
-          if [ -z "$CONFIG_FILE" ]; then
-            echo "::error::rocWMMA install completed but config not discoverable. Listing /opt/rocm/lib/cmake:"
-            ls -la /opt/rocm/lib/cmake 2>/dev/null || true
-            exit 1
-          fi
-          ROCWMMA_DIR=$(dirname "$CONFIG_FILE")
+        if [ -z "$CONFIG_FILE" ]; then
+          echo "::error::rocWMMA config not found under /opt/rocm. Both channels ship rocWMMA in-box (stable's rocwmma-dev apt package, preview's 7.12.x tarball) — a miss here means the install step above is broken."
+          ls -la /opt/rocm/lib/cmake 2>/dev/null || true
+          exit 1
         fi
-
+        ROCWMMA_DIR=$(dirname "$CONFIG_FILE")
+        echo "Found rocWMMA config at: $CONFIG_FILE"
         echo "rocwmma_dir=$ROCWMMA_DIR" >> $GITHUB_OUTPUT
-        echo "rocWMMA CMake dir: $ROCWMMA_DIR"
 
     - name: Build MLX Engine + ROCm
       run: |
