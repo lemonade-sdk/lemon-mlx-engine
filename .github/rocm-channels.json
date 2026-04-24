@@ -1,10 +1,10 @@
 {
-  "_comment": "stable pulls latest 7.2.x from repo.radeon.com apt; preview pulls latest 7.12.x TheRock tarball from repo.amd.com. Each channel auto-discovers the newest patch; exact pins live in ci/resolve-rocm-version.sh.",
+  "_comment": "stable pulls latest 7.2.x from github.com/lemonade-sdk/rocm-stable releases; preview pulls latest 7.12.x TheRock tarball from repo.amd.com. Each channel auto-discovers the newest patch.",
   "_allowed_channels": ["stable", "preview"],
   "stable": {
     "version_prefix": "7.2",
-    "source": "amd-apt",
-    "apt_base_url": "https://repo.radeon.com/rocm/apt"
+    "source": "github-release",
+    "release_repo": "lemonade-sdk/rocm-stable"
   },
   "preview": {
     "version_prefix": "7.12",

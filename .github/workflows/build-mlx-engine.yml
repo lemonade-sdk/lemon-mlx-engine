@@ -133,7 +133,7 @@ jobs:
 
         # Channel → source mapping is fixed; guard against rocm-channels.json drift.
         case "$channel" in
-          stable)  expected_source="amd-apt" ;;
+          stable)  expected_source="github-release" ;;
           preview) expected_source="amd-tarball" ;;
           *)
             echo "::error::Unsupported channel '$channel'"
@@ -153,55 +153,33 @@ jobs:
         echo "ROCM_SOURCE=$rocm_source" >> $GITHUB_ENV
         echo "ROCM_VERSION_PREFIX=$version_prefix" >> $GITHUB_ENV
 
-    - name: Install ROCm from AMD apt (stable channel, latest 7.2.x)
-      if: env.ROCM_SOURCE == 'amd-apt'
+    - name: Install ROCm from lemonade-sdk/rocm-stable (stable channel, latest 7.2.x)
+      if: env.ROCM_SOURCE == 'github-release'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         channel="${{ env.ROCM_CHANNEL }}"
         prefix="${{ env.ROCM_VERSION_PREFIX }}"
-        apt_base=$(jq -r ".${channel}.apt_base_url" .github/rocm-channels.json)
+        release_repo=$(jq -r ".${channel}.release_repo" .github/rocm-channels.json)
 
-        case "$apt_base" in
-          https://repo.radeon.com/rocm/apt) ;;
-          *)
-            echo "::error::apt_base_url must be https://repo.radeon.com/rocm/apt, got '$apt_base'"
-            exit 1
-            ;;
-        esac
-
-        echo "Resolving latest ${prefix}.x at ${apt_base}/"
-        listing=$(curl -fsSL "${apt_base}/" || true)
         prefix_re=$(printf '%s' "$prefix" | sed 's/\./\\./g')
-        resolved_version=$(printf '%s\n' "$listing" \
-          | grep -oE "href=\"${prefix_re}\.[0-9]+/\"" \
-          | sed -E 's#href="([0-9.]+)/"#\1#' \
-          | sort -uV | tail -1)
+        resolved_version=$(gh api --paginate "repos/${release_repo}/releases" --jq '.[].tag_name' \
+          | grep -E "^v${prefix_re}(\.[0-9]+)?$" \
+          | sed 's/^v//' | sort -uV | tail -1)
 
         if [ -z "$resolved_version" ]; then
-          echo "::error::No ${prefix}.x release published at ${apt_base}/."
-          echo "::error::Retry once AMD publishes ${prefix}.x there, or switch channels."
+          echo "::error::No v${prefix}.x release published at github.com/${release_repo}/releases."
           exit 1
         fi
-        rocm_apt_url="${apt_base}/${resolved_version}"
+
+        asset_url="https://github.com/${release_repo}/releases/download/v${resolved_version}/rocm-${resolved_version}-runtime-libs.tar.gz"
         echo "Resolved ${channel} ROCm version: ${resolved_version}"
-        echo "Installing from AMD apt: ${rocm_apt_url}"
+        echo "Installing from: ${asset_url}"
 
-        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
-        wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
-          gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+        sudo mkdir -p /opt/rocm
+        curl -sL "$asset_url" | sudo tar -xzf - -C /opt/rocm --strip-components=1
 
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] ${rocm_apt_url} jammy main" \
-          | sudo tee /etc/apt/sources.list.d/rocm.list
-
-        # Pin to repo.radeon.com only — blocks any distro ROCm package.
-        printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
-          | sudo tee /etc/apt/preferences.d/rocm-pin-600
-
-        sudo apt-get update
-        sudo apt-get install -y \
-          hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
-          rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
-
-        echo "Installed ROCm ${resolved_version} (channel: ${channel}) from ${rocm_apt_url}"
+        echo "Installed ROCm ${resolved_version} (channel: ${channel}) from ${asset_url}"
         echo "DETECTED_ROCM_VERSION=${resolved_version}" >> $GITHUB_ENV
         echo "DETECTED_ROCM_CHANNEL=${channel}" >> $GITHUB_ENV
 
