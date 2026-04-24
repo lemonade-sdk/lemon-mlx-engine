@@ -35,8 +35,8 @@ on:
 
 env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
-  GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X' }}
   ROCM_CHANNEL: ${{ github.event.inputs.rocm_channel || (github.event.schedule == '0 16 * * 1' && 'stable') || 'preview' }}
+  GFX_TARGETS: ${{ github.event.inputs.gfx_target || (env.ROCM_CHANNEL == 'stable' && 'gfx110X,gfx1150,gfx1151,gfx1152,gfx1153,gfx120X,gfx115X_gfx120X') || 'gfx110X,gfx1150,gfx1151,gfx120X,gfx115X_gfx120X' }}
 
 jobs:
   # ---------------------------------------------------------------------------
