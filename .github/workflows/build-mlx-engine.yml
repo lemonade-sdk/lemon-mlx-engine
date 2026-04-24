@@ -373,9 +373,20 @@ jobs:
           -Drocwmma_DIR="${{ steps.rocwmma.outputs.rocwmma_dir }}" \
           -DCMAKE_HIP_ARCHITECTURES="${{ steps.map-targets.outputs.mapped_target }}" \
           -DMLX_BUILD_ROCM=ON \
+          -DMLX_HAS_ROCM_WMMA=OFF \
           -DMLX_LM_BUILD_TESTS=OFF \
           -DMLX_LM_BUILD_EXAMPLES=ON
 
+        # MLX_HAS_ROCM_WMMA=OFF: NripeshN/mlx rocm-support auto-enables this
+        # whenever any target arch matches gfx1[12]xx and then hard-requires
+        # find_package(rocwmma CONFIG). rocWMMA 7.2.2's CheckF8 cmake macro
+        # fails under the TheRock 7.9.0rc1 CMAKE_CXX_COMPILER because
+        # -xhip is smuggled via COMPILE_DEFINITIONS instead of CMAKE_CXX_FLAGS,
+        # so the try_compile never runs with HIP semantics. Skipping the
+        # WMMA path drops one flash-attention kernel (MLX falls back to the
+        # non-WMMA attention) but unblocks the build; 0.1.x gets a proper
+        # fix (either patch MLX to respect this env var cleanly, or wire
+        # amdclang++ as CMAKE_CXX_COMPILER so the probe succeeds).
         cmake --build . -j $(nproc)
 
     - name: Package build artifacts
