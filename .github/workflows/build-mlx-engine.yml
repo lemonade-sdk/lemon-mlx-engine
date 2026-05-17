@@ -85,7 +85,7 @@ jobs:
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
         sudo apt-get update
-        sudo apt-get install -y amdrocm7.13
+        sudo apt-get install -y -o Dpkg::Options::="--force-overwrite" amdrocm7.13
 
         echo "Installed ROCm 7.13.0 from AMD apt."
 
