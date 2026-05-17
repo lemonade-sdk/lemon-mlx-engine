@@ -57,23 +57,10 @@ jobs:
         echo "macOS build: $should_build_macos"
 
   build-ubuntu-rocm:
-    name: build-ubuntu-rocm (${{ matrix.channel }})
+    name: build-ubuntu-rocm
     runs-on: ubuntu-22.04
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.should_build_ubuntu_rocm == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - channel: stable
-            rocm_version: "7.2.2"
-            rocm_source: sdk-bundle
-            release_repo: lemonade-sdk/rocm-stable
-            gpu_targets: "gfx908;gfx90a;gfx942;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201"
-          - channel: preview
-            rocm_version: "7.12.0"
-            rocm_source: amd-tarball
-            gpu_targets: "gfx908;gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201"
 
     steps:
     - name: Checkout repository
@@ -84,81 +71,28 @@ jobs:
     - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake ninja-build patchelf unzip curl \
+        sudo apt-get install -y cmake ninja-build \
           libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
 
-    - name: Install ROCm
+    - name: Install ROCm 7.13
       run: |
-        if [ "${{ matrix.rocm_source }}" = "sdk-bundle" ]; then
-          # Full SDK bundle from lemonade-sdk/rocm-stable.
-          # Split into 3 SDK artifacts (each <2 GiB for GitHub release asset limit)
-          # plus a separate runtime-libs tarball for end users.
-          # MLX Engine build needs all 3 SDK artifacts extracted to /opt/rocm.
-          sudo mkdir -p /opt/rocm
+        # AMD official ROCm 7.13 from repo.radeon.com
+        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+        wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
+          gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
 
-          # --- Download all 3 SDK artifacts in a loop ---
-          for part in toolchain blas math; do
-            url="https://github.com/${{ matrix.release_repo }}/releases/download/v${{ matrix.rocm_version }}/rocm-${{ matrix.rocm_version }}-sdk-${part}.tar.gz"
-            sha256_url="${url}.sha256"
-            echo "Downloading SDK ${part} from $url"
-            curl -fsSL "$url" -o /tmp/rocm-sdk-${part}.tar.gz
-            curl -fsSL "$sha256_url" -o /tmp/rocm-sdk-${part}.tar.gz.sha256
-            (cd /tmp && sha256sum -c rocm-sdk-${part}.tar.gz.sha256)
-            echo "Extracting SDK ${part} to /opt/rocm ..."
-            sudo tar -xzf /tmp/rocm-sdk-${part}.tar.gz -C /opt/rocm --strip-components=1
-          done
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.13 jammy main" \
+          | sudo tee /etc/apt/sources.list.d/rocm.list
 
-          # --- Cleanup ---
-          rm -f /tmp/rocm-sdk-toolchain.tar.gz /tmp/rocm-sdk-toolchain.tar.gz.sha256
-          rm -f /tmp/rocm-sdk-blas.tar.gz /tmp/rocm-sdk-blas.tar.gz.sha256
-          rm -f /tmp/rocm-sdk-math.tar.gz /tmp/rocm-sdk-math.tar.gz.sha256
+        printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+          | sudo tee /etc/apt/preferences.d/rocm-pin-600
 
-          # --- Symlinks if needed ---
-          if [ -f /opt/rocm/bin/amdclang ] && [ ! -f /opt/rocm/bin/clang ]; then
-            sudo ln -sf /opt/rocm/bin/amdclang /opt/rocm/bin/clang
-            sudo ln -sf /opt/rocm/bin/amdclang++ /opt/rocm/bin/clang++
-          fi
-          if [ -f /opt/rocm/lib/llvm/bin/amdclang ] && [ ! -f /opt/rocm/lib/llvm/bin/clang ]; then
-            sudo ln -sf /opt/rocm/lib/llvm/bin/amdclang /opt/rocm/lib/llvm/bin/clang
-            sudo ln -sf /opt/rocm/lib/llvm/bin/amdclang++ /opt/rocm/lib/llvm/bin/clang++
-          fi
+        sudo apt-get update
+        sudo apt-get install -y \
+          hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
+          rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
 
-          # --- Smoke test: verify all SDK artifacts installed correctly ---
-          # sdk-toolchain: compiler, headers, cmake configs
-          for check in \
-            "/opt/rocm/bin/amdclang" \
-            "/opt/rocm/bin/hipcc" \
-            "/opt/rocm/include/hip/hip_runtime.h" \
-            "/opt/rocm/lib/cmake/hip" \
-            "/opt/rocm/lib/cmake/amdclang"; do
-            if [ ! -e "$check" ]; then echo "::error::sdk-toolchain component missing: $check"; exit 1; fi
-          done
-
-          # sdk-blas: rocBLAS, hipBLAS, Tensile kernels
-          for check in \
-            "/opt/rocm/lib/librocblas.so" \
-            "/opt/rocm/lib/libhipblas.so" \
-            "/opt/rocm/lib/cmake/rocblas"; do
-            if [ ! -e "$check" ]; then echo "::error::sdk-blas component missing: $check"; exit 1; fi
-          done
-
-          # sdk-math: rocSPARSE, rocSOLVER, rocWMMA
-          for check in \
-            "/opt/rocm/lib/librocsparse.so" \
-            "/opt/rocm/lib/librocsolver.so" \
-            "/opt/rocm/lib/cmake/rocsparse" \
-            "/opt/rocm/lib/cmake/rocwmma"; do
-            if [ ! -e "$check" ]; then echo "::error::sdk-math component missing: $check"; exit 1; fi
-          done
-
-          echo "ROCm SDK (3 artifacts) verified successfully."
-          ls -lh /opt/rocm/lib/libroc*.so /opt/rocm/lib/libhipblas.so 2>/dev/null || true
-        else
-          sudo mkdir -p /opt/rocm
-          url="https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-${{ matrix.rocm_version }}.tar.gz"
-          echo "Installing ROCm ${{ matrix.rocm_version }} from $url"
-          curl -fsSL "$url" | sudo tar -xzf - -C /opt/rocm --strip-components=1
-        fi
+        echo "Installed ROCm 7.13 from AMD apt."
 
     - name: Set ROCm environment variables
       run: |
@@ -166,31 +100,6 @@ jobs:
         echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
         echo "HIP_PLATFORM=amd" >> $GITHUB_ENV
         echo "/opt/rocm/bin:/opt/rocm/llvm/bin:/opt/rocm/lib/llvm/bin:$PATH" >> $GITHUB_PATH
-
-    - name: Locate ROCm clang
-      id: rocm-paths
-      run: |
-        set -euo pipefail
-        find_in_rocm() {
-          find /opt/rocm/ \( -type f -o -type l \) -name "$1" \
-            \( -path '*/bin/*' -o -path '*/llvm/bin/*' \) 2>/dev/null | head -n 1
-        }
-        CLANG_PATH=$(find_in_rocm amdclang)
-        [ -n "$CLANG_PATH" ] || CLANG_PATH=$(find_in_rocm clang)
-        if [ -z "$CLANG_PATH" ]; then
-          echo "::error::No amdclang/clang found under /opt/rocm/"
-          find /opt/rocm/ -maxdepth 6 -type d -name bin 2>/dev/null
-          exit 1
-        fi
-        CLANG_DIR=$(dirname "$CLANG_PATH")
-        case "$(basename "$CLANG_PATH")" in
-          amdclang) CLANGXX_PATH="$CLANG_DIR/amdclang++" ;;
-          clang)    CLANGXX_PATH="$CLANG_DIR/clang++" ;;
-        esac
-        echo "clang:   $CLANG_PATH"
-        echo "clang++: $CLANGXX_PATH"
-        echo "clang=$CLANG_PATH" >> $GITHUB_OUTPUT
-        echo "clangxx=$CLANGXX_PATH" >> $GITHUB_OUTPUT
 
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
@@ -204,16 +113,16 @@ jobs:
       run: |
         export HIP_PATH=/opt/rocm
         export ROCM_PATH=/opt/rocm
-        export PATH="/opt/rocm/bin:/opt/rocm/llvm/bin:/opt/rocm/lib/llvm/bin:$PATH"
+        export PATH="/opt/rocm/bin:$PATH"
 
         mkdir -p build && cd build
 
         cmake .. -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_C_COMPILER="${{ steps.rocm-paths.outputs.clang }}" \
-          -DCMAKE_CXX_COMPILER="${{ steps.rocm-paths.outputs.clangxx }}" \
+          -DCMAKE_C_COMPILER=/opt/rocm/bin/hipcc \
+          -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
           -DCMAKE_PREFIX_PATH=/opt/rocm \
-          -DCMAKE_HIP_ARCHITECTURES="${{ matrix.gpu_targets }}" \
+          -DCMAKE_HIP_ARCHITECTURES="gfx908;gfx90a;gfx942;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201" \
           -DCMAKE_CXX_CLANG_TIDY= \
           -DCLANG_TIDY_EXE=CLANG_TIDY_EXE-NOTFOUND \
           -DMINJA_EXAMPLE_ENABLED=OFF \
@@ -235,19 +144,13 @@ jobs:
           cp /usr/lib/x86_64-linux-gnu/$lib output/ 2>/dev/null || true
         done
 
-        for binary in output/server output/chat output/diagnose; do
-          if [ -f "$binary" ]; then
-            patchelf --set-rpath '$ORIGIN:/opt/rocm/lib' "$binary" 2>/dev/null || true
-          fi
-        done
-
-        echo "Packaged artifacts (no ROCm libs bundled — requires system ROCm):"
+        echo "Packaged artifacts:"
         ls -lh output/
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: mlx-engine-ubuntu-rocm-${{ matrix.channel }}-x64
+        name: mlx-engine-ubuntu-rocm-x64
         path: output/
         retention-days: 30
 
@@ -433,29 +336,25 @@ jobs:
       run: |
         TAG="${{ steps.generate-tag.outputs.tag }}"
 
-        for channel in stable preview; do
-          artifact_dir="./all-artifacts/mlx-engine-ubuntu-rocm-${channel}-x64"
-          archive_name="mlx-engine-${TAG}-ubuntu-rocm-${channel}-x64"
-          if [ -d "$artifact_dir" ]; then
-            echo "Creating archive: ${archive_name}.zip"
-            cd "$artifact_dir"
-            zip -9 -r "../../${archive_name}.zip" *
-            cd ../../
-          fi
-        done
+        if [ -d "./all-artifacts/mlx-engine-ubuntu-rocm-x64" ]; then
+          echo "Creating archive: mlx-engine-${TAG}-ubuntu-rocm-x64.zip"
+          cd "./all-artifacts/mlx-engine-ubuntu-rocm-x64"
+          zip -9 -r "../../../mlx-engine-${TAG}-ubuntu-rocm-x64.zip" *
+          cd ../../../
+        fi
 
         if [ -d "./all-artifacts/mlx-engine-ubuntu-cpu-x64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-ubuntu-cpu-x64.zip"
           cd "./all-artifacts/mlx-engine-ubuntu-cpu-x64"
-          zip -9 -r "../../mlx-engine-${TAG}-ubuntu-cpu-x64.zip" *
-          cd ../../
+          zip -9 -r "../../../mlx-engine-${TAG}-ubuntu-cpu-x64.zip" *
+          cd ../../../
         fi
 
         if [ -d "./all-artifacts/mlx-engine-macos-arm64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-macos-arm64.zip"
           cd "./all-artifacts/mlx-engine-macos-arm64"
-          zip -9 -r "../../mlx-engine-${TAG}-macos-arm64.zip" *
-          cd ../../
+          zip -9 -r "../../../mlx-engine-${TAG}-macos-arm64.zip" *
+          cd ../../../
         fi
 
         echo "Created archives:"
@@ -482,12 +381,11 @@ jobs:
           --notes "**Build Number**: $TAG
         **Build Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
-        MLX Engine binaries with ROCm, CPU, and macOS support.
-        **Requires system ROCm installation** — ROCm libraries are not bundled.
+        MLX Engine binaries with ROCm 7.13, CPU, and macOS support.
+        **Requires system ROCm 7.13 installation** — ROCm libraries are not bundled.
 
         ### Downloads
-        - **Ubuntu ROCm (stable)**: mlx-engine-${TAG}-ubuntu-rocm-stable-x64.zip
-        - **Ubuntu ROCm (preview)**: mlx-engine-${TAG}-ubuntu-rocm-preview-x64.zip
+        - **Ubuntu ROCm 7.13**: mlx-engine-${TAG}-ubuntu-rocm-x64.zip
         - **Ubuntu CPU**: mlx-engine-${TAG}-ubuntu-cpu-x64.zip
         - **macOS ARM64**: mlx-engine-${TAG}-macos-arm64.zip" \
           $upload_files
