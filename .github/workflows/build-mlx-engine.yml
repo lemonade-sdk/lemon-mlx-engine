@@ -74,14 +74,14 @@ jobs:
         sudo apt-get install -y cmake ninja-build \
           libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
 
-    - name: Install ROCm 7.13
+    - name: Install ROCm 7.2.3
       run: |
-        # AMD official ROCm 7.13 from repo.radeon.com
+        # AMD official ROCm 7.2.3 from repo.radeon.com
         sudo mkdir --parents --mode=0755 /etc/apt/keyrings
         wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
           gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
 
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.13 jammy main" \
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.2.3 jammy main" \
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
         printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
@@ -92,7 +92,7 @@ jobs:
           hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
           rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
 
-        echo "Installed ROCm 7.13 from AMD apt."
+        echo "Installed ROCm 7.2.3 from AMD apt."
 
     - name: Set ROCm environment variables
       run: |
@@ -381,11 +381,11 @@ jobs:
           --notes "**Build Number**: $TAG
         **Build Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
-        MLX Engine binaries with ROCm 7.13, CPU, and macOS support.
-        **Requires system ROCm 7.13 installation** — ROCm libraries are not bundled.
+        MLX Engine binaries with ROCm 7.2.3, CPU, and macOS support.
+        **Requires system ROCm 7.2.3 installation** — ROCm libraries are not bundled.
 
         ### Downloads
-        - **Ubuntu ROCm 7.13**: mlx-engine-${TAG}-ubuntu-rocm-x64.zip
+        - **Ubuntu ROCm 7.2.3**: mlx-engine-${TAG}-ubuntu-rocm-x64.zip
         - **Ubuntu CPU**: mlx-engine-${TAG}-ubuntu-cpu-x64.zip
         - **macOS ARM64**: mlx-engine-${TAG}-macos-arm64.zip" \
           $upload_files
