@@ -91,33 +91,27 @@ jobs:
       run: |
         if [ "${{ matrix.rocm_source }}" = "sdk-bundle" ]; then
           # Full SDK bundle from lemonade-sdk/rocm-stable.
-          # Split into two parts (each <2 GiB for GitHub release asset limit).
-          # Both must be extracted to /opt/rocm for the complete SDK.
+          # Split into 3 SDK artifacts (each <2 GiB for GitHub release asset limit)
+          # plus a separate runtime-libs tarball for end users.
+          # MLX Engine build needs all 3 SDK artifacts extracted to /opt/rocm.
           sudo mkdir -p /opt/rocm
 
-          # --- Download SDK Part 1 (compiler, headers, cmake configs) ---
-          url1="https://github.com/${{ matrix.release_repo }}/releases/download/v${{ matrix.rocm_version }}/rocm-${{ matrix.rocm_version }}-sdk-part1.tar.gz"
-          sha256_url1="${url1}.sha256"
-          echo "Downloading SDK Part 1 from $url1"
-          curl -fsSL "$url1" -o /tmp/rocm-sdk-part1.tar.gz
-          curl -fsSL "$sha256_url1" -o /tmp/rocm-sdk-part1.tar.gz.sha256
-          (cd /tmp && sha256sum -c rocm-sdk-part1.tar.gz.sha256)
-          echo "Extracting SDK Part 1 to /opt/rocm ..."
-          sudo tar -xzf /tmp/rocm-sdk-part1.tar.gz -C /opt/rocm --strip-components=1
-
-          # --- Download SDK Part 2 (math libs: rocblas, hipblas, rocsparse, rocsolver, Tensile) ---
-          url2="https://github.com/${{ matrix.release_repo }}/releases/download/v${{ matrix.rocm_version }}/rocm-${{ matrix.rocm_version }}-sdk-part2.tar.gz"
-          sha256_url2="${url2}.sha256"
-          echo "Downloading SDK Part 2 from $url2"
-          curl -fsSL "$url2" -o /tmp/rocm-sdk-part2.tar.gz
-          curl -fsSL "$sha256_url2" -o /tmp/rocm-sdk-part2.tar.gz.sha256
-          (cd /tmp && sha256sum -c rocm-sdk-part2.tar.gz.sha256)
-          echo "Extracting SDK Part 2 to /opt/rocm ..."
-          sudo tar -xzf /tmp/rocm-sdk-part2.tar.gz -C /opt/rocm --strip-components=1
+          # --- Download all 3 SDK artifacts in a loop ---
+          for part in toolchain blas math; do
+            url="https://github.com/${{ matrix.release_repo }}/releases/download/v${{ matrix.rocm_version }}/rocm-${{ matrix.rocm_version }}-sdk-${part}.tar.gz"
+            sha256_url="${url}.sha256"
+            echo "Downloading SDK ${part} from $url"
+            curl -fsSL "$url" -o /tmp/rocm-sdk-${part}.tar.gz
+            curl -fsSL "$sha256_url" -o /tmp/rocm-sdk-${part}.tar.gz.sha256
+            (cd /tmp && sha256sum -c rocm-sdk-${part}.tar.gz.sha256)
+            echo "Extracting SDK ${part} to /opt/rocm ..."
+            sudo tar -xzf /tmp/rocm-sdk-${part}.tar.gz -C /opt/rocm --strip-components=1
+          done
 
           # --- Cleanup ---
-          rm -f /tmp/rocm-sdk-part1.tar.gz /tmp/rocm-sdk-part1.tar.gz.sha256
-          rm -f /tmp/rocm-sdk-part2.tar.gz /tmp/rocm-sdk-part2.tar.gz.sha256
+          rm -f /tmp/rocm-sdk-toolchain.tar.gz /tmp/rocm-sdk-toolchain.tar.gz.sha256
+          rm -f /tmp/rocm-sdk-blas.tar.gz /tmp/rocm-sdk-blas.tar.gz.sha256
+          rm -f /tmp/rocm-sdk-math.tar.gz /tmp/rocm-sdk-math.tar.gz.sha256
 
           # --- Symlinks if needed ---
           if [ -f /opt/rocm/bin/amdclang ] && [ ! -f /opt/rocm/bin/clang ]; then
@@ -129,26 +123,35 @@ jobs:
             sudo ln -sf /opt/rocm/lib/llvm/bin/amdclang++ /opt/rocm/lib/llvm/bin/clang++
           fi
 
-          # --- Smoke test: verify both SDK parts installed correctly ---
-          # Part 1: compiler, headers, cmake configs
+          # --- Smoke test: verify all SDK artifacts installed correctly ---
+          # sdk-toolchain: compiler, headers, cmake configs
           for check in \
             "/opt/rocm/bin/amdclang" \
             "/opt/rocm/bin/hipcc" \
             "/opt/rocm/include/hip/hip_runtime.h" \
             "/opt/rocm/lib/cmake/hip" \
             "/opt/rocm/lib/cmake/amdclang"; do
-            if [ ! -e "$check" ]; then echo "::error::SDK Part 1 component missing: $check"; exit 1; fi
+            if [ ! -e "$check" ]; then echo "::error::sdk-toolchain component missing: $check"; exit 1; fi
           done
 
-          # Part 2: math libraries (rocblas, hipblas, rocsparse, rocsolver, Tensile)
+          # sdk-blas: rocBLAS, hipBLAS, Tensile kernels
           for check in \
             "/opt/rocm/lib/librocblas.so" \
             "/opt/rocm/lib/libhipblas.so" \
             "/opt/rocm/lib/cmake/rocblas"; do
-            if [ ! -e "$check" ]; then echo "::error::SDK Part 2 component missing: $check"; exit 1; fi
+            if [ ! -e "$check" ]; then echo "::error::sdk-blas component missing: $check"; exit 1; fi
           done
 
-          echo "ROCm SDK (both parts) verified successfully."
+          # sdk-math: rocSPARSE, rocSOLVER, rocWMMA
+          for check in \
+            "/opt/rocm/lib/librocsparse.so" \
+            "/opt/rocm/lib/librocsolver.so" \
+            "/opt/rocm/lib/cmake/rocsparse" \
+            "/opt/rocm/lib/cmake/rocwmma"; do
+            if [ ! -e "$check" ]; then echo "::error::sdk-math component missing: $check"; exit 1; fi
+          done
+
+          echo "ROCm SDK (3 artifacts) verified successfully."
           ls -lh /opt/rocm/lib/libroc*.so /opt/rocm/lib/libhipblas.so 2>/dev/null || true
         else
           sudo mkdir -p /opt/rocm
