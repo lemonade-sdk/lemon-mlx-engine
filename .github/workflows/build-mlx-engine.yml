@@ -76,21 +76,16 @@ jobs:
 
     - name: Install ROCm 7.13.0
       run: |
-        # AMD official ROCm 7.13.0 from repo.radeon.com
+        # AMD official ROCm 7.13.0 (new apt repo layout)
         sudo mkdir --parents --mode=0755 /etc/apt/keyrings
-        wget -q https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
-          gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+        wget -q https://repo.amd.com/rocm/packages/gpg/rocm.gpg -O - | \
+          gpg --dearmor | sudo tee /etc/apt/keyrings/amdrocm.gpg > /dev/null
 
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.13 jammy main" \
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/ubuntu2204 stable main" \
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
-        printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
-          | sudo tee /etc/apt/preferences.d/rocm-pin-600
-
         sudo apt-get update
-        sudo apt-get install -y \
-          hip-dev rocblas-dev hipblas-dev hipblaslt-dev rocsolver-dev \
-          rocthrust-dev rocprim-dev hiprand-dev rocrand-dev rocwmma-dev
+        sudo apt-get install -y amdrocm7.13
 
         echo "Installed ROCm 7.13.0 from AMD apt."
 
