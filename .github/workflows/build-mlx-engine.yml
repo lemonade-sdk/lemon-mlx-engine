@@ -324,7 +324,7 @@ jobs:
     - name: Pre-cache model (macOS only)
       if: matrix.os == 'macos-arm64'
       run: |
-        pip3 install huggingface-hub
+        pip3 install --break-system-packages huggingface-hub
         echo "Downloading mlx-community/Qwen3-0.6B to HF cache..."
         python3 -c "
         from huggingface_hub import snapshot_download
