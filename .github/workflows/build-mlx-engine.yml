@@ -325,11 +325,11 @@ jobs:
       if: matrix.os == 'macos-arm64'
       run: |
         pip3 install --break-system-packages huggingface-hub
-        echo "Downloading mlx-community/Qwen3-0.6B to HF cache..."
+        echo "Downloading mlx-community/Qwen3-0.6B-4bit to HF cache..."
         python3 -c "
         from huggingface_hub import snapshot_download
         snapshot_download(
-            repo_id='mlx-community/Qwen3-0.6B',
+            repo_id='mlx-community/Qwen3-0.6B-4bit',
             allow_patterns=['*.json', '*.safetensors'],
         )
         print('Model cached successfully')
@@ -393,11 +393,11 @@ jobs:
         fi
 
         # Inference test: model should be pre-cached on macOS
-        echo "Running inference test with Qwen3-0.6B ..."
+        echo "Running inference test with Qwen3-0.6B-4bit ..."
         response=$(curl -s --max-time 600 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
           -d "{
-            \"model\": \"mlx-community/Qwen3-0.6B\",
+            \"model\": \"mlx-community/Qwen3-0.6B-4bit\",
             \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}],
             \"max_tokens\": 16,
             \"temperature\": 0.0,
