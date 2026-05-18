@@ -319,7 +319,6 @@ jobs:
     - name: 'Smoke test: server start and health'
       run: |
         set -e
-        trap 'kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true' EXIT
 
         PORT=18999
 
@@ -363,7 +362,8 @@ jobs:
 
         echo "SMOKE TEST PASSED -- server started, health check, and models endpoint OK"
 
-        kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
+        kill $SERVER_PID 2>/dev/null || true
+        wait $SERVER_PID 2>/dev/null || true
 
   create-release:
     needs: [prepare-matrix, build-ubuntu-rocm, build-ubuntu-cpu, build-macos, test-simple-math]
