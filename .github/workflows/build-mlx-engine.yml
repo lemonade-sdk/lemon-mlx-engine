@@ -370,7 +370,7 @@ jobs:
 
         # Verify /v1/models endpoint responds
         echo "Checking models endpoint..."
-        models_response=$(curl -sf http://127.0.0.1:$PORT/v1/models 2>&1 || echo "")
+        models_response=$(curl -s http://127.0.0.1:$PORT/v1/models 2>&1)
         if echo "$models_response" | grep -q '"data"'; then
           echo "Models endpoint PASSED"
         else
@@ -378,7 +378,42 @@ jobs:
           exit 1
         fi
 
-        echo "SMOKE TEST PASSED -- server started, health check, and models endpoint OK"
+        # Inference test: download model and generate response
+        echo "Running inference test with Qwen3-0.6B ..."
+        echo "This will download the model on first run (~1.2 GB) ..."
+        response=$(curl -s --max-time 600 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"model\": \"mlx-community/Qwen3-0.6B\",
+            \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}],
+            \"max_tokens\": 16,
+            \"temperature\": 0.0,
+            \"stream\": false
+          }" 2>&1) || {
+          echo "FAIL: chat completion request failed"
+          echo "Response: $response"
+          kill $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
+          exit 1
+        }
+
+        echo "=== Server Response ==="
+        echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
+        echo "=== End Response ==="
+
+        content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
+        echo "Extracted content: $content"
+
+        if echo "$content" | grep -q "4"; then
+          echo "INFERECE TEST PASSED -- model answered correctly"
+        else
+          echo "INFERECE TEST FAILED -- expected '4' in response"
+          kill $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
+          exit 1
+        fi
+
+        echo "SMOKE TEST PASSED -- server started, health check, and inference OK"
 
         kill $SERVER_PID 2>/dev/null || true
         wait $SERVER_PID 2>/dev/null || true
