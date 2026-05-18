@@ -409,7 +409,7 @@ jobs:
           -d "{
             \"model\": \"mlx-community/Qwen3-0.6B-4bit\",
             \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}],
-            \"max_tokens\": 16,
+            \"max_tokens\": 128,
             \"temperature\": 0.0,
             \"stream\": false
           }" 2>&1) || {
