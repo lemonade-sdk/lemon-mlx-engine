@@ -285,20 +285,36 @@ jobs:
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
     runs-on: ${{ matrix.runs_on }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
           - os: ubuntu-rocm
             artifact: mlx-engine-ubuntu-rocm-x64
             runs_on: ubuntu-22.04
+            install_rocm: true
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: ubuntu-22.04
+            install_rocm: false
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
             runs_on: macos-latest
+            install_rocm: false
     steps:
+    - name: Install ROCm runtime (Ubuntu ROCm only)
+      if: matrix.install_rocm
+      run: |
+        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+        wget -q https://repo.amd.com/rocm/packages/gpg/rocm.gpg -O - | \
+          gpg --dearmor | sudo tee /etc/apt/keyrings/amdrocm.gpg > /dev/null
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/ubuntu2204 stable main" \
+          | sudo tee /etc/apt/sources.list.d/rocm.list
+        sudo apt-get update
+        sudo apt-get install -y -o Dpkg::Options::="--force-overwrite" amdrocm7.13
+        echo "/opt/rocm/lib" | sudo tee /etc/ld.so.conf.d/rocm.conf
+        sudo ldconfig
+
     - name: Download build artifact
       uses: actions/download-artifact@v6
       with:
@@ -312,6 +328,8 @@ jobs:
       run: |
         if [ "$(uname)" = "Darwin" ]; then
           echo "DYLD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
+        elif [ -d /opt/rocm/lib ]; then
+          echo "LD_LIBRARY_PATH=$PWD/mlx-binaries:/opt/rocm/lib" >> $GITHUB_ENV
         else
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
         fi
