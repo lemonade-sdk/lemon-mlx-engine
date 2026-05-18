@@ -321,6 +321,20 @@ jobs:
         name: ${{ matrix.artifact }}
         path: mlx-binaries
 
+    - name: Pre-cache model (macOS only)
+      if: matrix.os == 'macos-arm64'
+      run: |
+        pip3 install huggingface-hub
+        echo "Downloading mlx-community/Qwen3-0.6B to HF cache..."
+        python3 -c "
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id='mlx-community/Qwen3-0.6B',
+            allow_patterns=['*.json', '*.safetensors'],
+        )
+        print('Model cached successfully')
+        "
+
     - name: Make binaries executable
       run: chmod +x mlx-binaries/server
 
@@ -378,9 +392,8 @@ jobs:
           exit 1
         fi
 
-        # Inference test: download model and generate response
+        # Inference test: model should be pre-cached on macOS
         echo "Running inference test with Qwen3-0.6B ..."
-        echo "This will download the model on first run (~1.2 GB) ..."
         response=$(curl -s --max-time 600 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
           -d "{

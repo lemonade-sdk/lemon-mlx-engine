@@ -277,9 +277,11 @@ std::string HubApi::snapshot_download(
 
     // Download safetensors files
     // Try single file first, then sharded
+    std::string last_error;
     try {
         download_file(repo_id, "model.safetensors", revision, progress);
-    } catch (...) {
+    } catch (const std::exception& e) {
+        last_error = e.what();
         // Try sharded format
         try {
             download_file(repo_id, "model.safetensors.index.json", revision, nullptr);
@@ -300,8 +302,10 @@ std::string HubApi::snapshot_download(
                     }
                 }
             }
-        } catch (...) {
-            throw std::runtime_error("Could not find model weights for " + repo_id);
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Could not find model weights for " + repo_id +
+                                     " (single-file error: " + last_error +
+                                     ", sharded error: " + e.what() + ")");
         }
     }
 
