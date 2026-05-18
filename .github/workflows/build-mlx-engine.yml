@@ -120,7 +120,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++ \
           -DCMAKE_HIP_COMPILER=hipcc \
           -DCMAKE_PREFIX_PATH=/opt/rocm \
-          -DCMAKE_HIP_ARCHITECTURES="gfx908;gfx90a;gfx942;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201" \
+          -DCMAKE_HIP_ARCHITECTURES="gfx90a;gfx942;gfx1030;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201" \
           -DCMAKE_CXX_CLANG_TIDY= \
           -DCLANG_TIDY_EXE=CLANG_TIDY_EXE-NOTFOUND \
           -DMINJA_EXAMPLE_ENABLED=OFF \
