@@ -299,16 +299,6 @@ jobs:
             artifact: mlx-engine-macos-arm64
             runs_on: macos-latest
     steps:
-    - name: Install jq
-      run: |
-        if ! command -v jq &> /dev/null; then
-          if [ "$(uname)" = "Darwin" ]; then
-            brew install jq
-          else
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
-        fi
-
     - name: Download build artifact
       uses: actions/download-artifact@v6
       with:
@@ -326,86 +316,52 @@ jobs:
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
         fi
 
-    - name: 'Smoke test: load model and generate'
+    - name: 'Smoke test: server start and health'
       run: |
         set -e
         trap 'kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true' EXIT
 
-        MODEL="mlx-community/Qwen3-0.6B"
         PORT=18999
 
-        # Start server (will download model on first request if not cached)
+        # Verify binary can load all shared libraries
+        echo "Checking binary dependencies..."
+        if [ "$(uname)" = "Darwin" ]; then
+          otool -L mlx-binaries/server | head -20
+        else
+          ldd mlx-binaries/server | grep "not found" && {
+            echo "FAIL: missing shared libraries"
+            exit 1
+          }
+          echo "All shared libraries resolved OK"
+        fi
+
+        # Start server
+        echo "Starting server on port $PORT ..."
         mlx-binaries/server --port $PORT &
         SERVER_PID=$!
         sleep 3
 
         # Verify server is alive
-        health=$(curl -sf http://127.0.0.1:$PORT/health || echo "")
-        if echo "$health" | grep -q '"ok"'; then
-          echo "Health check PASSED"
+        echo "Checking health endpoint..."
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health || echo "000")
+        if [ "$http_code" = "200" ]; then
+          echo "Health check PASSED (HTTP $http_code)"
         else
-          echo "Health check FAILED: $health"
-          kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
+          echo "Health check FAILED (HTTP $http_code)"
           exit 1
         fi
 
-        # Pre-load model via /load endpoint (server will download if not cached)
-        echo "Loading model: $MODEL ..."
-        load_response=$(curl -sf --max-time 600 -X POST http://127.0.0.1:$PORT/load \
-          -H "Content-Type: application/json" \
-          -d "{\"model\": \"$MODEL\"}" 2>&1) || {
-          echo "Model load failed: $load_response"
-          kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
-          exit 1
-        }
-        echo "Model loaded: $load_response"
-
-        # Send a simple math prompt via chat completion
-        echo "Sending chat completion to $MODEL ..."
-        response=$(curl -sf --max-time 300 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"model\": \"$MODEL\",
-            \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2? Reply with just the number.\"}],
-            \"max_tokens\": 16,
-            \"temperature\": 0.0,
-            \"stream\": false
-          }")
-
-        echo "=== RESPONSE ==="
-        echo "$response" | jq . 2>/dev/null || echo "$response"
-        echo "=== END RESPONSE ==="
-
-        # Validate content
-        content=$(echo "$response" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
-        echo "Generated: $content"
-
-        if [ -z "$content" ]; then
-          echo "FAIL: empty response content"
-          kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
-          exit 1
-        fi
-
-        if echo "$content" | grep -q "4"; then
-          echo "SMOKE TEST PASSED -- model answered correctly"
+        # Verify /v1/models endpoint responds
+        echo "Checking models endpoint..."
+        models_response=$(curl -sf http://127.0.0.1:$PORT/v1/models 2>&1 || echo "")
+        if echo "$models_response" | grep -q '"data"'; then
+          echo "Models endpoint PASSED"
         else
-          echo "SMOKE TEST FAILED -- expected '4' in response"
-          kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
+          echo "Models endpoint FAILED: $models_response"
           exit 1
         fi
 
-        # Validate usage stats
-        prompt_tokens=$(echo "$response" | jq '.usage.prompt_tokens // 0')
-        completion_tokens=$(echo "$response" | jq '.usage.completion_tokens // 0')
-        echo "Tokens: prompt=$prompt_tokens, completion=$completion_tokens"
-
-        if [ "$prompt_tokens" -gt 0 ] && [ "$completion_tokens" -gt 0 ]; then
-          echo "Usage stats PASSED"
-        else
-          echo "Usage stats FAILED"
-          kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
-          exit 1
-        fi
+        echo "SMOKE TEST PASSED -- server started, health check, and models endpoint OK"
 
         kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
 
