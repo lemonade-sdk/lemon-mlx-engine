@@ -318,15 +318,16 @@ jobs:
     - name: Make binaries executable
       run: chmod +x mlx-binaries/server
 
-    - name: Smoke test: load model and generate
+    - name: 'Smoke test: load model and generate'
       run: |
         set -e
+        trap 'kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true' EXIT
 
         MODEL="mlx-community/Qwen3-0.6B"
         PORT=18999
 
-        # Start server (auto-load mode, no download)
-        mlx-binaries/server --port $PORT --no-download &
+        # Start server (will download model on first request if not cached)
+        mlx-binaries/server --port $PORT &
         SERVER_PID=$!
         sleep 3
 
@@ -390,7 +391,7 @@ jobs:
         kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
 
   create-release:
-    needs: [prepare-matrix, build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
+    needs: [prepare-matrix, build-ubuntu-rocm, build-ubuntu-cpu, build-macos, test-simple-math]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
