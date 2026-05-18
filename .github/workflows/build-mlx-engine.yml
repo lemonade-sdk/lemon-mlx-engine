@@ -349,6 +349,17 @@ jobs:
           exit 1
         fi
 
+        # Pre-load model via /load endpoint (server will download if not cached)
+        echo "Loading model: $MODEL ..."
+        load_response=$(curl -sf --max-time 600 -X POST http://127.0.0.1:$PORT/load \
+          -H "Content-Type: application/json" \
+          -d "{\"model\": \"$MODEL\"}" 2>&1) || {
+          echo "Model load failed: $load_response"
+          kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null || true
+          exit 1
+        }
+        echo "Model loaded: $load_response"
+
         # Send a simple math prompt via chat completion
         echo "Sending chat completion to $MODEL ..."
         response=$(curl -sf --max-time 300 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
