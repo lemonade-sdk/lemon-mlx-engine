@@ -331,8 +331,7 @@ jobs:
         name: ${{ matrix.artifact }}
         path: mlx-binaries
 
-    - name: Pre-cache model (macOS only)
-      if: matrix.os == 'macos-arm64'
+    - name: Pre-cache model
       run: |
         pip3 install --break-system-packages huggingface-hub
         echo "Downloading mlx-community/Qwen3-0.6B-4bit to HF cache..."
@@ -402,7 +401,7 @@ jobs:
           exit 1
         fi
 
-        # Inference test: model should be pre-cached on macOS
+        # Inference test: model should be pre-cached
         echo "Running inference test with Qwen3-0.6B-4bit ..."
         response=$(curl -s --max-time 600 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
