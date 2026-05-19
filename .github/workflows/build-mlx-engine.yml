@@ -362,6 +362,34 @@ jobs:
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
         fi
 
+    - name: Check ROCm GPU availability (Ubuntu ROCm only)
+      if: matrix.os == 'ubuntu-rocm'
+      id: gpu-check
+      run: |
+        echo "=== ROCm GPU Check ==="
+        echo "Checking /dev/kfd (compute driver)..."
+        if [ -e /dev/kfd ]; then
+          echo "  /dev/kfd: FOUND ($(ls -l /dev/kfd))"
+        else
+          echo "  /dev/kfd: NOT FOUND"
+        fi
+        echo "Checking /dev/dri/renderD* (render nodes)..."
+        ls -la /dev/dri/renderD* 2>/dev/null || echo "  No render nodes found"
+        if command -v rocm-smi &>/dev/null; then
+          echo "rocm-smi output:"
+          rocm-smi 2>&1 || echo "  rocm-smi failed"
+        else
+          echo "rocm-smi: not found on PATH"
+        fi
+        echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-<not set>}"
+        if [ -e /dev/kfd ]; then
+          echo "GPU_AVAILABLE=true"
+          echo "gpu_available=true" >> $GITHUB_OUTPUT
+        else
+          echo "::warning::No ROCm GPU detected on this runner. GPU device nodes missing."
+          echo "gpu_available=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: 'Smoke test: server start and health'
       run: |
         set -e
@@ -406,13 +434,18 @@ jobs:
           exit 1
         fi
 
-        # Inference test: skip on ROCm (no GPU on GitHub Actions runners)
-        if [ "${{ matrix.install_rocm }}" = "true" ]; then
-          echo "SKIPPING inference test on ROCm (no GPU available on CI runner)"
-          echo "SMOKE TEST PASSED -- server started, health check, and models endpoint OK (inference skipped on ROCm)"
-          kill $SERVER_PID 2>/dev/null || true
-          wait $SERVER_PID 2>/dev/null || true
-          exit 0
+        # Inference test: skip on ROCm if no GPU available
+        if [ "${{ matrix.os }}" = "ubuntu-rocm" ]; then
+          gpu_avail="${{ steps.gpu-check.outputs.gpu_available }}"
+          if [ "${gpu_avail}" != "true" ]; then
+            echo "SKIPPING inference test on ROCm (no GPU detected: gpu_available=${gpu_avail})"
+            echo "See 'Check ROCm GPU availability' step above for diagnostics"
+            echo "SMOKE TEST PASSED -- server started, health check, and models endpoint OK (inference skipped: no ROCm GPU)"
+            kill $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+            exit 0
+          fi
+          echo "ROCm GPU detected, proceeding with inference test"
         fi
 
         echo "Running inference test with Qwen3-0.6B-4bit ..."
