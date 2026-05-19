@@ -333,7 +333,11 @@ jobs:
 
     - name: Pre-cache model
       run: |
-        pip3 install --break-system-packages huggingface-hub
+        if [ "$(uname)" = "Darwin" ]; then
+          pip3 install --break-system-packages huggingface-hub
+        else
+          pip3 install huggingface-hub
+        fi
         echo "Downloading mlx-community/Qwen3-0.6B-4bit to HF cache..."
         python3 -c "
         from huggingface_hub import snapshot_download
