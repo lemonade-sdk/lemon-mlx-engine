@@ -294,22 +294,22 @@ jobs:
       (needs.build-ubuntu-rocm.result == 'success' ||
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ fromJson(matrix.runs_on) }}
     timeout-minutes: 20
     strategy:
       matrix:
         include:
           - os: ubuntu-rocm
             artifact: mlx-engine-ubuntu-rocm-x64
-            runs_on: ubuntu-22.04
-            install_rocm: true
+            runs_on: '["stx-halo", "Linux"]'
+            install_rocm: false
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
-            runs_on: ubuntu-22.04
+            runs_on: '["ubuntu-22.04"]'
             install_rocm: false
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
-            runs_on: macos-latest
+            runs_on: '["macos-latest"]'
             install_rocm: false
     steps:
     - name: Install ROCm runtime (Ubuntu ROCm only)
