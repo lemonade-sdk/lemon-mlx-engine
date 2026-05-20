@@ -370,6 +370,7 @@ jobs:
           echo "rocm-smi: not found at /opt/rocm/bin/rocm-smi"
         fi
 
+
     - name: Download build artifact
       uses: actions/download-artifact@v6
       with:
@@ -377,7 +378,6 @@ jobs:
         path: mlx-binaries
 
     - name: Pre-cache model
-      if: matrix.install_rocm == false
       run: |
         if [ "$(uname)" = "Darwin" ]; then
           pip3 install --break-system-packages huggingface-hub
