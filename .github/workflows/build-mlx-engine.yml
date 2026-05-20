@@ -58,7 +58,7 @@ jobs:
 
   build-ubuntu-rocm:
     name: build-ubuntu-rocm
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64, gfx1151]
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.should_build_ubuntu_rocm == 'true'
 
@@ -294,7 +294,7 @@ jobs:
       (needs.build-ubuntu-rocm.result == 'success' ||
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -302,15 +302,15 @@ jobs:
         include:
           - os: ubuntu-rocm
             artifact: mlx-engine-ubuntu-rocm-x64
-            runs_on: ubuntu-rocm-gfx1151-gll
+            runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: true
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
-            runs_on: ubuntu-22.04
+            runs_on: '"ubuntu-22.04"'
             install_rocm: false
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
-            runs_on: macos-latest
+            runs_on: '"macos-latest"'
             install_rocm: false
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
