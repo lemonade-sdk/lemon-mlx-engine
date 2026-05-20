@@ -70,33 +70,56 @@ jobs:
 
     - name: Install build dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake ninja-build \
-          libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
+        # Verify-then-install: skip apt-get update if all packages are present
+        NEED_INSTALL=""
+        for pkg in cmake ninja-build libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config; do
+          dpkg -s "$pkg" 2>/dev/null | grep -q "Status: install ok installed" || NEED_INSTALL="$NEED_INSTALL $pkg"
+        done
+        if [ -n "$NEED_INSTALL" ]; then
+          sudo apt-get update
+          sudo apt-get install -y $NEED_INSTALL
+        else
+          echo "All build deps already installed; skipping apt-get update."
+        fi
 
-    - name: Install ROCm 7.13.0
+    - name: Install ROCm 7.13.0 (gfx1151)
       run: |
-        # AMD official ROCm 7.13.0 (new apt repo layout)
-        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
-        wget -q https://repo.amd.com/rocm/packages/gpg/rocm.gpg -O - | \
-          gpg --dearmor | sudo tee /etc/apt/keyrings/amdrocm.gpg > /dev/null
+        # Verify-then-install: check if ROCm 7.13 for gfx1151 is already on the runner
+        if dpkg -s amdrocm7.13-gfx1151 2>/dev/null | grep -q "Status: install ok installed" \
+           && dpkg -s amdrocm-core-dev7.13-gfx1151 2>/dev/null | grep -q "Status: install ok installed"; then
+          echo "ROCm 7.13 gfx1151 packages already installed; skipping."
+          exit 0
+        fi
 
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/ubuntu2204 stable main" \
+        # AMD official ROCm 7.13.0 noble (ubuntu 24.04) repo, per-arch packaging
+        sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+        if [ ! -f /etc/apt/keyrings/amdrocm.gpg ]; then
+          wget -q https://repo.amd.com/rocm/packages/gpg/rocm.gpg -O - | \
+            gpg --dearmor | sudo tee /etc/apt/keyrings/amdrocm.gpg > /dev/null
+        fi
+
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/ubuntu2404 stable main" \
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
         sudo apt-get update
-        sudo apt-get install -y -o Dpkg::Options::="--force-overwrite" \
-          amdrocm7.13 \
-          amdrocm-core-dev7.13
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-overwrite" \
+          amdrocm7.13-gfx1151 \
+          amdrocm-core-dev7.13-gfx1151 \
+          amdrocm-base7.13 \
+          amdrocm-blas-dev7.13-gfx1151 \
+          amdrocm-sparse-dev7.13-gfx1151 \
+          amdrocm-solver-dev7.13-gfx1151 \
+          amdrocm-fft-dev7.13-gfx1151 \
+          amdrocm-rand-dev7.13-gfx1151
 
-        echo "Installed ROCm 7.13.0 (runtime + development) from AMD apt."
+        echo "Installed ROCm 7.13.0 for gfx1151 from AMD apt."
 
     - name: Set ROCm environment variables
       run: |
-        echo "HIP_PATH=/opt/rocm" >> $GITHUB_ENV
-        echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
+        echo "HIP_PATH=/opt/rocm/core-7.13" >> $GITHUB_ENV
+        echo "ROCM_PATH=/opt/rocm/core-7.13" >> $GITHUB_ENV
         echo "HIP_PLATFORM=amd" >> $GITHUB_ENV
-        echo "/opt/rocm/bin:/opt/rocm/llvm/bin:/opt/rocm/lib/llvm/bin:$PATH" >> $GITHUB_PATH
+        echo "/opt/rocm/core-7.13/bin:/opt/rocm/core-7.13/lib/llvm/bin:$PATH" >> $GITHUB_PATH
 
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
@@ -108,9 +131,9 @@ jobs:
 
     - name: Build MLX Engine + ROCm
       run: |
-        export HIP_PATH=/opt/rocm
-        export ROCM_PATH=/opt/rocm
-        export PATH="/opt/rocm/bin:/opt/rocm/llvm/bin:/opt/rocm/lib/llvm/bin:$PATH"
+        export HIP_PATH=/opt/rocm/core-7.13
+        export ROCM_PATH=/opt/rocm/core-7.13
+        export PATH="/opt/rocm/core-7.13/bin:/opt/rocm/core-7.13/lib/llvm/bin:$PATH"
 
         mkdir -p build && cd build
 
@@ -119,8 +142,8 @@ jobs:
           -DCMAKE_C_COMPILER=clang \
           -DCMAKE_CXX_COMPILER=clang++ \
           -DCMAKE_HIP_COMPILER=hipcc \
-          -DCMAKE_PREFIX_PATH=/opt/rocm \
-          -DCMAKE_HIP_ARCHITECTURES="gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1200;gfx1201" \
+          -DCMAKE_PREFIX_PATH=/opt/rocm/core-7.13 \
+          -DCMAKE_HIP_ARCHITECTURES="gfx1151" \
           -DCMAKE_CXX_CLANG_TIDY= \
           -DCLANG_TIDY_EXE=CLANG_TIDY_EXE-NOTFOUND \
           -DMINJA_EXAMPLE_ENABLED=OFF \
@@ -318,10 +341,10 @@ jobs:
       run: |
         echo "=== ROCm Runtime Setup ==="
 
-        # Verify-then-install: check if ROCm 7.13 is already installed
+        # Verify-then-install: check if ROCm 7.13 for gfx1151 is already installed
         ROCM_INSTALLED="false"
-        if dpkg -s amdrocm7.13 2>/dev/null | grep -q "Status: install ok installed"; then
-          echo "ROCm 7.13 package already installed"
+        if dpkg -s amdrocm7.13-gfx1151 2>/dev/null | grep -q "Status: install ok installed"; then
+          echo "ROCm 7.13 gfx1151 package already installed"
           ROCM_INSTALLED="true"
         fi
 
@@ -332,19 +355,23 @@ jobs:
         fi
 
         if [ "${ROCM_INSTALLED}" = "false" ]; then
-          echo "Installing ROCm 7.13.0 runtime from AMD apt repository..."
+          echo "Installing ROCm 7.13.0 runtime (gfx1151) from AMD noble apt repository..."
 
           sudo mkdir --parents --mode=0755 /etc/apt/keyrings
-          wget -q https://repo.amd.com/rocm/packages/gpg/rocm.gpg -O - | \
-            gpg --dearmor | sudo tee /etc/apt/keyrings/amdrocm.gpg > /dev/null
+          if [ ! -f /etc/apt/keyrings/amdrocm.gpg ]; then
+            wget -q https://repo.amd.com/rocm/packages/gpg/rocm.gpg -O - | \
+              gpg --dearmor | sudo tee /etc/apt/keyrings/amdrocm.gpg > /dev/null
+          fi
 
-          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/ubuntu2204 stable main" \
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/ubuntu2404 stable main" \
             | sudo tee /etc/apt/sources.list.d/rocm.list
 
           sudo apt-get update
-          sudo apt-get install -y -o Dpkg::Options::="--force-overwrite" amdrocm7.13
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-overwrite" \
+            amdrocm7.13-gfx1151 \
+            amdrocm-base7.13
 
-          echo "/opt/rocm/lib" | sudo tee /etc/ld.so.conf.d/rocm.conf
+          echo "/opt/rocm/core-7.13/lib" | sudo tee /etc/ld.so.conf.d/rocm.conf
           sudo ldconfig
 
           # Attempt to load kernel modules for GPU detection
@@ -363,11 +390,11 @@ jobs:
           echo "::warning::/dev/kfd missing after ROCm install. GPU hardware may not be present or kernel modules not loaded."
         fi
 
-        if command -v /opt/rocm/bin/rocm-smi &>/dev/null; then
+        if command -v /opt/rocm/core-7.13/bin/rocm-smi &>/dev/null; then
           echo "rocm-smi output:"
-          /opt/rocm/bin/rocm-smi 2>&1 || echo "  rocm-smi returned non-zero"
+          /opt/rocm/core-7.13/bin/rocm-smi 2>&1 || echo "  rocm-smi returned non-zero"
         else
-          echo "rocm-smi: not found at /opt/rocm/bin/rocm-smi"
+          echo "rocm-smi: not found at /opt/rocm/core-7.13/bin/rocm-smi"
         fi
 
 
@@ -401,6 +428,8 @@ jobs:
       run: |
         if [ "$(uname)" = "Darwin" ]; then
           echo "DYLD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
+        elif [ -d /opt/rocm/core-7.13/lib ]; then
+          echo "LD_LIBRARY_PATH=$PWD/mlx-binaries:/opt/rocm/core-7.13/lib" >> $GITHUB_ENV
         elif [ -d /opt/rocm/lib ]; then
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries:/opt/rocm/lib" >> $GITHUB_ENV
         else
