@@ -58,9 +58,22 @@ mx::array TopPSampler::sample_impl(const mx::array& logits) {
     // top-p filtering is disabled: argsort + put_along_axis + take_along_axis
     // on large vocab (151936) produces wrong results on the ROCm backend,
     // causing the filter to mask out the correct tokens.
-    // Fall back to temperature-scaled categorical sampling.
-    float inv_temp = 1.0f / temperature_;
-    return mx::random::categorical(mx::multiply(logits, mx::array(inv_temp)));
+    // Fall back to compiled temperature-scaled categorical sampling.
+    //
+    // NOTE: the previous (uncompiled) fallback produced incoherent output
+    // on ROCm even though it was functionally identical to this body.
+    // Wrapping in mx::compile (matching CategoricalSampler::sample_impl)
+    // restores correctness. Likely related to RNG/stream state interaction
+    // when called from TokenIterator::step() under StreamGuard.
+    if (!compiled_categorical_) {
+        float inv_temp = 1.0f / temperature_;
+        compiled_categorical_ = mx::compile(
+            [inv_temp](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+                return {mx::random::categorical(mx::multiply(inputs[0], mx::array(inv_temp)))};
+            },
+            /*shapeless=*/false);
+    }
+    return compiled_categorical_({logits})[0];
 }
 
 // ---------------------------------------------------------------------------
