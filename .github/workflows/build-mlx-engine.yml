@@ -302,7 +302,7 @@ jobs:
         include:
           - os: ubuntu-rocm
             artifact: mlx-engine-ubuntu-rocm-x64
-            runs_on: '["ubuntu-rocm-gfx1151-gll", "gfx1151", "linux"]'
+            runs_on: '["ubuntu-rocm-gfx1151-gll", "gfx1151", "Linux", "X64"]'
             install_rocm: false
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
