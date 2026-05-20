@@ -294,7 +294,7 @@ jobs:
       (needs.build-ubuntu-rocm.result == 'success' ||
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
-    runs-on: ${{ fromJson(matrix.runs_on) }}
+    runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -302,19 +302,19 @@ jobs:
         include:
           - os: ubuntu-rocm
             artifact: mlx-engine-ubuntu-rocm-x64
-            runs_on: '["ubuntu-rocm-gfx1151-gll", "gfx1151", "Linux", "X64"]'
-            install_rocm: false
+            runs_on: ubuntu-rocm-gfx1151-gll
+            install_rocm: true
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
-            runs_on: '["ubuntu-22.04"]'
+            runs_on: ubuntu-22.04
             install_rocm: false
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
-            runs_on: '["macos-latest"]'
+            runs_on: macos-latest
             install_rocm: false
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
-      if: matrix.os == 'ubuntu-rocm'
+      if: matrix.install_rocm
       run: |
         echo "=== ROCm Runtime Setup ==="
 
@@ -408,7 +408,7 @@ jobs:
         fi
 
     - name: Check ROCm GPU availability (Ubuntu ROCm only)
-      if: matrix.os == 'ubuntu-rocm'
+      if: matrix.install_rocm
       id: gpu-check
       run: |
         echo "=== ROCm GPU Check ==="
@@ -480,7 +480,7 @@ jobs:
         fi
 
         # Inference test: skip on ROCm if no GPU available
-        if [ "${{ matrix.os }}" = "ubuntu-rocm" ]; then
+        if [ "${{ matrix.install_rocm }}" = "true" ]; then
           gpu_avail="${{ steps.gpu-check.outputs.gpu_available }}"
           if [ "${gpu_avail}" != "true" ]; then
             echo "SKIPPING inference test on ROCm (no GPU detected: gpu_available=${gpu_avail})"
