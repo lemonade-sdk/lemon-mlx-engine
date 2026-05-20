@@ -127,7 +127,10 @@ jobs:
         path: |
           build/_deps/mlx-src
           build/_deps/mlx-subbuild
-        key: mlx-src-linux-${{ hashFiles('CMakeLists.txt') }}
+        # Cache key is scoped per runner because cmake's subbuild stores
+        # absolute paths in CMakeCache.txt; a cache populated on a runner
+        # with a different workspace path will be rejected at configure time.
+        key: mlx-src-linux-${{ runner.name }}-${{ hashFiles('CMakeLists.txt') }}
 
     - name: Build MLX Engine + ROCm
       run: |
