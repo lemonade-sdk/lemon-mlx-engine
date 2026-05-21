@@ -349,7 +349,7 @@ jobs:
             install_rocm: true
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
-            runs_on: '"ubuntu-22.04"'
+            runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: false
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
