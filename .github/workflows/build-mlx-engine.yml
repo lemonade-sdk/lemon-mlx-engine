@@ -107,7 +107,7 @@ jobs:
           | sudo tee /etc/apt/sources.list.d/rocm.list
 
         sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-overwrite" \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           "amdrocm${ROCM_VER}-${ROCM_ARCH}" \
           "amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}" \
           "amdrocm-base${ROCM_VER}" \
@@ -390,7 +390,7 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/rocm.list
 
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-overwrite" \
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             "amdrocm${ROCM_VER}-${ROCM_ARCH}" \
             "amdrocm-base${ROCM_VER}"
 
