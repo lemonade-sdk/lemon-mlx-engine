@@ -428,15 +428,9 @@ jobs:
 
     - name: Pre-cache model
       run: |
-        # Use --break-system-packages on any environment that enforces PEP 668
-        # (macOS Homebrew Python, noble's python3.12). The marker file is the
-        # canonical signal; presence on Linux means pip will refuse otherwise.
-        PIP_FLAGS=""
-        if [ "$(uname)" = "Darwin" ] || ls /usr/lib/python3*/EXTERNALLY-MANAGED >/dev/null 2>&1; then
-          PIP_FLAGS="--break-system-packages"
-        fi
-        pip3 install $PIP_FLAGS huggingface-hub
-        echo "Downloading mlx-community/Qwen3-0.6B-4bit to HF cache..."
+        python3 -m venv .venv
+        source .venv/bin/activate
+        pip install huggingface-hub
         python3 -c "
         from huggingface_hub import snapshot_download
         snapshot_download(
@@ -459,34 +453,6 @@ jobs:
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries:/opt/rocm/lib" >> $GITHUB_ENV
         else
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
-        fi
-
-    - name: Check ROCm GPU availability (Ubuntu ROCm only)
-      if: matrix.install_rocm
-      id: gpu-check
-      run: |
-        echo "=== ROCm GPU Check ==="
-        echo "Checking /dev/kfd (compute driver)..."
-        if [ -e /dev/kfd ]; then
-          echo "  /dev/kfd: FOUND ($(ls -l /dev/kfd))"
-        else
-          echo "  /dev/kfd: NOT FOUND"
-        fi
-        echo "Checking /dev/dri/renderD* (render nodes)..."
-        ls -la /dev/dri/renderD* 2>/dev/null || echo "  No render nodes found"
-        if command -v rocm-smi &>/dev/null; then
-          echo "rocm-smi output:"
-          rocm-smi 2>&1 || echo "  rocm-smi failed"
-        else
-          echo "rocm-smi: not found on PATH"
-        fi
-        echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-<not set>}"
-        if [ -e /dev/kfd ]; then
-          echo "GPU_AVAILABLE=true"
-          echo "gpu_available=true" >> $GITHUB_OUTPUT
-        else
-          echo "::warning::No ROCm GPU detected on this runner. GPU device nodes missing."
-          echo "gpu_available=false" >> $GITHUB_OUTPUT
         fi
 
     - name: 'Smoke test: server start and health'
@@ -540,20 +506,6 @@ jobs:
         else
           echo "Models endpoint FAILED: $models_response"
           exit 1
-        fi
-
-        # Inference test: skip on ROCm if no GPU available
-        if [ "${{ matrix.install_rocm }}" = "true" ]; then
-          gpu_avail="${{ steps.gpu-check.outputs.gpu_available }}"
-          if [ "${gpu_avail}" != "true" ]; then
-            echo "SKIPPING inference test on ROCm (no GPU detected: gpu_available=${gpu_avail})"
-            echo "See 'Check ROCm GPU availability' step above for diagnostics"
-            echo "SMOKE TEST PASSED -- server started, health check, and models endpoint OK (inference skipped: no ROCm GPU)"
-            kill $SERVER_PID 2>/dev/null || true
-            wait $SERVER_PID 2>/dev/null || true
-            exit 0
-          fi
-          echo "ROCm GPU detected, proceeding with inference test"
         fi
 
         echo "Running inference test with Qwen3-0.6B-4bit ..."
