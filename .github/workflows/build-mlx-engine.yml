@@ -397,9 +397,8 @@ jobs:
           echo "/opt/rocm/core-${ROCM_VER}/lib" | sudo tee /etc/ld.so.conf.d/rocm.conf
           sudo ldconfig
 
-          # Attempt to load kernel modules for GPU detection
+          # Attempt to load kernel module for GPU detection
           sudo modprobe amdgpu 2>/dev/null || true
-          sudo modprobe amdkfd 2>/dev/null || true
           sleep 2
 
           echo "ROCm ${ROCM_VER} runtime installation complete"
