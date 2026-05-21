@@ -665,9 +665,14 @@ Qwen35Model::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
     }
     bool should_shift_norm_weights = has_mtp_weights || has_unsanitized_conv1d;
 
-    // Remove mtp.* keys
+    // Stash mtp.* keys for later wiring of MTPHead (I7 sub-task 1).
+    // Note: the historical behaviour was to silently drop these. Keeping them
+    // around does not affect the trunk-model load path because the main weight
+    // map has no entries for "*mtp.*" — `load_weights()` simply ignores keys
+    // that don't appear in `weight_map()`.
     for (auto it = weights.begin(); it != weights.end(); ) {
         if (it->first.find("mtp.") != std::string::npos) {
+            mtp_weights_.emplace(it->first, it->second);
             it = weights.erase(it);
         } else {
             ++it;

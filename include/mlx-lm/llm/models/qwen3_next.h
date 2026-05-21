@@ -200,6 +200,9 @@ class Qwen3NextModel
     std::optional<mlx::core::array> lm_head_weight_;
     std::vector<int> kv_heads_;
 
+    // MTP scaffolding (I7 sub-task 1): stash mtp.* weights.
+    std::unordered_map<std::string, mlx::core::array> mtp_weights_;
+
     PrepareResult prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int window_size);
     LMOutput call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state);
     mlx::core::array forward_impl(const mlx::core::array& inputs, std::vector<KVCache>* cache);
@@ -214,6 +217,11 @@ public:
     int vocab_size() const { return config_.vocab_size; }
     void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+
+    bool has_mtp() const { return !mtp_weights_.empty(); }
+    const std::unordered_map<std::string, mlx::core::array>& mtp_weights() const {
+        return mtp_weights_;
+    }
 };
 
 } // namespace mlx_lm
