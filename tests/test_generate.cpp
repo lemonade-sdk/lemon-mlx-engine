@@ -325,3 +325,113 @@ TEST_CASE("NaiveStreamingDetokenizer segment reset on newline", "[generate]") {
     REQUIRE(text.has_value());
     REQUIRE(text.value() == "world");
 }
+
+// ===== I7 sub-task 6: MTPHead draft-token shape smoke =====
+#include <mlx-lm/llm/models/mtp_head.h>
+#include <mlx-lm/common/kv_cache.h>
+#include <mlx-lm/common/attention_utils.h>
+
+static mlx_lm::Qwen35Configuration make_tiny_qwen35_args(int num_experts = 0) {
+    mlx_lm::Qwen35Configuration args;
+    args.hidden_size = 32;
+    args.num_hidden_layers = 1;
+    args.intermediate_size = 64;
+    args.num_attention_heads = 4;
+    args.num_key_value_heads = 2;
+    args.linear_num_value_heads = 4;
+    args.linear_num_key_heads = 2;
+    args.linear_key_head_dim = 8;
+    args.linear_value_head_dim = 8;
+    args.linear_conv_kernel_dim = 4;
+    args.rms_norm_eps = 1e-6f;
+    args.vocab_size = 64;
+    args.num_experts = num_experts;
+    if (num_experts > 0) {
+        args.num_experts_per_tok = 2;
+        args.moe_intermediate_size = 32;
+        args.shared_expert_intermediate_size = 32;
+        args.norm_topk_prob = true;
+    }
+    args.full_attention_interval = 1;
+    args.partial_rotary_factor = 0.25f;
+    return args;
+}
+
+TEST_CASE("MTPHead: weight map (dense)", "[mtp]") {
+    auto args = make_tiny_qwen35_args(/*num_experts=*/0);
+    mlx_lm::MTPHead head(args);
+    auto wmap = head.weight_map();
+    REQUIRE(wmap.count("pre_fc_norm_hidden.weight") == 1);
+    REQUIRE(wmap.count("pre_fc_norm_embedding.weight") == 1);
+    REQUIRE(wmap.count("fc.weight") == 1);
+    REQUIRE(wmap.count("layers.0.input_layernorm.weight") == 1);
+    REQUIRE(wmap.count("layers.0.post_attention_layernorm.weight") == 1);
+    REQUIRE(wmap.count("norm.weight") == 1);
+    bool any_expert = false;
+    for (const auto& kv : wmap) {
+        if (kv.first.find("switch_mlp") != std::string::npos) any_expert = true;
+    }
+    REQUIRE_FALSE(any_expert);
+}
+
+TEST_CASE("MTPHead: weight map (MoE)", "[mtp]") {
+    auto args = make_tiny_qwen35_args(/*num_experts=*/4);
+    mlx_lm::MTPHead head(args);
+    auto wmap = head.weight_map();
+    bool has_switch = false;
+    bool has_shared = false;
+    for (const auto& kv : wmap) {
+        if (kv.first.find("switch_mlp") != std::string::npos) has_switch = true;
+        if (kv.first.find("shared_expert") != std::string::npos) has_shared = true;
+    }
+    REQUIRE(has_switch);
+    REQUIRE(has_shared);
+}
+
+TEST_CASE("MTPHead: 4 draft-token shape smoke", "[mtp]") {
+    auto args = make_tiny_qwen35_args(/*num_experts=*/0);
+    mlx_lm::MTPHead head(args);
+
+    mlx_lm::KVCache cache{mlx_lm::KVCacheSimple{}};
+    auto mask = mlx_lm::AttentionMask::none();
+
+    auto hidden = mx::random::normal({1, 1, args.hidden_size}, mx::float32);
+    auto embedding = mx::random::normal({1, 1, args.hidden_size}, mx::float32);
+
+    for (int step = 0; step < 4; ++step) {
+        // NOTE: MTPHead expects to drive a single-layer KV cache. The
+        // variant wrapper holds one KVCacheSimple slot, which is enough
+        // for this shape check.
+        auto out = head(hidden, embedding, mask, &cache);
+        mx::eval(out);
+        REQUIRE(out.ndim() == 3);
+        REQUIRE(out.shape(0) == 1);
+        REQUIRE(out.shape(1) == 1);
+        REQUIRE(out.shape(2) == args.hidden_size);
+
+        auto normed = head.apply_output_norm(out);
+        mx::eval(normed);
+        REQUIRE(normed.shape(2) == args.hidden_size);
+
+        hidden = out;
+    }
+}
+
+TEST_CASE("KVCacheSimple: save / restore round-trip", "[mtp][kv]") {
+    // Push a few rows, snapshot, push more, restore, confirm offset.
+    mlx_lm::KVCacheSimple c;
+    auto k0 = mx::random::normal({1, 2, 3, 4}, mx::float32);
+    auto v0 = mx::random::normal({1, 2, 3, 4}, mx::float32);
+    c.update(k0, v0);
+    auto saved = c.save_position();
+    REQUIRE(c.offset() == 3);
+
+    auto k1 = mx::random::normal({1, 2, 2, 4}, mx::float32);
+    auto v1 = mx::random::normal({1, 2, 2, 4}, mx::float32);
+    c.update(k1, v1);
+    REQUIRE(c.offset() == 5);
+
+    c.restore_to_position(saved);
+    REQUIRE(c.offset() == 3);
+}
+
