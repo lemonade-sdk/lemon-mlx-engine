@@ -434,7 +434,7 @@ jobs:
         python3 -c "
         from huggingface_hub import snapshot_download
         snapshot_download(
-            repo_id='mlx-community/Qwen3-0.6B-4bit',
+            repo_id='mlx-community/Qwen3-8B-4bit',
             allow_patterns=['*.json', '*.safetensors'],
         )
         print('Model cached successfully')
@@ -508,11 +508,11 @@ jobs:
           exit 1
         fi
 
-        echo "Running inference test with Qwen3-0.6B-4bit ..."
+        echo "Running inference test with Qwen3-8B-4bit ..."
         response=$(curl -s --max-time 1200 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
           -d "{
-            \"model\": \"mlx-community/Qwen3-0.6B-4bit\",
+            \"model\": \"mlx-community/Qwen3-8B-4bit\",
             \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}],
             \"max_tokens\": 128,
             \"temperature\": 0.0,
