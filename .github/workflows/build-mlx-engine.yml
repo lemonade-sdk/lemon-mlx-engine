@@ -547,23 +547,17 @@ jobs:
 
         if [ -d "./all-artifacts/mlx-engine-ubuntu-rocm-x64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-ubuntu-rocm-x64.zip"
-          cd "./all-artifacts/mlx-engine-ubuntu-rocm-x64"
-          zip -9 -r "../../../mlx-engine-${TAG}-ubuntu-rocm-x64.zip" *
-          cd ../../../
+          (cd "./all-artifacts/mlx-engine-ubuntu-rocm-x64" && zip -9 -r "$GITHUB_WORKSPACE/mlx-engine-${TAG}-ubuntu-rocm-x64.zip" *)
         fi
 
         if [ -d "./all-artifacts/mlx-engine-ubuntu-cpu-x64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-ubuntu-cpu-x64.zip"
-          cd "./all-artifacts/mlx-engine-ubuntu-cpu-x64"
-          zip -9 -r "../../../mlx-engine-${TAG}-ubuntu-cpu-x64.zip" *
-          cd ../../../
+          (cd "./all-artifacts/mlx-engine-ubuntu-cpu-x64" && zip -9 -r "$GITHUB_WORKSPACE/mlx-engine-${TAG}-ubuntu-cpu-x64.zip" *)
         fi
 
         if [ -d "./all-artifacts/mlx-engine-macos-arm64" ]; then
           echo "Creating archive: mlx-engine-${TAG}-macos-arm64.zip"
-          cd "./all-artifacts/mlx-engine-macos-arm64"
-          zip -9 -r "../../../mlx-engine-${TAG}-macos-arm64.zip" *
-          cd ../../../
+          (cd "./all-artifacts/mlx-engine-macos-arm64" && zip -9 -r "$GITHUB_WORKSPACE/mlx-engine-${TAG}-macos-arm64.zip" *)
         fi
 
         echo "Created archives:"
