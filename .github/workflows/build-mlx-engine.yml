@@ -74,7 +74,6 @@ jobs:
         ROCM_VER="${{ env.ROCM_VERSION }}"
         ROCM_ARCH="${{ env.ROCM_ARCH }}"
 
-        # Verify-then-install: check if ROCm ${{ env.ROCM_VERSION }} for ${{ env.ROCM_ARCH }} is already on the runner
         if dpkg -s "amdrocm${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed" \
            && dpkg -s "amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed"; then
           echo "ROCm ${ROCM_VER} ${ROCM_ARCH} packages already installed; skipping."
@@ -97,9 +96,6 @@ jobs:
         path: |
           build/_deps/mlx-src
           build/_deps/mlx-subbuild
-        # Cache key is scoped per runner because cmake's subbuild stores
-        # absolute paths in CMakeCache.txt; a cache populated on a runner
-        # with a different workspace path will be rejected at configure time.
         key: mlx-src-linux-${{ runner.name }}-${{ hashFiles('CMakeLists.txt') }}
 
     - name: Build MLX Engine + ROCm
@@ -110,10 +106,6 @@ jobs:
         export ROCM_PATH=/opt/rocm/core-${ROCM_VER}
         export PATH="/opt/rocm/core-${ROCM_VER}/bin:/opt/rocm/core-${ROCM_VER}/lib/llvm/bin:$PATH"
 
-        # Pin clang (ROCm ${{ env.ROCM_VERSION }} = clang 23) to GCC 13's libstdc++.
-        # GCC 15 ships an <optional> that triggers a known constraint-cycle
-        # bug under clang 23 ("satisfaction of constraint depends on itself");
-        # clang auto-selects the newest gcc install dir unless told otherwise.
         GCC_INSTALL_DIR="/usr/lib/gcc/x86_64-linux-gnu/13"
 
         mkdir -p build && cd build
@@ -273,7 +265,6 @@ jobs:
         cp build/chat output/
         cp build/diagnose output/ 2>/dev/null || true
 
-        # Package MLX Metal shader library (required at runtime on macOS)
         METALLIB=$(find build -name "mlx.metallib" 2>/dev/null | head -1)
         if [ -n "$METALLIB" ]; then
           echo "Found metalllib: $METALLIB"
@@ -290,9 +281,6 @@ jobs:
         path: output/
         retention-days: 30
 
-  # ---------------------------------------------------------------------------
-  # Lightweight smoke test: start server, load model, generate output
-  # ---------------------------------------------------------------------------
   test-simple-math:
     name: test-simple-math-${{ matrix.os }}
     needs: [build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
@@ -329,7 +317,6 @@ jobs:
         ROCM_VER="${{ env.ROCM_VERSION }}"
         ROCM_ARCH="${{ env.ROCM_ARCH }}"
 
-        # Verify-then-install: check if ROCm ${{ env.ROCM_VERSION }} for ${{ env.ROCM_ARCH }} is already installed
         ROCM_INSTALLED="false"
         if dpkg -s "amdrocm${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed"; then
           echo "ROCm ${ROCM_VER} ${ROCM_ARCH} package already installed"
@@ -381,7 +368,6 @@ jobs:
 
         PORT=18999
 
-        # Verify binary can load all shared libraries
         echo "Checking binary dependencies..."
         if [ "$(uname)" = "Darwin" ]; then
           otool -L mlx-binaries/server | head -20
@@ -393,12 +379,6 @@ jobs:
           echo "All shared libraries resolved OK"
         fi
 
-        # Start server
-        # MLX_ROCM_QMM_DEQUANT_GEMM=0 forces the direct fused qmm/qmv kernels.
-        # The dequant+rocBLAS fallback path in mlx-rocm (NripeshN/mlx fork) produces
-        # incoherent generation on gfx1151 for 4-bit affine-quantized models — both
-        # the dequant cache and the fresh dequant+GEMM exhibit corruption while the
-        # direct kernels are correct. Bisected via env var; see issue tracker.
         echo "Starting server on port $PORT ..."
         if [ "${{ matrix.install_rocm }}" = "true" ]; then
           MLX_ROCM_QMM_DEQUANT_GEMM=0 mlx-binaries/server --port $PORT &
@@ -408,7 +388,6 @@ jobs:
         SERVER_PID=$!
         sleep 3
 
-        # Verify server is alive
         echo "Checking health endpoint..."
         http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health || echo "000")
         if [ "$http_code" = "200" ]; then
@@ -418,7 +397,6 @@ jobs:
           exit 1
         fi
 
-        # Verify /v1/models endpoint responds
         echo "Checking models endpoint..."
         models_response=$(curl -s http://127.0.0.1:$PORT/v1/models 2>&1)
         if echo "$models_response" | grep -q '"data"'; then
@@ -497,11 +475,6 @@ jobs:
         HEAD_SHA: ${{ github.sha }}
         REPO: ${{ github.repository }}
       run: |
-        # workflow_dispatch is an intentional ask — always release (the job-
-        # level `if:` already gates on create_release input). Scheduled runs
-        # only cut a release if main has moved since the last release tag, so
-        # the nightly cron is a no-op on quiet days but builds still run for
-        # green-CI signal.
         if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
           echo "workflow_dispatch: forcing release."
           echo "should_release=true" >> $GITHUB_OUTPUT
@@ -515,10 +488,6 @@ jobs:
           exit 0
         fi
 
-        # Resolve the tag's commit. Lightweight tags point straight at a
-        # commit; annotated tags point at a tag object that needs one more
-        # deref. `gh release create` makes lightweight tags so the first
-        # branch will normally hit, but handle both for safety.
         ref=$(gh api "repos/${REPO}/git/refs/tags/${latest_tag}" 2>/dev/null || echo "")
         obj_type=$(echo "$ref" | jq -r '.object.type // empty')
         obj_sha=$(echo "$ref" | jq -r '.object.sha // empty')
@@ -542,9 +511,6 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Tag format: b<NNNN>-stable. The regex tolerates the older bare
-        # b<NNNN> tags so we keep counting from the existing sequence; the
-        # sed strips any suffix before sorting numerically.
         existing_tags=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' \
           | grep -E "^b[0-9]{4}(-[a-z]+)?$" | sed 's/-.*$//' | sort -uV || echo "")
 
