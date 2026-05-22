@@ -7,14 +7,9 @@ on:
         required: false
         default: 'ubuntu,macos'
       create_release:
-        description: 'Cut a GitHub release after a successful build (auto-tagged b<NNNN>-stable)'
+        description: 'Cut a GitHub release after a successful build (auto-tagged b<NNNN>-stable). Uncheck for build-only.'
         required: false
         default: true
-        type: boolean
-      build_only:
-        description: 'Build only — skip the create-release job even if "Cut a GitHub release" is checked'
-        required: false
-        default: false
         type: boolean
 
   pull_request:
@@ -481,7 +476,6 @@ jobs:
       always() &&
       (needs.build-ubuntu-rocm.result == 'success' || needs.build-ubuntu-cpu.result == 'success' || needs.build-macos.result == 'success') &&
       github.event_name != 'pull_request' &&
-      github.event.inputs.build_only != 'true' &&
       (github.event_name == 'workflow_dispatch' &&
        (github.event.inputs.create_release == 'true' || github.event.inputs.create_release == null) ||
        github.event_name == 'schedule')
