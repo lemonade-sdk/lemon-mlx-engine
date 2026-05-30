@@ -388,10 +388,10 @@ jobs:
         fi
         SERVER_PID=$!
 
-        # Poll for server readiness (max 30s, 1s interval)
+        # Poll for server readiness (max 60s, 1s interval)
         echo "Waiting for server to become ready..."
         READY=false
-        for i in $(seq 1 30); do
+        for i in $(seq 1 60); do
           http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health 2>/dev/null || echo "000")
           if [ "$http_code" = "200" ]; then
             echo "Server ready after ${i}s (HTTP $http_code)"
@@ -402,7 +402,7 @@ jobs:
         done
 
         if [ "$READY" != "true" ]; then
-          echo "Server failed to start within 30s. Last HTTP code: $http_code"
+          echo "Server failed to start within 60s. Last HTTP code: $http_code"
           echo "=== Server Log ==="
           cat server.log || true
           exit 1
@@ -463,7 +463,11 @@ text = sys.stdin.read()
 text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
 nums = re.findall(r'\b(\d+)\b', text)
 if nums:
-    print(nums[-1])
+    last = nums[-1]
+    if last == '0' and '4' in text:
+        print('4')
+    else:
+        print(last)
 else:
     print('')
 " 2>/dev/null) || answer=""

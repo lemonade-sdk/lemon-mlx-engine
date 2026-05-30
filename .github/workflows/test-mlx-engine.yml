@@ -164,7 +164,25 @@ jobs:
         # Start server in background (auto-load mode)
         mlx-binaries/server --port 18999 --no-download &
         SERVER_PID=$!
-        sleep 2
+
+        # Poll for server readiness (max 30s, 1s interval)
+        READY=false
+        for i in $(seq 1 30); do
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18999/health 2>/dev/null || echo "000")
+          if [ "$http_code" = "200" ]; then
+            echo "Server ready after ${i}s (HTTP $http_code)"
+            READY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$READY" != "true" ]; then
+          echo "Server failed to start within 30s"
+          kill $SERVER_PID 2>/dev/null
+          wait $SERVER_PID 2>/dev/null || true
+          exit 1
+        fi
 
         # Test health endpoint
         response=$(curl -s http://127.0.0.1:18999/health)
@@ -187,7 +205,25 @@ jobs:
 
         mlx-binaries/server --port 18998 --no-download &
         SERVER_PID=$!
-        sleep 2
+
+        # Poll for server readiness (max 30s, 1s interval)
+        READY=false
+        for i in $(seq 1 30); do
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18998/v1/models 2>/dev/null || echo "000")
+          if [ "$http_code" = "200" ]; then
+            echo "Server ready after ${i}s (HTTP $http_code)"
+            READY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$READY" != "true" ]; then
+          echo "Server failed to start within 30s"
+          kill $SERVER_PID 2>/dev/null
+          wait $SERVER_PID 2>/dev/null || true
+          exit 1
+        fi
 
         response=$(curl -s http://127.0.0.1:18998/v1/models)
         echo "Models response: $response"
@@ -212,7 +248,24 @@ jobs:
         # Start server with auto-load
         mlx-binaries/server --port 18997 --no-think --max-tokens 64 &
         SERVER_PID=$!
-        sleep 2
+
+        # Poll for server readiness (max 30s, 1s interval)
+        READY=false
+        for i in $(seq 1 30); do
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18997/health 2>/dev/null || echo "000")
+          if [ "$http_code" = "200" ]; then
+            echo "Server ready after ${i}s (HTTP $http_code)"
+            READY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$READY" != "true" ]; then
+          echo "Server failed to start within 30s"
+          kill $SERVER_PID 2>/dev/null
+          exit 1
+        fi
 
         echo "Sending chat completion request..."
         response=$(curl -s --max-time 300 -X POST http://127.0.0.1:18997/v1/chat/completions \
@@ -263,7 +316,24 @@ jobs:
 
         mlx-binaries/server --port 18996 --no-think --max-tokens 64 &
         SERVER_PID=$!
-        sleep 2
+
+        # Poll for server readiness (max 30s, 1s interval)
+        READY=false
+        for i in $(seq 1 30); do
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18996/health 2>/dev/null || echo "000")
+          if [ "$http_code" = "200" ]; then
+            echo "Server ready after ${i}s (HTTP $http_code)"
+            READY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$READY" != "true" ]; then
+          echo "Server failed to start within 30s"
+          kill $SERVER_PID 2>/dev/null
+          exit 1
+        fi
 
         echo "Sending streaming chat completion request..."
         response=$(curl -s --max-time 300 -X POST http://127.0.0.1:18996/v1/chat/completions \
