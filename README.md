@@ -32,12 +32,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j
 ```
 
-For AMD GPU (ROCm):
-```bash
-cmake .. -DCMAKE_BUILD_TYPE=Release -DMLX_BUILD_ROCM=ON
-make -j
-```
-
 ## Interactive Chat
 
 ```

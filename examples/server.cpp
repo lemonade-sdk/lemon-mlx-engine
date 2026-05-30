@@ -122,16 +122,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     auto args = parse_args(argc, argv);
 
-    // Explicitly select the device to avoid ROCm fallback on non-GPU systems.
-    // MLX_BUILD_ROCM is only defined when the build targets ROCm (ubuntu-rocm).
-#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
-    // ROCm backend — use default (GPU).
-    std::cerr << "Device: ROCm GPU\n";
-#else
-    // No ROCm backend — force CPU to prevent hip_kernel errors.
-    std::cerr << "Device: CPU (ROCm disabled)\n";
-    mx::set_default_device(mx::Device::cpu);
-#endif
+    // Use the default device (CPU on Linux, Metal on macOS).
+    std::cerr << "Device: " << (mx::default_device() == mx::Device::cpu ? "CPU" : "GPU") << "\n";
 
     if (args.memory_limit_mb > 0) {
         mx::set_wired_limit(args.memory_limit_mb * 1024ULL * 1024);
