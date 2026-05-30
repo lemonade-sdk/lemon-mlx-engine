@@ -33,13 +33,12 @@ endif()
 FetchContent_Declare(
     mlx
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    # Pin MLX to pre-merge of ml-explore/mlx:main at d999ca61 (2026-04-23).
-    # The post-merge tree references mlx::core::gpu::clear_streams() from
-    # scheduler.cpp, which the ROCm backend doesn't implement yet. Pinning
-    # to soloish90's 8-bit QMV fix (last known-good) keeps CI green until
-    # NripeshN lands the ROCm clear_streams() shim. See lemonade-sdk/
-    # lemon-mlx-engine#19 discussion.
-    GIT_TAG        39fac95d901c72175fce4baf973e375d4a054ba7
+    # Pin MLX to post-PR#7 commit (2026-05-20).
+    # Includes soloish90's 8-bit QMV fix (PR #6) AND the uint4 miscompile
+    # fix (PR #7 — 9e768e4) where global_load_b128 miscompiles on RDNA 3.5
+    # with hipcc 7.13 / LLVM 23. Still avoids clear_streams() which the
+    # ROCm backend doesn't implement yet.
+    GIT_TAG        9e768e453ab1e1906b10c004ecf588200dbbe968
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
