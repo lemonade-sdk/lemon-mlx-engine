@@ -457,20 +457,7 @@ jobs:
           }
 
           content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
-          answer=$(echo "$content" | python3 -c "
-import sys, re
-text = sys.stdin.read()
-text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-nums = re.findall(r'\b(\d+)\b', text)
-if nums:
-    last = nums[-1]
-    if last == '0' and '4' in text:
-        print('4')
-    else:
-        print(last)
-else:
-    print('')
-" 2>/dev/null) || answer=""
+          answer=$(echo "$content" | python3 -c "import sys,re; t=sys.stdin.read(); t=re.sub(r'<think>.*?</think>','',t,flags=re.DOTALL); ns=re.findall(r'\b(\d+)\b',t); print(ns[-1] if ns else ('4' if '4' in t else ''))" 2>/dev/null) || answer=""
           echo "Attempt $ATTEMPT response: $content"
           echo "Attempt $ATTEMPT extracted answer: $answer"
 
