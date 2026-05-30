@@ -460,9 +460,7 @@ jobs:
           answer=$(echo "$content" | python3 -c "
 import sys, re
 text = sys.stdin.read()
-# Strip multi-line <think>...</think> blocks
 text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-# Extract the last number from the remaining text (answer appears at end)
 nums = re.findall(r'\b(\d+)\b', text)
 if nums:
     print(nums[-1])
