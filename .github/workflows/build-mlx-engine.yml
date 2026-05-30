@@ -456,6 +456,8 @@ jobs:
           }
 
           content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
+          # Strip Qwen3 thinking/reasoning tags before checking the answer
+          content=$(echo "$content" | sed 's/<think>.*<\/think>//g' | tr -d '\n' | xargs)
           echo "Attempt $ATTEMPT response: $content"
 
           if echo "$content" | grep -q "4"; then

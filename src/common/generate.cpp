@@ -32,35 +32,31 @@ namespace mx = mlx::core;
 
 // ---------------------------------------------------------------------------
 // Dedicated generation stream (matches Python's module-level generation_stream)
-//
-// On Apple platforms, use the default stream to avoid Metal stream
-// thread-affinity bugs ("There is no Stream(gpu, 2) in current thread").
-// The static new_stream() pattern is correct on ROCm and CPU backends but
-// causes MLX Metal to lose track of the stream across requests.
 // ---------------------------------------------------------------------------
 
 mx::Stream& generation_stream() {
-#ifdef __APPLE__
-    // Return a default-constructed stream (equivalent to the default stream)
-    // so that StreamGuard becomes a no-op on Metal.
-    static mx::Stream s;
-#else
     static mx::Stream s = mx::new_stream(mx::default_device());
-#endif
     return s;
 }
 
 // RAII guard to set/restore the default stream for a scope.
+// On Apple, skip stream switching to avoid Metal thread-affinity issues.
 struct StreamGuard {
     mx::Stream old_stream_;
     bool changed_ = false;
     StreamGuard(mx::Stream s) : old_stream_(mx::default_stream(mx::default_device())) {
+#ifndef __APPLE__
         if (s != old_stream_) {
             mx::set_default_stream(s);
             changed_ = true;
         }
+#endif
     }
-    ~StreamGuard() { if (changed_) mx::set_default_stream(old_stream_); }
+    ~StreamGuard() {
+#ifndef __APPLE__
+        if (changed_) mx::set_default_stream(old_stream_);
+#endif
+    }
     StreamGuard(const StreamGuard&) = delete;
     StreamGuard& operator=(const StreamGuard&) = delete;
 };
