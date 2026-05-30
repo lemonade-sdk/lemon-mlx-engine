@@ -299,17 +299,17 @@ jobs:
             artifact: mlx-engine-ubuntu-rocm-x64
             runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: true
-            model: mlx-community/Qwen3-1.7B-4bit
+            model: mlx-community/Qwen3.5-0.8B-4bit
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'
             install_rocm: false
-            model: mlx-community/Qwen3-1.7B-4bit
+            model: mlx-community/Qwen3.5-0.8B-4bit
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
             runs_on: '"macos-latest"'
             install_rocm: false
-            model: mlx-community/Qwen3-1.7B-4bit
+            model: mlx-community/Qwen3.5-0.8B-4bit
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
