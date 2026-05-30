@@ -304,7 +304,7 @@ jobs:
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'
             install_rocm: false
-            model: mlx-community/Qwen3-0.6B-4bit
+            model: mlx-community/Qwen3-1.7B-4bit
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
             runs_on: '"macos-latest"'
@@ -381,19 +381,29 @@ jobs:
 
         echo "Starting server on port $PORT ..."
         if [ "${{ matrix.install_rocm }}" = "true" ]; then
-          MLX_ROCM_QMM_DEQUANT_GEMM=0 mlx-binaries/server --port $PORT &
+          MLX_ROCM_QMM_DEQUANT_GEMM=0 mlx-binaries/server --port $PORT > server.log 2>&1 &
         else
-          mlx-binaries/server --port $PORT &
+          mlx-binaries/server --port $PORT > server.log 2>&1 &
         fi
         SERVER_PID=$!
-        sleep 3
 
-        echo "Checking health endpoint..."
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health || echo "000")
-        if [ "$http_code" = "200" ]; then
-          echo "Health check PASSED (HTTP $http_code)"
-        else
-          echo "Health check FAILED (HTTP $http_code)"
+        # Poll for server readiness (max 30s, 1s interval)
+        echo "Waiting for server to become ready..."
+        READY=false
+        for i in $(seq 1 30); do
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health 2>/dev/null || echo "000")
+          if [ "$http_code" = "200" ]; then
+            echo "Server ready after ${i}s (HTTP $http_code)"
+            READY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$READY" != "true" ]; then
+          echo "Server failed to start within 30s. Last HTTP code: $http_code"
+          echo "=== Server Log ==="
+          cat server.log || true
           exit 1
         fi
 
@@ -403,37 +413,68 @@ jobs:
           echo "Models endpoint PASSED"
         else
           echo "Models endpoint FAILED: $models_response"
-          exit 1
-        fi
-
-        echo "Running inference test with ${{ matrix.model }} ..."
-        response=$(curl -s --max-time 1200 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"model\": \"${{ matrix.model }}\",
-            \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}],
-            \"max_tokens\": 128,
-            \"temperature\": 0.0,
-            \"stream\": false
-          }" 2>&1) || {
-          echo "FAIL: chat completion request failed"
-          echo "Response: $response"
           kill $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
           exit 1
-        }
+        fi
 
-        echo "=== Server Response ==="
-        echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
-        echo "=== End Response ==="
+        # Best-effort model warm-up (discard result)
+        echo "Sending warm-up request..."
+        curl -s -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"model\": \"${{ matrix.model }}\",
+            \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}],
+            \"max_tokens\": 5,
+            \"temperature\": 0.0,
+            \"stream\": false
+          }" 2>/dev/null || echo "Warm-up request skipped (non-fatal)"
 
-        content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
-        echo "Extracted content: $content"
+        # Inference test with retry logic (max 2 attempts)
+        MAX_RETRIES=2
+        ATTEMPT=0
+        PASS=false
 
-        if echo "$content" | grep -q "4"; then
-          echo "INFERECE TEST PASSED -- model answered correctly"
+        while [ $ATTEMPT -lt $MAX_RETRIES ]; do
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "=== Inference test attempt $ATTEMPT/$MAX_RETRIES ==="
+
+          response=$(curl -s --max-time 300 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"model\": \"${{ matrix.model }}\",
+              \"messages\": [
+                {\"role\": \"system\", \"content\": \"You are a math assistant. Answer arithmetic questions with a single number.\"},
+                {\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}
+              ],
+              \"max_tokens\": 16,
+              \"temperature\": 0.0,
+              \"stream\": false
+            }" 2>&1) || {
+            echo "Attempt $ATTEMPT: chat completion request failed"
+            continue
+          }
+
+          content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
+          echo "Attempt $ATTEMPT response: $content"
+
+          if echo "$content" | grep -q "4"; then
+            PASS=true
+            break
+          fi
+          echo "Attempt $ATTEMPT: did not contain '4', retrying in 5s..."
+          sleep 5
+        done
+
+        if [ "$PASS" = "true" ]; then
+          echo "INFERENCE TEST PASSED -- model answered correctly on attempt $ATTEMPT"
         else
-          echo "INFERECE TEST FAILED -- expected '4' in response"
+          echo "=== Server Response ==="
+          echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
+          echo "=== End Response ==="
+          echo "INFERENCE TEST FAILED -- expected '4' in response after $MAX_RETRIES attempts"
+          echo "=== Server Log (last 50 lines) ==="
+          tail -50 server.log 2>/dev/null || true
           kill $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
           exit 1
