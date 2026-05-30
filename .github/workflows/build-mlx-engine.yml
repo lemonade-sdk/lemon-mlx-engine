@@ -325,7 +325,7 @@ jobs:
         fi
 
         if [ "${ROCM_INSTALLED}" = "false" ]; then
-          return 1;
+          exit 1
         fi
 
     - name: Download build artifact
