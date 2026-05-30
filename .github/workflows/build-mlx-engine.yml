@@ -70,6 +70,12 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build clang \
+          libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
+
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
       with:
@@ -78,18 +84,12 @@ jobs:
           build/_deps/mlx-subbuild
         key: mlx-src-linux-${{ runner.name }}-${{ hashFiles('CMakeLists.txt') }}
 
-    - name: Build MLX Engine (CPU only)
+    - name: Build MLX Engine
       run: |
-        GCC_INSTALL_DIR="/usr/lib/gcc/x86_64-linux-gnu/13"
-
         mkdir -p build && cd build
 
         cmake .. -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_C_COMPILER=clang \
-          -DCMAKE_CXX_COMPILER=clang++ \
-          -DCMAKE_C_FLAGS="--gcc-install-dir=${GCC_INSTALL_DIR}" \
-          -DCMAKE_CXX_FLAGS="--gcc-install-dir=${GCC_INSTALL_DIR}" \
           -DCMAKE_CXX_CLANG_TIDY= \
           -DCLANG_TIDY_EXE=CLANG_TIDY_EXE-NOTFOUND \
           -DMINJA_EXAMPLE_ENABLED=OFF \

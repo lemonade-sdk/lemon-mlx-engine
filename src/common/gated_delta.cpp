@@ -325,12 +325,14 @@ std::pair<mx::array, mx::array> gated_delta_ops(
     int repeat_factor = Hv / Hk;
     auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
 
-    // Try fused HIP kernel (handles all T, no mask)
+    // Try fused HIP kernel (handles all T, no mask) — ROCm only
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     if (!mask.has_value() && Dk % 32 == 0) {
         auto q_work = repeat_heads(q, repeat_factor);
         auto k_work = repeat_heads(k, repeat_factor);
         return gated_delta_kernel(q_work, k_work, v, g, beta, s);
     }
+#endif
 
     // *** FAST PATH: T=1 decode without mask ***
     if (T == 1 && !mask.has_value()) {
