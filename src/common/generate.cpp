@@ -39,7 +39,10 @@ mx::Stream& generation_stream() {
     // On macOS/Metal, avoid custom streams — MLX v0.31.2 has a Metal
     // stream lifecycle bug where the stream becomes invalid during long
     // generation ("There is no Stream(gpu, 2) in current thread").
-    return mx::default_stream(mx::Device::gpu);
+    // Cache the default stream in a static variable since default_stream()
+    // returns by value and we need a reference.
+    static mx::Stream s = mx::default_stream(mx::Device::gpu);
+    return s;
 #else
     static mx::Stream s = mx::new_stream(mx::default_device());
     return s;
