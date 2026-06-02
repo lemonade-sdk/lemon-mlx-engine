@@ -22,7 +22,6 @@ Run LLMs locally on **Apple M-series**, **AMD GPUs** (Linux/Windows), and CPU --
 - C++17 compiler
 - libcurl
 - Rust toolchain (for tokenizers-cpp)
-- ROCm (for AMD GPU builds)
 
 ## Build
 
