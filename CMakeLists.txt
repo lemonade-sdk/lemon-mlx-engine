@@ -43,6 +43,72 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(mlx)
 
+# Patch: add clear_streams() to ROCm backend (missing in NripeshN/mlx fork)
+# Upstream MLX PR #3395 added clear_streams() but ROCm backend lacks it.
+# We need: (1) clear_encoders() method on Device, (2) get_devices() accessor,
+# (3) clear_all_encoders() in rocm namespace, (4) clear_streams() in gpu namespace.
+if(MLX_BUILD_ROCM)
+    # 1) Patch device.h: add clear_encoders() to Device class,
+    #    and clear_all_encoders() to rocm namespace
+    file(READ "${mlx_SOURCE_DIR}/mlx/backend/rocm/device.h" ROCM_H)
+    if(NOT ROCM_H MATCHES "clear_encoders")
+        # Add clear_encoders() after get_command_encoder in Device class
+        string(REPLACE
+            "  CommandEncoder& get_command_encoder(Stream s);\n\n  int hip_device() const {"
+            "  CommandEncoder& get_command_encoder(Stream s);\n  void clear_encoders();\n\n  int hip_device() const {"
+            ROCM_H
+            ROCM_H
+        )
+        # Add clear_all_encoders() after get_command_encoder free function
+        string(REPLACE
+            "CommandEncoder& get_command_encoder(Stream s);\n\n"
+            "CommandEncoder& get_command_encoder(Stream s);\nvoid clear_all_encoders();\n\n"
+            ROCM_H
+            ROCM_H
+        )
+        file(WRITE "${mlx_SOURCE_DIR}/mlx/backend/rocm/device.h" ROCM_H)
+    endif()
+
+    # 2) Patch device.cpp: extract devices map to get_devices(), add clear functions
+    file(READ "${mlx_SOURCE_DIR}/mlx/backend/rocm/device.cpp" ROCM_CPP)
+    if(NOT ROCM_CPP MATCHES "clear_all_encoders")
+        # Extract devices to a named accessor function
+        string(REPLACE
+            "Device& device(mlx::core::Device device) {\n  static std::unordered_map<int, Device> devices;\n  static bool flags_set = false;"
+            "std::unordered_map<int, Device>& get_devices() {\n  static std::unordered_map<int, Device> devices;\n  return devices;\n}\n\nDevice& device(mlx::core::Device device) {\n  auto& devices = get_devices();\n  static bool flags_set = false;"
+            ROCM_CPP
+            ROCM_CPP
+        )
+        # Add clear_all_encoders() before namespace close
+        string(REPLACE
+            "} // namespace mlx::core::rocm"
+            "void clear_all_encoders() {\n  auto& devices = get_devices();\n  for (auto& [idx, dev] : devices) {\n    dev.clear_encoders();\n  }\n}\n\n} // namespace mlx::core::rocm"
+            ROCM_CPP
+            ROCM_CPP
+        )
+        # Add Device::clear_encoders() implementation (before CommandEncoder ctor)
+        string(REPLACE
+            "CommandEncoder::CommandEncoder(Device& d)"
+            "void Device::clear_encoders() {\n  encoders_.clear();\n}\n\nCommandEncoder::CommandEncoder(Device& d)"
+            ROCM_CPP
+            ROCM_CPP
+        )
+        file(WRITE "${mlx_SOURCE_DIR}/mlx/backend/rocm/device.cpp" ROCM_CPP)
+    endif()
+
+    # 3) Patch eval.cpp: add clear_streams() in gpu namespace
+    file(READ "${mlx_SOURCE_DIR}/mlx/backend/rocm/eval.cpp" ROCM_EVAL)
+    if(NOT ROCM_EVAL MATCHES "clear_streams")
+        string(REPLACE
+            "} // namespace mlx::core::gpu",
+            "\nvoid clear_streams() {\n  rocm::clear_all_encoders();\n}\n\n} // namespace mlx::core::gpu"
+            ROCM_EVAL
+            ROCM_EVAL
+        )
+        file(WRITE "${mlx_SOURCE_DIR}/mlx/backend/rocm/eval.cpp" ROCM_EVAL)
+    endif()
+endif()
+
 # nlohmann/json (MLX may already provide this)
 if(NOT TARGET nlohmann_json::nlohmann_json)
     FetchContent_Declare(
