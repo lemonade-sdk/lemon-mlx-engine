@@ -70,6 +70,19 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Install ROCm ${{ env.ROCM_VERSION }} (${{ env.ROCM_ARCH }})
+      run: |
+        ROCM_VER="${{ env.ROCM_VERSION }}"
+        ROCM_ARCH="${{ env.ROCM_ARCH }}"
+
+        if dpkg -s "amdrocm${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed" \
+           && dpkg -s "amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed"; then
+          echo "ROCm ${ROCM_VER} ${ROCM_ARCH} packages already installed; skipping."
+          exit 0
+        fi
+
+        exit 1
+
     - name: Set ROCm environment variables
       run: |
         ROCM_VER="${{ env.ROCM_VERSION }}"
