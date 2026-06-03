@@ -70,11 +70,13 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install build dependencies
+    - name: Set ROCm environment variables
       run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake ninja-build clang \
-          libcurl4-openssl-dev libopenblas-dev liblapacke-dev pkg-config
+        ROCM_VER="${{ env.ROCM_VERSION }}"
+        echo "HIP_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
+        echo "ROCM_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
+        echo "HIP_PLATFORM=amd" >> $GITHUB_ENV
+        echo "/opt/rocm/core-${ROCM_VER}/bin:/opt/rocm/core-${ROCM_VER}/lib/llvm/bin:$PATH" >> $GITHUB_PATH
 
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
@@ -91,9 +93,6 @@ jobs:
       run: |
         ROCM_VER="${{ env.ROCM_VERSION }}"
         ROCM_ARCH="${{ env.ROCM_ARCH }}"
-        export HIP_PATH=/opt/rocm/core-${ROCM_VER}
-        export ROCM_PATH=/opt/rocm/core-${ROCM_VER}
-        export PATH="/opt/rocm/core-${ROCM_VER}/bin:/opt/rocm/core-${ROCM_VER}/lib/llvm/bin:$PATH"
 
         # Pin clang (ROCm 7.13 = clang 23) to GCC 13's libstdc++.
         GCC_INSTALL_DIR="/usr/lib/gcc/x86_64-linux-gnu/13"
@@ -113,6 +112,7 @@ jobs:
           -DCMAKE_CXX_CLANG_TIDY= \
           -DCLANG_TIDY_EXE=CLANG_TIDY_EXE-NOTFOUND \
           -DMINJA_EXAMPLE_ENABLED=OFF \
+          -DMLX_BUILD_ROCM=ON \
           -DMLX_LM_BUILD_TESTS=OFF \
           -DMLX_LM_BUILD_EXAMPLES=ON
 
@@ -279,7 +279,7 @@ jobs:
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
     runs-on: ${{ fromJSON(matrix.runs_on) }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -432,7 +432,7 @@ jobs:
                 {\"role\": \"system\", \"content\": \"You are a math assistant. Answer arithmetic questions with a single number.\"},
                 {\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}
               ],
-              \"max_tokens\": 128,
+              \"max_tokens\": 32,
               \"temperature\": 0.0,
               \"stream\": false
             }" 2>&1) || {
