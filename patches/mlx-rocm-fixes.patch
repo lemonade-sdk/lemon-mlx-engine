@@ -1,0 +1,616 @@
+diff --git a/mlx/backend/rocm/arg_reduce.hip b/mlx/backend/rocm/arg_reduce.hip
+index e0048d0..732beea 100644
+--- a/mlx/backend/rocm/arg_reduce.hip
++++ b/mlx/backend/rocm/arg_reduce.hip
+@@ -252,6 +252,23 @@ void ArgReduce::eval_gpu(const std::vector<array>& inputs, array& out) {
+               ndim, axis_stride, axis_size);
+         }
+         break;
++      case bfloat16:
++        if (reduce_type_ == ArgReduce::ArgMax) {
++          hipLaunchKernelGGL(
++              (rocm::arg_reduce_general<hip_bfloat16, rocm::ArgMax<hip_bfloat16>, BLOCK_DIM, 4>),
++              num_blocks, dim3(BLOCK_DIM), 0, stream,
++              in.data<hip_bfloat16>(), out.data<uint32_t>(), out.size(),
++              shape_param, in_strides_param, out_strides_param,
++              ndim, axis_stride, axis_size);
++        } else {
++          hipLaunchKernelGGL(
++              (rocm::arg_reduce_general<hip_bfloat16, rocm::ArgMin<hip_bfloat16>, BLOCK_DIM, 4>),
++              num_blocks, dim3(BLOCK_DIM), 0, stream,
++              in.data<hip_bfloat16>(), out.data<uint32_t>(), out.size(),
++              shape_param, in_strides_param, out_strides_param,
++              ndim, axis_stride, axis_size);
++        }
++        break;
+       default:
+         throw std::runtime_error("Unsupported type for ArgReduce");
+     }
+diff --git a/mlx/backend/rocm/jit_module.cpp b/mlx/backend/rocm/jit_module.cpp
+index 434e41d..07ef852 100644
+--- a/mlx/backend/rocm/jit_module.cpp
++++ b/mlx/backend/rocm/jit_module.cpp
+@@ -7,6 +7,7 @@
+ 
+ #include <cstdlib>
+ #include <filesystem>
++#include <functional>
+ #include <fstream>
+ #include <mutex>
+ #include <sstream>
+@@ -18,6 +19,19 @@ namespace mlx::core::rocm {
+ 
+ namespace {
+ 
++// Truncate long kernel names to avoid exceeding filesystem 255-byte limit.
++// Names > 200 chars are replaced with a prefix + hash.
++std::string safe_filename(const std::string& name) {
++  constexpr size_t kMaxLen = 200;
++  if (name.size() <= kMaxLen) {
++    return name;
++  }
++  auto h = std::hash<std::string>{}(name);
++  std::ostringstream oss;
++  oss << name.substr(0, 64) << "_" << std::hex << h;
++  return oss.str();
++}
++
+ #define CHECK_HIPRTC_ERROR(cmd) check_hiprtc_error(#cmd, (cmd))
+ 
+ void check_hiprtc_error(const char* name, hiprtcResult err) {
+@@ -248,9 +262,12 @@ JitModule::JitModule(
+   std::string hsaco;
+   std::vector<std::pair<std::string, std::string>> hsaco_kernels;
+ 
++  // Use a safe filename for disk cache to avoid exceeding 255-byte limit
++  std::string cache_name = safe_filename(module_name);
++
+   // Try to load them from the file cache
+   if (!read_cached_hsaco(
+-          hsaco_cache_dir(), module_name, hsaco, hsaco_kernels)) {
++          hsaco_cache_dir(), cache_name, hsaco, hsaco_kernels)) {
+     auto [precompiled, source_code, kernel_names] = builder();
+ 
+     // Get the HSACO (AMD GPU binary)
+@@ -267,7 +284,7 @@ JitModule::JitModule(
+     // If requested save them in the file cache for the next launch
+     if (use_disk_cache) {
+       write_cached_hsaco(
+-          hsaco_cache_dir(), module_name, hsaco, hsaco_kernels, source_code);
++          hsaco_cache_dir(), cache_name, hsaco, hsaco_kernels, source_code);
+     }
+   }
+ 
+diff --git a/mlx/backend/rocm/quantized/qmm.hip b/mlx/backend/rocm/quantized/qmm.hip
+index 09f03c6..3831e42 100644
+--- a/mlx/backend/rocm/quantized/qmm.hip
++++ b/mlx/backend/rocm/quantized/qmm.hip
+@@ -90,21 +90,16 @@ __global__ void qmv_kernel(
+       int bit_offset = (k % pack_factor) * BITS;
+       uint8_t packed = w[col * (K / pack_factor) + pack_idx];
+       uint8_t mask = (1 << BITS) - 1;
+-      int8_t quant_val = static_cast<int8_t>((packed >> bit_offset) & mask);
+-      
+-      // Sign extend if needed
+-      if (quant_val & (1 << (BITS - 1))) {
+-        quant_val |= ~mask;
+-      }
+-      
+-      // Dequantize
++      uint8_t quant_val = (packed >> bit_offset) & mask;
++
++      // Dequantize (unsigned affine: w = scale * val + bias)
+       float w_val = static_cast<float>(quant_val) * scale + bias;
+-      
++
+       // Accumulate
+       acc += static_cast<float>(x[row * K + k]) * w_val;
+     }
+   }
+-  
++
+   out[row * N + col] = static_cast<T>(acc);
+ }
+ 
+@@ -145,16 +140,11 @@ __global__ void qmv_t_kernel(
+       int bit_offset = (k % pack_factor) * BITS;
+       uint8_t packed = w[col * (K / pack_factor) + pack_idx];
+       uint8_t mask = (1 << BITS) - 1;
+-      int8_t quant_val = static_cast<int8_t>((packed >> bit_offset) & mask);
+-      
+-      // Sign extend if needed
+-      if (quant_val & (1 << (BITS - 1))) {
+-        quant_val |= ~mask;
+-      }
+-      
+-      // Dequantize
++      uint8_t quant_val = (packed >> bit_offset) & mask;
++
++      // Dequantize (unsigned affine: w = scale * val + bias)
+       float w_val = static_cast<float>(quant_val) * scale + bias;
+-      
++
+       // Accumulate
+       acc += static_cast<float>(x[row * K + k]) * w_val;
+     }
+@@ -165,6 +155,13 @@ __global__ void qmv_t_kernel(
+ 
+ } // namespace rocm
+ 
++} // namespace mlx::core
++
++// Include optimized GEMV kernel (separate file for organization)
++#include "mlx/backend/rocm/quantized/qmv_kernel.hip"
++
++namespace mlx::core {
++
+ void QuantizedMatmul::eval_gpu(const std::vector<array>& inputs, array& out) {
+   auto& s = stream();
+   auto& d = rocm::device(s.device);
+@@ -196,63 +193,108 @@ void QuantizedMatmul::eval_gpu(const std::vector<array>& inputs, array& out) {
+   int M = non_batched ? x.size() / K : x.shape(-2);
+   int N = out.shape(-1);
+ 
+-  int block_size = 256;
+-  dim3 grid((M + 0) / 1, (N + block_size - 1) / block_size);
+-  grid.x = M;
+-  
++  // Use optimized warp-cooperative kernel for all M values.
++  // A dedicated tiled GEMM for large M is future work (Phase 2).
++  bool use_fast_gemv = true;
++
+   enc.launch_kernel([&](hipStream_t stream) {
+-    #define LAUNCH_QMV(T, ScaleT, BITS, GROUP_SIZE) \
+-      if (transpose_) { \
++    if (use_fast_gemv) {
++      // --- Optimized: warp-cooperative with coalesced loads ---
++      constexpr int RPB = rocm::ROWS_PER_BLOCK;
++      dim3 grid(M, (N + RPB - 1) / RPB);
++      dim3 block(WARP_SIZE, RPB);  // 32 x 8 = 256 threads
++
++      // Cast w pointer from uint8 to uint32 to preserve correct byte offset
++      // (data<uint32_t>() would apply the element offset as 4-byte units)
++      auto w_ptr_u32 = reinterpret_cast<const uint32_t*>(w.data<uint8_t>());
++
++      #define LAUNCH_FAST_QMV(T, ScaleT, BITS, GROUP_SIZE) \
+         hipLaunchKernelGGL( \
+-            (rocm::qmv_t_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
+-            grid, dim3(block_size), 0, stream, \
+-            x.data<T>(), w.data<uint8_t>(), \
++            (rocm::qmv_fast_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
++            grid, block, 0, stream, \
++            x.data<T>(), w_ptr_u32, \
+             scales.data<ScaleT>(), \
+             has_bias ? biases->data<ScaleT>() : nullptr, \
+-            out.data<T>(), M, N, K, has_bias); \
+-      } else { \
+-        hipLaunchKernelGGL( \
+-            (rocm::qmv_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
+-            grid, dim3(block_size), 0, stream, \
+-            x.data<T>(), w.data<uint8_t>(), \
+-            scales.data<ScaleT>(), \
+-            has_bias ? biases->data<ScaleT>() : nullptr, \
+-            out.data<T>(), M, N, K, has_bias); \
+-      }
+-    
+-    #define DISPATCH_GROUP_SIZE(T, ScaleT, BITS) \
+-      switch (group_size_) { \
+-        case 32: LAUNCH_QMV(T, ScaleT, BITS, 32); break; \
+-        case 64: LAUNCH_QMV(T, ScaleT, BITS, 64); break; \
+-        case 128: LAUNCH_QMV(T, ScaleT, BITS, 128); break; \
+-        default: throw std::runtime_error("Unsupported group_size for QuantizedMatmul: " + std::to_string(group_size_)); \
++            out.data<T>(), M, N, K, has_bias)
++
++      #define DISPATCH_GROUP_SIZE_FAST(T, ScaleT, BITS) \
++        switch (group_size_) { \
++          case 32: LAUNCH_FAST_QMV(T, ScaleT, BITS, 32); break; \
++          case 64: LAUNCH_FAST_QMV(T, ScaleT, BITS, 64); break; \
++          case 128: LAUNCH_FAST_QMV(T, ScaleT, BITS, 128); break; \
++          default: throw std::runtime_error("Unsupported group_size: " + std::to_string(group_size_)); \
++        }
++
++      #define DISPATCH_BITS_FAST(T, ScaleT) \
++        switch (bits_) { \
++          case 2: DISPATCH_GROUP_SIZE_FAST(T, ScaleT, 2); break; \
++          case 4: DISPATCH_GROUP_SIZE_FAST(T, ScaleT, 4); break; \
++          case 8: DISPATCH_GROUP_SIZE_FAST(T, ScaleT, 8); break; \
++          default: throw std::runtime_error("Unsupported bits: " + std::to_string(bits_)); \
++        }
++
++      switch (x.dtype()) {
++        case float32:  DISPATCH_BITS_FAST(float, float); break;
++        case float16:  DISPATCH_BITS_FAST(__half, __half); break;
++        case bfloat16: DISPATCH_BITS_FAST(hip_bfloat16, hip_bfloat16); break;
++        default: throw std::runtime_error("Unsupported dtype for QuantizedMatmul");
+       }
+-    
+-    #define DISPATCH_BITS(T, ScaleT) \
+-      switch (bits_) { \
+-        case 2: DISPATCH_GROUP_SIZE(T, ScaleT, 2); break; \
+-        case 4: DISPATCH_GROUP_SIZE(T, ScaleT, 4); break; \
+-        case 8: DISPATCH_GROUP_SIZE(T, ScaleT, 8); break; \
+-        default: throw std::runtime_error("Unsupported bits for QuantizedMatmul: " + std::to_string(bits_)); \
++
++      #undef DISPATCH_BITS_FAST
++      #undef DISPATCH_GROUP_SIZE_FAST
++      #undef LAUNCH_FAST_QMV
++
++    } else {
++      // --- Fallback: naive kernel for larger M (until tiled GEMM is implemented) ---
++      int block_size = 256;
++      dim3 grid(M, (N + block_size - 1) / block_size);
++
++      #define LAUNCH_QMV(T, ScaleT, BITS, GROUP_SIZE) \
++        if (transpose_) { \
++          hipLaunchKernelGGL( \
++              (rocm::qmv_t_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
++              grid, dim3(block_size), 0, stream, \
++              x.data<T>(), w.data<uint8_t>(), \
++              scales.data<ScaleT>(), \
++              has_bias ? biases->data<ScaleT>() : nullptr, \
++              out.data<T>(), M, N, K, has_bias); \
++        } else { \
++          hipLaunchKernelGGL( \
++              (rocm::qmv_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
++              grid, dim3(block_size), 0, stream, \
++              x.data<T>(), w.data<uint8_t>(), \
++              scales.data<ScaleT>(), \
++              has_bias ? biases->data<ScaleT>() : nullptr, \
++              out.data<T>(), M, N, K, has_bias); \
++        }
++
++      #define DISPATCH_GROUP_SIZE(T, ScaleT, BITS) \
++        switch (group_size_) { \
++          case 32: LAUNCH_QMV(T, ScaleT, BITS, 32); break; \
++          case 64: LAUNCH_QMV(T, ScaleT, BITS, 64); break; \
++          case 128: LAUNCH_QMV(T, ScaleT, BITS, 128); break; \
++          default: throw std::runtime_error("Unsupported group_size: " + std::to_string(group_size_)); \
++        }
++
++      #define DISPATCH_BITS(T, ScaleT) \
++        switch (bits_) { \
++          case 2: DISPATCH_GROUP_SIZE(T, ScaleT, 2); break; \
++          case 4: DISPATCH_GROUP_SIZE(T, ScaleT, 4); break; \
++          case 8: DISPATCH_GROUP_SIZE(T, ScaleT, 8); break; \
++          default: throw std::runtime_error("Unsupported bits: " + std::to_string(bits_)); \
++        }
++
++      switch (x.dtype()) {
++        case float32:  DISPATCH_BITS(float, float); break;
++        case float16:  DISPATCH_BITS(__half, __half); break;
++        case bfloat16: DISPATCH_BITS(hip_bfloat16, hip_bfloat16); break;
++        default: throw std::runtime_error("Unsupported dtype for QuantizedMatmul");
+       }
+-    
+-    switch (x.dtype()) {
+-      case float32:
+-        DISPATCH_BITS(float, float);
+-        break;
+-      case float16:
+-        DISPATCH_BITS(__half, __half);
+-        break;
+-      case bfloat16:
+-        DISPATCH_BITS(hip_bfloat16, hip_bfloat16);
+-        break;
+-      default:
+-        throw std::runtime_error("Unsupported dtype for QuantizedMatmul");
++
++      #undef DISPATCH_BITS
++      #undef DISPATCH_GROUP_SIZE
++      #undef LAUNCH_QMV
+     }
+-    
+-    #undef DISPATCH_BITS
+-    #undef DISPATCH_GROUP_SIZE
+-    #undef LAUNCH_QMV
+   });
+ }
+ 
+@@ -308,14 +350,9 @@ __global__ void gather_qmv_kernel(
+       int bit_offset = (k % pack_factor) * BITS;
+       uint8_t packed = w_ptr[pack_idx];
+       uint8_t mask = (1 << BITS) - 1;
+-      int8_t quant_val = static_cast<int8_t>((packed >> bit_offset) & mask);
+-      
+-      // Sign extend if needed
+-      if (quant_val & (1 << (BITS - 1))) {
+-        quant_val |= ~mask;
+-      }
+-      
+-      // Dequantize
++      uint8_t quant_val = (packed >> bit_offset) & mask;
++
++      // Dequantize (unsigned affine: w = scale * val + bias)
+       float w_val = static_cast<float>(quant_val) * scale + bias;
+       
+       // Accumulate
+@@ -364,53 +401,96 @@ void GatherQMM::eval_gpu(const std::vector<array>& inputs, array& out) {
+   int B = out.size() / M / N;
+   int E = w.size() / w.shape(-1) / w.shape(-2);
+ 
+-  int block_size = 256;
+-  dim3 grid(M, (N + block_size - 1) / block_size, B);
+-  
++  bool use_fast_gemv = true;
++
+   enc.launch_kernel([&](hipStream_t stream) {
+-    #define LAUNCH_GATHER_QMV(T, ScaleT, BITS, GROUP_SIZE) \
+-      hipLaunchKernelGGL( \
+-          (rocm::gather_qmv_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
+-          grid, dim3(block_size), 0, stream, \
+-          x.data<T>(), w.data<uint8_t>(), \
+-          scales.data<ScaleT>(), \
+-          has_bias ? biases->data<ScaleT>() : nullptr, \
+-          lhs_indices.data<uint32_t>(), rhs_indices.data<uint32_t>(), \
+-          out.data<T>(), B, M, N, K, E, has_bias)
+-    
+-    #define DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, BITS) \
+-      switch (group_size_) { \
+-        case 32: LAUNCH_GATHER_QMV(T, ScaleT, BITS, 32); break; \
+-        case 64: LAUNCH_GATHER_QMV(T, ScaleT, BITS, 64); break; \
+-        case 128: LAUNCH_GATHER_QMV(T, ScaleT, BITS, 128); break; \
+-        default: throw std::runtime_error("Unsupported group_size for GatherQMM: " + std::to_string(group_size_)); \
++    if (use_fast_gemv) {
++      // --- Optimized gather kernel ---
++      constexpr int RPB = rocm::ROWS_PER_BLOCK;
++      dim3 grid(M, (N + RPB - 1) / RPB, B);
++      dim3 block(WARP_SIZE, RPB);
++
++      auto w_ptr_u32_g = reinterpret_cast<const uint32_t*>(w.data<uint8_t>());
++
++      #define LAUNCH_FAST_GATHER(T, ScaleT, BITS, GROUP_SIZE) \
++        hipLaunchKernelGGL( \
++            (rocm::gather_qmv_fast_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
++            grid, block, 0, stream, \
++            x.data<T>(), w_ptr_u32_g, \
++            scales.data<ScaleT>(), \
++            has_bias ? biases->data<ScaleT>() : nullptr, \
++            lhs_indices.data<uint32_t>(), rhs_indices.data<uint32_t>(), \
++            out.data<T>(), B, M, N, K, E, has_bias)
++
++      #define DISPATCH_GS_FAST_G(T, ScaleT, BITS) \
++        switch (group_size_) { \
++          case 32: LAUNCH_FAST_GATHER(T, ScaleT, BITS, 32); break; \
++          case 64: LAUNCH_FAST_GATHER(T, ScaleT, BITS, 64); break; \
++          case 128: LAUNCH_FAST_GATHER(T, ScaleT, BITS, 128); break; \
++          default: throw std::runtime_error("Unsupported group_size: " + std::to_string(group_size_)); \
++        }
++
++      #define DISPATCH_BITS_FAST_G(T, ScaleT) \
++        switch (bits_) { \
++          case 2: DISPATCH_GS_FAST_G(T, ScaleT, 2); break; \
++          case 4: DISPATCH_GS_FAST_G(T, ScaleT, 4); break; \
++          case 8: DISPATCH_GS_FAST_G(T, ScaleT, 8); break; \
++          default: throw std::runtime_error("Unsupported bits: " + std::to_string(bits_)); \
++        }
++
++      switch (x.dtype()) {
++        case float32:  DISPATCH_BITS_FAST_G(float, float); break;
++        case float16:  DISPATCH_BITS_FAST_G(__half, __half); break;
++        case bfloat16: DISPATCH_BITS_FAST_G(hip_bfloat16, hip_bfloat16); break;
++        default: throw std::runtime_error("Unsupported dtype for GatherQMM");
+       }
+-    
+-    #define DISPATCH_BITS_GATHER(T, ScaleT) \
+-      switch (bits_) { \
+-        case 2: DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, 2); break; \
+-        case 4: DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, 4); break; \
+-        case 8: DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, 8); break; \
+-        default: throw std::runtime_error("Unsupported bits for GatherQMM: " + std::to_string(bits_)); \
++
++      #undef DISPATCH_BITS_FAST_G
++      #undef DISPATCH_GS_FAST_G
++      #undef LAUNCH_FAST_GATHER
++
++    } else {
++      // --- Fallback: naive gather kernel ---
++      int block_size = 256;
++      dim3 grid(M, (N + block_size - 1) / block_size, B);
++
++      #define LAUNCH_GATHER_QMV(T, ScaleT, BITS, GROUP_SIZE) \
++        hipLaunchKernelGGL( \
++            (rocm::gather_qmv_kernel<T, ScaleT, BITS, GROUP_SIZE>), \
++            grid, dim3(block_size), 0, stream, \
++            x.data<T>(), w.data<uint8_t>(), \
++            scales.data<ScaleT>(), \
++            has_bias ? biases->data<ScaleT>() : nullptr, \
++            lhs_indices.data<uint32_t>(), rhs_indices.data<uint32_t>(), \
++            out.data<T>(), B, M, N, K, E, has_bias)
++
++      #define DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, BITS) \
++        switch (group_size_) { \
++          case 32: LAUNCH_GATHER_QMV(T, ScaleT, BITS, 32); break; \
++          case 64: LAUNCH_GATHER_QMV(T, ScaleT, BITS, 64); break; \
++          case 128: LAUNCH_GATHER_QMV(T, ScaleT, BITS, 128); break; \
++          default: throw std::runtime_error("Unsupported group_size: " + std::to_string(group_size_)); \
++        }
++
++      #define DISPATCH_BITS_GATHER(T, ScaleT) \
++        switch (bits_) { \
++          case 2: DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, 2); break; \
++          case 4: DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, 4); break; \
++          case 8: DISPATCH_GROUP_SIZE_GATHER(T, ScaleT, 8); break; \
++          default: throw std::runtime_error("Unsupported bits: " + std::to_string(bits_)); \
++        }
++
++      switch (x.dtype()) {
++        case float32:  DISPATCH_BITS_GATHER(float, float); break;
++        case float16:  DISPATCH_BITS_GATHER(__half, __half); break;
++        case bfloat16: DISPATCH_BITS_GATHER(hip_bfloat16, hip_bfloat16); break;
++        default: throw std::runtime_error("Unsupported dtype for GatherQMM");
+       }
+-    
+-    switch (x.dtype()) {
+-      case float32:
+-        DISPATCH_BITS_GATHER(float, float);
+-        break;
+-      case float16:
+-        DISPATCH_BITS_GATHER(__half, __half);
+-        break;
+-      case bfloat16:
+-        DISPATCH_BITS_GATHER(hip_bfloat16, hip_bfloat16);
+-        break;
+-      default:
+-        throw std::runtime_error("Unsupported dtype for GatherQMM");
++
++      #undef DISPATCH_BITS_GATHER
++      #undef DISPATCH_GROUP_SIZE_GATHER
++      #undef LAUNCH_GATHER_QMV
+     }
+-    
+-    #undef DISPATCH_BITS_GATHER
+-    #undef DISPATCH_GROUP_SIZE_GATHER
+-    #undef LAUNCH_GATHER_QMV
+   });
+ }
+ 
+diff --git a/mlx/backend/rocm/sort.hip b/mlx/backend/rocm/sort.hip
+index df85b7e..2647d31 100644
+--- a/mlx/backend/rocm/sort.hip
++++ b/mlx/backend/rocm/sort.hip
+@@ -7,6 +7,17 @@
+ #include "mlx/primitives.h"
+ 
+ #include <hip/hip_runtime.h>
++
++// Workaround: rocprim headers use placement new in __device__ code,
++// which requires __device__ overloads of operator new/delete.
++#ifdef __HIP_DEVICE_COMPILE__
++__device__ inline void* operator new(size_t, void* p) noexcept { return p; }
++__device__ inline void* operator new[](size_t, void* p) noexcept { return p; }
++__device__ inline void operator delete(void*, void*) noexcept {}
++__device__ inline void operator delete[](void*, void*) noexcept {}
++#endif
++
++#include <rocprim/rocprim.hpp>
+ #include <cassert>
+ #include <limits>
+ 
+@@ -292,7 +303,8 @@ struct KernelMergeSort {
+     block_merge_sort_t::sort(tgp_vals, tgp_idxs, size_sorted_axis);
+     __syncthreads();
+ 
+-    for (int i = threadIdx.x; i < size_sorted_axis; i += BLOCK_THREADS) {
++    int out_limit = min(size_sorted_axis, N_PER_BLOCK);
++    for (int i = threadIdx.x; i < out_limit; i += BLOCK_THREADS) {
+       if constexpr (ARG_SORT) {
+         out[i * out_stride_sorted_axis] = tgp_idxs[i];
+       } else {
+@@ -386,8 +398,116 @@ void gpu_sort(const Stream& s, array in, array& out_, int axis, bool argsort) {
+   
+   auto& stream = encoder.stream();
+   
+-  // Determine block size
++  // For large arrays that exceed the block sort capacity (512 threads * 8 items = 4096),
++  // use rocprim radix sort which handles arbitrary sizes correctly.
+   constexpr int tn = N_PER_THREAD;
++  constexpr int max_block_sort_size = 512 * tn;  // 4096
++
++  if (size_sorted_axis > max_block_sort_size) {
++    dispatch_all_types(in.dtype(), [&](auto type_tag) {
++      using CTYPE = MLX_GET_TYPE(type_tag);
++      if constexpr (!std::is_same_v<CTYPE, complex64_t>) {
++        using ValT = hip_type_t<CTYPE>;
++
++        encoder.launch_kernel([&](hipStream_t hip_stream) {
++          for (int row = 0; row < n_rows; ++row) {
++            const ValT* in_row = in.data<ValT>() + row * size_sorted_axis;
++
++            if (argsort) {
++              // Allocate temporary index array and initialize to 0..N-1
++              uint32_t* indices_in = nullptr;
++              uint32_t* indices_out = nullptr;
++              ValT* vals_tmp = nullptr;
++              CHECK_HIP_ERROR(hipMalloc(&indices_in, size_sorted_axis * sizeof(uint32_t)));
++              CHECK_HIP_ERROR(hipMalloc(&indices_out, size_sorted_axis * sizeof(uint32_t)));
++              CHECK_HIP_ERROR(hipMalloc(&vals_tmp, size_sorted_axis * sizeof(ValT)));
++
++              // Initialize indices with a simple kernel via hipMemcpy + iota
++              std::vector<uint32_t> host_indices(size_sorted_axis);
++              for (int i = 0; i < size_sorted_axis; ++i) host_indices[i] = i;
++              CHECK_HIP_ERROR(hipMemcpyAsync(indices_in, host_indices.data(),
++                  size_sorted_axis * sizeof(uint32_t), hipMemcpyHostToDevice, hip_stream));
++
++              // Copy input values to a mutable buffer for rocprim
++              CHECK_HIP_ERROR(hipMemcpyAsync(vals_tmp, in_row,
++                  size_sorted_axis * sizeof(ValT), hipMemcpyDeviceToDevice, hip_stream));
++
++              // Get temp storage size
++              size_t temp_bytes = 0;
++              rocprim::radix_sort_pairs(
++                  nullptr, temp_bytes,
++                  vals_tmp, (ValT*)nullptr,
++                  indices_in, indices_out,
++                  size_sorted_axis, 0, sizeof(ValT) * 8, hip_stream);
++
++              void* temp_storage = nullptr;
++              CHECK_HIP_ERROR(hipMalloc(&temp_storage, temp_bytes));
++
++              ValT* vals_sorted = nullptr;
++              CHECK_HIP_ERROR(hipMalloc(&vals_sorted, size_sorted_axis * sizeof(ValT)));
++
++              rocprim::radix_sort_pairs(
++                  temp_storage, temp_bytes,
++                  vals_tmp, vals_sorted,
++                  indices_in, indices_out,
++                  size_sorted_axis, 0, sizeof(ValT) * 8, hip_stream);
++
++              // Copy result indices to output
++              uint32_t* out_row = out.data<uint32_t>() + row * size_sorted_axis;
++              CHECK_HIP_ERROR(hipMemcpyAsync(out_row, indices_out,
++                  size_sorted_axis * sizeof(uint32_t), hipMemcpyDeviceToDevice, hip_stream));
++
++              CHECK_HIP_ERROR(hipFree(indices_in));
++              CHECK_HIP_ERROR(hipFree(indices_out));
++              CHECK_HIP_ERROR(hipFree(vals_tmp));
++              CHECK_HIP_ERROR(hipFree(vals_sorted));
++              CHECK_HIP_ERROR(hipFree(temp_storage));
++            } else {
++              // Sort values only
++              ValT* vals_in = nullptr;
++              ValT* vals_out_buf = nullptr;
++              CHECK_HIP_ERROR(hipMalloc(&vals_in, size_sorted_axis * sizeof(ValT)));
++              CHECK_HIP_ERROR(hipMalloc(&vals_out_buf, size_sorted_axis * sizeof(ValT)));
++              CHECK_HIP_ERROR(hipMemcpyAsync(vals_in, in_row,
++                  size_sorted_axis * sizeof(ValT), hipMemcpyDeviceToDevice, hip_stream));
++
++              size_t temp_bytes = 0;
++              rocprim::radix_sort_keys(
++                  nullptr, temp_bytes,
++                  vals_in, vals_out_buf,
++                  size_sorted_axis, 0, sizeof(ValT) * 8, hip_stream);
++
++              void* temp_storage = nullptr;
++              CHECK_HIP_ERROR(hipMalloc(&temp_storage, temp_bytes));
++
++              rocprim::radix_sort_keys(
++                  temp_storage, temp_bytes,
++                  vals_in, vals_out_buf,
++                  size_sorted_axis, 0, sizeof(ValT) * 8, hip_stream);
++
++              ValT* out_row = out.data<ValT>() + row * size_sorted_axis;
++              CHECK_HIP_ERROR(hipMemcpyAsync(out_row, vals_out_buf,
++                  size_sorted_axis * sizeof(ValT), hipMemcpyDeviceToDevice, hip_stream));
++
++              CHECK_HIP_ERROR(hipFree(vals_in));
++              CHECK_HIP_ERROR(hipFree(vals_out_buf));
++              CHECK_HIP_ERROR(hipFree(temp_storage));
++            }
++          }
++        });
++      } else {
++        throw std::runtime_error(
++            "ROCm backend does not support sorting complex numbers");
++      }
++    });
++
++    if (!is_segmented_sort) {
++      copy_gpu(swapaxes_in_eval(out, axis, last_dim), out_, CopyType::General, s);
++    }
++    return;
++  }
++
++  // Determine block size for small-array block sort
+   int potential_bn = (size_sorted_axis + tn - 1) / tn;
+   int bn;
+   if (potential_bn > 256) {
