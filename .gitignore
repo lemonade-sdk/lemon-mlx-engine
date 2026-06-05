@@ -4,6 +4,7 @@ build-npu/
 cmake-build-*/
 out/
 .cache/
+chroma_data/
 
 # IDE
 .idea/
