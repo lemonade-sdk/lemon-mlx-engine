@@ -458,20 +458,7 @@ jobs:
           }
 
           content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
-          answer=$(echo "$content" | python3 -c "
-import sys,re
-t=sys.stdin.read()
-t=re.sub(r'<think>.*?</think>','',t,flags=re.DOTALL)
-# Prefer explicit answer patterns
-m=re.search(r'(?:answer is|answer:)\s*(\d+)',t,flags=re.IGNORECASE)
-if m: print(m.group(1)); sys.exit(0)
-# Try equation form: = N
-m=re.search(r'=\s*(\d+)',t)
-if m: print(m.group(1)); sys.exit(0)
-# Last resort: first standalone number
-nums=re.findall(r'(?<!\d)(\d+)(?!\d)',t)
-print(nums[0] if nums else '')
-" 2>/dev/null) || answer=""
+          answer=$(echo "$content" | python3 -c "import sys,re;t=sys.stdin.read();t=re.sub(r'<think>.*?</think>','',t,flags=re.DOTALL);m=re.search(r'(?:answer is|answer:)\s*(\d+)',t,flags=re.IGNORECASE);print(m.group(1) if m else (re.search(r'=\s*(\d+)',t).group(1) if re.search(r'=\s*(\d+)',t) else (re.findall(r'(?<!\d)(\d+)(?!\d)',t)[0] if re.findall(r'(?<!\d)(\d+)(?!\d)',t) else '')))" 2>/dev/null) || answer=""
           echo "=== RAW MODEL OUTPUT (Attempt $ATTEMPT) ==="
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
           echo "=== END RAW OUTPUT ==="
