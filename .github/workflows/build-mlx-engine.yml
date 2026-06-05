@@ -427,6 +427,12 @@ jobs:
         echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
         echo "=== End Response ==="
 
+        echo "$response" | python3 -c "
+import sys,json
+u=json.load(sys.stdin).get('usage',{})
+print(f\"Performance: prompt={u.get('prompt_tokens','?')} tokens, completion={u.get('completion_tokens','?')} tokens, total={u.get('total_tokens','?')}\")
+" 2>/dev/null || true
+
         content=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip())" 2>/dev/null) || content=""
         echo "Extracted content: $content"
 

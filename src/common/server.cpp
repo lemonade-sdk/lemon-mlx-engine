@@ -317,6 +317,8 @@ struct Server::Impl {
                     generated_count >= *params.max_tokens) ? "length" : "stop";
                 response.choices.push_back(std::move(choice));
 
+                std::cerr << info.summary() << std::endl;
+
                 response.usage.prompt_tokens = info.prompt_token_count;
                 response.usage.completion_tokens = info.generation_token_count;
                 response.usage.total_tokens =
@@ -479,6 +481,8 @@ struct Server::Impl {
                 choice.finish_reason = (params.max_tokens.has_value() &&
                     generated_count >= *params.max_tokens) ? "length" : "stop";
                 response.choices.push_back(std::move(choice));
+
+                std::cerr << info.summary() << std::endl;
 
                 response.usage.prompt_tokens = info.prompt_token_count;
                 response.usage.completion_tokens = info.generation_token_count;
