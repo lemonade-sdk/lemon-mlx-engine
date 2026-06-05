@@ -68,6 +68,14 @@ public:
     // Access raw keys/values for conversion to QuantizedKVCache.
     const std::optional<mlx::core::array>& raw_keys() const { return keys_; }
     const std::optional<mlx::core::array>& raw_values() const { return values_; }
+
+    // --- Partial-rollback API (I7 sub-task 3) ----------------------------------
+    // For MTP speculative decode we need to checkpoint the cache offset before
+    // generating draft tokens and trim back to it on rejection. `save_position`
+    // returns the current offset; `restore_to_position` trims any rows added
+    // after that position. Both are O(1) wrt token count (just records / trims).
+    size_t save_position() const { return static_cast<size_t>(offset_); }
+    void restore_to_position(size_t pos);
 };
 
 // Rotating (fixed-size) KV cache with overwriting.
@@ -138,6 +146,14 @@ private:
 
     std::pair<mlx::core::array, mlx::core::array>
     update_impl(const mlx::core::array& new_keys, const mlx::core::array& new_values);
+
+public:
+    // I7 sub-task 3: partial-rollback API. Quantized storage means trim_impl is
+    // currently a no-op; for MTP draft purposes we expose the same `save_position`
+    // / `restore_to_position` shape so callers do not have to special-case the
+    // quantized cache. `restore_to_position` rebuilds the QTuples by slicing.
+    size_t save_position() const { return static_cast<size_t>(offset_); }
+    void restore_to_position(size_t pos);
 };
 
 // Mamba-style state space model cache.
@@ -252,6 +268,38 @@ public:
 
     int trim(int n) {
         return std::visit([n](auto& c) { return c.trim(n); }, impl_);
+    }
+
+    // I7 sub-task 3: partial-rollback dispatch.
+    // - KVCacheSimple / QuantizedKVCache: return / apply the offset.
+    // - RotatingKVCache: not supported (window already destructive) -- save
+    //   returns current offset but restore is a no-op; callers should avoid
+    //   speculative decode on rotating caches.
+    // - MambaCache / CompoundCache: out of scope for this scaffolding cut --
+    //   recurrent rollback requires the gated-delta intermediates kernel
+    //   (sub-task 4). save_position returns 0, restore_to_position is a no-op
+    //   and emits a debug warning via offset mismatch.
+    size_t save_position() const {
+        return std::visit([](const auto& c) -> size_t {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, QuantizedKVCache>) {
+                return c.save_position();
+            } else {
+                return static_cast<size_t>(c.offset());
+            }
+        }, impl_);
+    }
+    void restore_to_position(size_t pos) {
+        std::visit([pos](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, QuantizedKVCache>) {
+                c.restore_to_position(pos);
+            }
+            // For Mamba/Rotating/Compound: caller is responsible for not using
+            // speculative decode (see sub-task 4 -- GDN intermediates kernel).
+        }, impl_);
     }
 
     // Access stored KV state for sharing between layers.

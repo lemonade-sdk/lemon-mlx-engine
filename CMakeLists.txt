@@ -186,6 +186,7 @@ add_library(mlx-lm-llm
     src/llm/models/lfm2.cpp
     src/llm/models/nemotron_h.cpp
     src/llm/models/granite_moe_hybrid.cpp
+    src/llm/models/mtp_head.cpp
 )
 target_link_libraries(mlx-lm-llm PUBLIC mlx-lm-common)
 

@@ -673,9 +673,10 @@ std::unordered_map<std::string, mx::array>
 Qwen3NextModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
     if (config_.tie_word_embeddings) weights.erase("lm_head.weight");
 
-    // Remove mtp.* keys
+    // Stash mtp.* keys for MTPHead wiring (I7 sub-task 1).
     for (auto it = weights.begin(); it != weights.end(); ) {
         if (it->first.find("mtp.") != std::string::npos) {
+            mtp_weights_.emplace(it->first, it->second);
             it = weights.erase(it);
         } else {
             ++it;

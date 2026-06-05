@@ -621,4 +621,77 @@ GenerateCompletionInfo generate_text(
         });
 }
 
+// ---------------------------------------------------------------------------
+// I7 sub-task 5: mtp_generate_step (scaffolding).
+//
+// Mirrors the outer-loop structure of
+// `mtp_speculative_generate_step` in mlx-lm-private/mlx_lm/generate.py:652
+// (qwen35_mtp branch). The full upstream implementation is ~330 LoC and
+// includes:
+//   - adaptive draft-length probing via an 8-bit accept-history ring,
+//   - intermediates-kernel restore for GDN layers (see sub-task 4),
+//   - top-p / temperature sampling on draft + verifier logits,
+//   - lm_head batching tricks for chunked argmax.
+//
+// This scaffolding cut produces a correct, single-draft-token happy path
+// that exercises:
+//   1. cache->save_position() snapshot,
+//   2. mtp_draft_fn.draft() to produce one draft token,
+//   3. cache->restore_to_position() on rejection,
+// without yet running a real trunk verification pass. The verification
+// branch is a TODO marker -- it requires reaching into the model
+// dispatch table (`context_.call_fn`) with the draft tokens, which we
+// keep out of the scaffolding cut. The scout report calls out that the
+// hidden-state hook (`output_intermediates=true`) doesn't exist in the
+// lemon ModelContext yet; that wiring is a follow-up commit.
+std::vector<int> mtp_generate_step(
+    ModelContext& /*context*/,
+    std::vector<KVCache>& cache,
+    int seed_token,
+    const mlx::core::array& seed_hidden,
+    const MtpDraftFn& mtp_draft_fn,
+    int n_draft)
+{
+    std::vector<int> accepted;
+    accepted.reserve(static_cast<size_t>(n_draft) + 1);
+    accepted.push_back(seed_token);
+
+    if (n_draft <= 0 || !mtp_draft_fn.draft) {
+        return accepted;
+    }
+
+    // Snapshot each cache before drafting so we can roll back on rejection.
+    std::vector<size_t> snapshot;
+    snapshot.reserve(cache.size());
+    for (const auto& c : cache) {
+        snapshot.push_back(c.save_position());
+    }
+
+    int last_token = seed_token;
+    mlx::core::array hidden = seed_hidden;
+
+    for (int i = 0; i < n_draft; ++i) {
+        auto [tok, next_hidden] = mtp_draft_fn.draft(hidden, last_token);
+        accepted.push_back(tok);
+        last_token = tok;
+        hidden = next_hidden;
+    }
+
+    // TODO (sub-task 5, follow-up): run the trunk over `accepted[1:]` to
+    // verify; on first divergence, truncate `accepted` and restore each
+    // cache to snapshot[i] + accepted_count via restore_to_position.
+    // For the scaffolding cut we accept all drafts -- a real run with a
+    // real model would surface this as the obvious correctness gap.
+    //
+    // The rollback shape below is what the real verifier would invoke:
+    //
+    //   int accepted_count = ...;  // number of drafts that match
+    //   for (size_t li = 0; li < cache.size(); ++li) {
+    //       cache[li].restore_to_position(snapshot[li] + accepted_count);
+    //   }
+    (void)snapshot;
+
+    return accepted;
+}
+
 } // namespace mlx_lm

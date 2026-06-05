@@ -394,3 +394,80 @@ TEST_CASE("NaiveStreamingDetokenizer segment reset on newline", "[generate]") {
     REQUIRE(text.has_value());
     REQUIRE(text.value() == "world");
 }
+
+// ===== I7 sub-task 6: MTPHead draft-token shape smoke =====
+#include <mlx-lm/llm/models/mtp_head.h>
+#include <mlx-lm/common/kv_cache.h>
+#include <mlx-lm/common/attention_utils.h>
+
+static mlx_lm::MTPHeadConfig make_tiny_mtp_args() {
+    mlx_lm::MTPHeadConfig args;
+    args.hidden_size = 32;
+    args.intermediate_size = 64;
+    args.num_attention_heads = 4;
+    args.num_key_value_heads = 2;
+    args.head_dim = 8;
+    args.rope_dims = 8;
+    args.rms_norm_eps = 1e-6f;
+    args.rope_theta = 10000.0f;
+    return args;
+}
+
+TEST_CASE("MTPHead: weight map (dense)", "[mtp]") {
+    auto args = make_tiny_mtp_args();
+    mlx_lm::MTPHead head(args);
+    auto wmap = head.weight_map();
+    REQUIRE(wmap.count("pre_fc_norm_hidden.weight") == 1);
+    REQUIRE(wmap.count("pre_fc_norm_embedding.weight") == 1);
+    REQUIRE(wmap.count("fc.weight") == 1);
+    REQUIRE(wmap.count("layers.0.input_layernorm.weight") == 1);
+    REQUIRE(wmap.count("layers.0.post_attention_layernorm.weight") == 1);
+    REQUIRE(wmap.count("layers.0.self_attn.q_proj.weight") == 1);
+    REQUIRE(wmap.count("layers.0.mlp.gate_proj.weight") == 1);
+    REQUIRE(wmap.count("norm.weight") == 1);
+}
+
+TEST_CASE("MTPHead: 4 draft-token shape smoke", "[mtp]") {
+    auto args = make_tiny_mtp_args();
+    mlx_lm::MTPHead head(args);
+
+    mlx_lm::KVCache cache{mlx_lm::KVCacheSimple{}};
+    auto mask = mlx_lm::AttentionMask::none();
+
+    auto hidden = mx::random::normal({1, 1, args.hidden_size}, mx::float32);
+    auto embedding = mx::random::normal({1, 1, args.hidden_size}, mx::float32);
+
+    for (int step = 0; step < 4; ++step) {
+        auto out = head(hidden, embedding, mask, &cache);
+        mx::eval(out);
+        REQUIRE(out.ndim() == 3);
+        REQUIRE(out.shape(0) == 1);
+        REQUIRE(out.shape(1) == 1);
+        REQUIRE(out.shape(2) == args.hidden_size);
+
+        auto normed = head.apply_output_norm(out);
+        mx::eval(normed);
+        REQUIRE(normed.shape(2) == args.hidden_size);
+
+        hidden = out;
+    }
+}
+
+TEST_CASE("KVCacheSimple: save / restore round-trip", "[mtp][kv]") {
+    // Push a few rows, snapshot, push more, restore, confirm offset.
+    mlx_lm::KVCacheSimple c;
+    auto k0 = mx::random::normal({1, 2, 3, 4}, mx::float32);
+    auto v0 = mx::random::normal({1, 2, 3, 4}, mx::float32);
+    c.update(k0, v0);
+    auto saved = c.save_position();
+    REQUIRE(c.offset() == 3);
+
+    auto k1 = mx::random::normal({1, 2, 2, 4}, mx::float32);
+    auto v1 = mx::random::normal({1, 2, 2, 4}, mx::float32);
+    c.update(k1, v1);
+    REQUIRE(c.offset() == 5);
+
+    c.restore_to_position(saved);
+    REQUIRE(c.offset() == 3);
+}
+

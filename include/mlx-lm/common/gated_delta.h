@@ -44,4 +44,32 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_update(
     const std::optional<mlx::core::array>& state = std::nullopt,
     const std::optional<mlx::core::array>& mask = std::nullopt);
 
+// --- I7 sub-task 4: intermediates variant -----------------------------------
+// Variant that additionally emits the recurrent state after every timestep.
+// Used by the MTP draft loop so that on partial acceptance we can restore
+// state without re-running the full kernel from the start.
+//
+// q,k: [B, T, Hk, Dk], v: [B, T, Hv, Dv], g: [B, T, Hv] or [B, T, Hv, Dv],
+// beta: [B, T, Hv]
+// Returns:
+//   y        [B, T, Hv, Dv]    -- same as gated_delta_ops
+//   state    [B, Hv, Dv, Dk]   -- final recurrent state
+//   state_all[B, T, Hv, Dv, Dk] -- recurrent state after each token
+//
+// Scaffolding cut: implemented as a loop over `gated_delta_step_ops` (the
+// existing ops-only fallback path). The fused HIP kernel does not yet have
+// an intermediates variant -- see STATUS.md for the gap.
+struct GatedDeltaIntermediates {
+    mlx::core::array y;
+    mlx::core::array state;
+    mlx::core::array state_all;
+};
+
+GatedDeltaIntermediates gated_delta_kernel_intermediates(
+    const mlx::core::array& q, const mlx::core::array& k,
+    const mlx::core::array& v, const mlx::core::array& g,
+    const mlx::core::array& beta,
+    const std::optional<mlx::core::array>& state = std::nullopt,
+    const std::optional<mlx::core::array>& mask = std::nullopt);
+
 } // namespace mlx_lm

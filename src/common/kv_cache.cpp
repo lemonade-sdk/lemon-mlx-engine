@@ -116,6 +116,19 @@ int KVCacheSimple::trim_impl(int n) {
     return to_trim;
 }
 
+// I7 sub-task 3: trim back to a saved offset. Implemented by reusing trim_impl
+// so the underlying slice path is identical to a forward-from trim. Note that
+// `offset_` becomes the canonical truth -- the underlying buffer may still be
+// over-allocated (we keep the existing capacity) which is fine for reuse.
+void KVCacheSimple::restore_to_position(size_t pos) {
+    int target = static_cast<int>(pos);
+    if (target >= offset_) {
+        return;  // Nothing to roll back (or invalid restore -- silently ignore).
+    }
+    int delta = offset_ - target;
+    trim_impl(delta);
+}
+
 // --- RotatingKVCache ---
 
 std::pair<mlx::core::array, mlx::core::array>
@@ -224,6 +237,31 @@ QuantizedKVCache::update_impl(
     offset_ += new_keys.shape(2);
     return {dequantize_kv(keys_.value(), group_size_, bits_),
             dequantize_kv(values_.value(), group_size_, bits_)};
+}
+
+// I7 sub-task 3: rollback for QuantizedKVCache. Slice the QTuples along the
+// time axis (axis=2 for weight/biases/scales, which all use the same layout
+// here) back to `pos` quantization groups.
+void QuantizedKVCache::restore_to_position(size_t pos) {
+    int target = static_cast<int>(pos);
+    if (target >= offset_) return;
+    if (!keys_.has_value()) {
+        offset_ = target;
+        return;
+    }
+    auto slice_qt = [&](const QTuple& t) -> QTuple {
+        // weight: [B, H, T, D_packed]; scales/biases: [B, H, T, G].
+        auto trim_axis2 = [target](const mx::array& a) {
+            mx::Shape start(a.ndim(), 0);
+            mx::Shape stop(a.shape().begin(), a.shape().end());
+            stop[2] = target;
+            return mx::slice(a, start, stop);
+        };
+        return {trim_axis2(t.weight), trim_axis2(t.scales), trim_axis2(t.biases)};
+    };
+    keys_ = slice_qt(*keys_);
+    values_ = slice_qt(*values_);
+    offset_ = target;
 }
 
 QuantizedKVCache QuantizedKVCache::from_simple(
