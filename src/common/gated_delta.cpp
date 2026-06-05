@@ -403,19 +403,7 @@ std::pair<mx::array, mx::array> gated_delta_update(
     return gated_delta_ops(q, k, v, g, beta, s, mask);
 }
 
-// ---------------------------------------------------------------------------
-// I7 sub-task 4: intermediates variant (ops-only fallback).
-// Mirrors `gated_delta_kernel_intermediates` from mlx-lm-private's
-// gated_delta.py (qwen35_mtp branch, line 410), but implemented in MLX ops
-// rather than a fused Metal/HIP kernel. The fused HIP kernel in this file
-// does not currently expose per-step state -- see STATUS.md for the gap and
-// a sketch of how to add it.
-//
-// Performance: this fallback is O(T) array allocations and re-evaluations,
-// which is the same as the ops fallback used for any T>1 step today. It
-// is correct, but slower than the fused kernel by the usual margin. Good
-// enough for the scaffolding cut.
-// ---------------------------------------------------------------------------
+// Emits per-step recurrent state for MTP partial-acceptance rollback.
 GatedDeltaIntermediates gated_delta_kernel_intermediates(
     const mx::array& q, const mx::array& k,
     const mx::array& v, const mx::array& g,

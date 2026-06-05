@@ -364,37 +364,7 @@ GenerateCompletionInfo generate_text(
     const std::set<int>& eos_token_ids,
     const std::function<GenerateDisposition(const std::string& text, int token)>& on_text);
 
-// ---------------------------------------------------------------------------
-// I7 sub-task 5: mtp_generate_step (scaffolding).
-//
-// Single MTP draft+verify step. Returns the list of accepted tokens (always
-// 1+, since the trunk's own token is always accepted) and the updated cache
-// is mutated in place.
-//
-// This is the C++ analogue of `mtp_speculative_generate_step` from
-// `mlx-lm-private/mlx_lm/generate.py:652` (qwen35_mtp branch). The full ~330
-// LoC python function does adaptive draft length and intermediates-based
-// recurrent rollback; this scaffolding cut covers the happy path:
-//
-//   1. Run the trunk on the previously sampled token; sample t_main.
-//   2. For i in [0, n_draft):
-//        a. Call mtp_draft to produce a draft token from (h, t_main).
-//        b. Append to draft buffer.
-//   3. Re-feed all drafts to the trunk in a single batched call, get
-//      verifying logits. Accept up to first divergence.
-//   4. Restore each cache to the saved position + accepted_count via the
-//      partial-rollback API (sub-task 3).
-//
-// The actual MTP head wiring is model-specific; this scaffold supplies the
-// outer loop and the cache-checkpoint scaffolding. It is **not** wired into
-// TokenIterator yet -- the use_mtp flag is parsed but the iterator still
-// dispatches the legacy path unless the model exposes the hook (model-side
-// wiring is a follow-up).
-//
-// `n_draft` is the number of speculative tokens per outer step.
-// `mtp_draft_fn` is a callable supplied by the model wrapper that
-// internally invokes MTPHead and returns a sampled draft token + the new
-// hidden state.
+// MTP speculative decoding outer loop.
 struct MtpDraftFn {
     // Predict the next draft token from a trunk hidden state + last token id.
     // Returns (next_token_id, next_hidden_state).
@@ -408,10 +378,8 @@ struct MtpDraftFn {
 //
 // Note: this lives at the header level for scaffolding and is implemented in
 // `src/common/generate.cpp` next to TokenIterator. The body is intentionally
-// minimal -- it relies on cache->save_position() / restore_to_position() and
-// repeatedly calls `mtp_draft_fn.draft`. A real production cut needs the
-// verify-pass to be batched (one trunk forward over all drafts) and the
-// acceptance test to compare argmax of verifying logits vs. the drafts.
+// minimal -- it relies on cache->get_position() / set_position() and
+// repeatedly calls `mtp_draft_fn.draft`.
 std::vector<int> mtp_generate_step(
     ModelContext& context,
     std::vector<KVCache>& cache,

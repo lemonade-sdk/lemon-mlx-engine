@@ -41,14 +41,9 @@ struct GenerateParameters {
     // Avoids repeated grow-and-copy during generation.
     int ctx_size = 0;
 
-    // --- I7 sub-task 5: MTP speculative-decode flags --------------------------
-    // Off by default. When true, and the loaded model exposes an MTPHead via
-    // `has_mtp() == true`, the TokenIterator routes through
-    // `mtp_generate_step` instead of the single-token path.
+    // Enable MTP speculative decoding.
     bool use_mtp = false;
-
-    // Number of draft tokens to produce per outer step. Upstream mlx-lm
-    // defaults to 1-2 draft tokens for the current MTP head depth.
+    // Draft tokens per outer step.
     int n_draft_tokens = 1;
 };
 

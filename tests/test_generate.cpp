@@ -395,7 +395,7 @@ TEST_CASE("NaiveStreamingDetokenizer segment reset on newline", "[generate]") {
     REQUIRE(text.value() == "world");
 }
 
-// ===== I7 sub-task 6: MTPHead draft-token shape smoke =====
+// ===== MTPHead draft-token shape smoke =====
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx-lm/common/attention_utils.h>
@@ -453,13 +453,13 @@ TEST_CASE("MTPHead: 4 draft-token shape smoke", "[mtp]") {
     }
 }
 
-TEST_CASE("KVCacheSimple: save / restore round-trip", "[mtp][kv]") {
+TEST_CASE("KVCacheSimple: get / set position round-trip", "[mtp][kv]") {
     // Push a few rows, snapshot, push more, restore, confirm offset.
     mlx_lm::KVCacheSimple c;
     auto k0 = mx::random::normal({1, 2, 3, 4}, mx::float32);
     auto v0 = mx::random::normal({1, 2, 3, 4}, mx::float32);
     c.update(k0, v0);
-    auto saved = c.save_position();
+    auto saved = c.get_position();
     REQUIRE(c.offset() == 3);
 
     auto k1 = mx::random::normal({1, 2, 2, 4}, mx::float32);
@@ -467,7 +467,7 @@ TEST_CASE("KVCacheSimple: save / restore round-trip", "[mtp][kv]") {
     c.update(k1, v1);
     REQUIRE(c.offset() == 5);
 
-    c.restore_to_position(saved);
+    c.set_position(saved);
     REQUIRE(c.offset() == 3);
 }
 

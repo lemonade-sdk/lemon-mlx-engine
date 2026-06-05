@@ -1,26 +1,3 @@
-// Copyright (c) 2024-2026 Apple Inc. -- Ported to C++
-// MTP (Multi-Token Prediction) head -- I7 sub-task 2.
-//
-// Port of MTPHead + MTPDecoderLayer from mlx-lm-private qwen35_mtp branch:
-//   mlx_lm/models/qwen3_5.py:310 MTPDecoderLayer
-//   mlx_lm/models/qwen3_5.py:336 MTPHead
-//
-// Structure:
-//   pre_fc_norm_hidden:    RMSNorm(H)
-//   pre_fc_norm_embedding: RMSNorm(H)
-//   fc:                    Linear(2*H -> H, no bias)
-//   layers[0]:             MTPDecoderLayer = full attention + MLP
-//   norm:                  RMSNorm(H)
-//
-// Used by mtp_speculative_generate_step to draft a single follow-on token
-// from (last_hidden_state, last_emitted_token) without re-running the trunk.
-//
-// Scaffolding scope: self-contained, model-agnostic attention + MLP block
-// so we can build + smoke without dragging in Qwen35Model's full TU graph
-// (which has its own dead-code / CMake-not-listed quirks). The real wiring
-// for production will plug back into model-specific Attention / SparseMoE
-// classes once they are folded into the build properly.
-
 #pragma once
 
 #include <mlx-lm/common/kv_cache.h>
@@ -108,7 +85,7 @@ public:
 
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
-    // Load mtp.* weights as harvested by the model loader (I7 sub-task 1).
+    // Load mtp.* weights as harvested by the model loader.
     // Strips any prefix up to and including "mtp.".
     void load_mtp_weights(
         const std::unordered_map<std::string, mlx::core::array>& mtp_weights);

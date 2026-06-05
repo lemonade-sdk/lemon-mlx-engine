@@ -1,5 +1,4 @@
-// Copyright (c) 2024-2025 Apple Inc. -- Ported to C++
-// Port of Qwen35.swift + Qwen35MoE.swift -- Hybrid GatedDeltaNet + Attention + MoE
+// Copyright (c) 2024-2025 Apple Inc.
 #pragma once
 
 #include <mlx-lm/common/kv_cache.h>
@@ -190,7 +189,7 @@ class Qwen35MoEModel
     std::optional<mlx::core::array> lm_head_weight_;
     std::vector<int> kv_heads_;
 
-    // MTP scaffolding (I7 sub-task 1): stash mtp.* weights.
+    // Stash mtp.* weights for MTPHead.
     std::unordered_map<std::string, mlx::core::array> mtp_weights_;
 
     PrepareResult prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int window_size);

@@ -116,11 +116,8 @@ int KVCacheSimple::trim_impl(int n) {
     return to_trim;
 }
 
-// I7 sub-task 3: trim back to a saved offset. Implemented by reusing trim_impl
-// so the underlying slice path is identical to a forward-from trim. Note that
-// `offset_` becomes the canonical truth -- the underlying buffer may still be
-// over-allocated (we keep the existing capacity) which is fine for reuse.
-void KVCacheSimple::restore_to_position(size_t pos) {
+// Roll back to a previously saved offset by trimming rows added after it.
+void KVCacheSimple::set_position(size_t pos) {
     int target = static_cast<int>(pos);
     if (target >= offset_) {
         return;  // Nothing to roll back (or invalid restore -- silently ignore).
@@ -239,10 +236,8 @@ QuantizedKVCache::update_impl(
             dequantize_kv(values_.value(), group_size_, bits_)};
 }
 
-// I7 sub-task 3: rollback for QuantizedKVCache. Slice the QTuples along the
-// time axis (axis=2 for weight/biases/scales, which all use the same layout
-// here) back to `pos` quantization groups.
-void QuantizedKVCache::restore_to_position(size_t pos) {
+// Roll back to a saved offset by slicing the QTuples along axis 2.
+void QuantizedKVCache::set_position(size_t pos) {
     int target = static_cast<int>(pos);
     if (target >= offset_) return;
     if (!keys_.has_value()) {

@@ -621,29 +621,7 @@ GenerateCompletionInfo generate_text(
         });
 }
 
-// ---------------------------------------------------------------------------
-// I7 sub-task 5: mtp_generate_step (scaffolding).
-//
-// Mirrors the outer-loop structure of
-// `mtp_speculative_generate_step` in mlx-lm-private/mlx_lm/generate.py:652
-// (qwen35_mtp branch). The full upstream implementation is ~330 LoC and
-// includes:
-//   - adaptive draft-length probing via an 8-bit accept-history ring,
-//   - intermediates-kernel restore for GDN layers (see sub-task 4),
-//   - top-p / temperature sampling on draft + verifier logits,
-//   - lm_head batching tricks for chunked argmax.
-//
-// This scaffolding cut produces a correct, single-draft-token happy path
-// that exercises:
-//   1. cache->save_position() snapshot,
-//   2. mtp_draft_fn.draft() to produce one draft token,
-//   3. cache->restore_to_position() on rejection,
-// without yet running a real trunk verification pass. The verification
-// branch is a TODO marker -- it requires reaching into the model
-// dispatch table (`context_.call_fn`) with the draft tokens, which we
-// keep out of the scaffolding cut. The scout report calls out that the
-// hidden-state hook (`output_intermediates=true`) doesn't exist in the
-// lemon ModelContext yet; that wiring is a follow-up commit.
+// MTP speculative decoding outer loop.
 std::vector<int> mtp_generate_step(
     ModelContext& /*context*/,
     std::vector<KVCache>& cache,
@@ -664,7 +642,7 @@ std::vector<int> mtp_generate_step(
     std::vector<size_t> snapshot;
     snapshot.reserve(cache.size());
     for (const auto& c : cache) {
-        snapshot.push_back(c.save_position());
+        snapshot.push_back(c.get_position());
     }
 
     int last_token = seed_token;
@@ -679,7 +657,7 @@ std::vector<int> mtp_generate_step(
 
     // TODO (sub-task 5, follow-up): run the trunk over `accepted[1:]` to
     // verify; on first divergence, truncate `accepted` and restore each
-    // cache to snapshot[i] + accepted_count via restore_to_position.
+    // cache to snapshot[i] + accepted_count via set_position.
     // For the scaffolding cut we accept all drafts -- a real run with a
     // real model would surface this as the obvious correctness gap.
     //
@@ -687,7 +665,7 @@ std::vector<int> mtp_generate_step(
     //
     //   int accepted_count = ...;  // number of drafts that match
     //   for (size_t li = 0; li < cache.size(); ++li) {
-    //       cache[li].restore_to_position(snapshot[li] + accepted_count);
+    //       cache[li].set_position(snapshot[li] + accepted_count);
     //   }
     (void)snapshot;
 

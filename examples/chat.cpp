@@ -35,7 +35,6 @@ struct CliArgs {
     int kv_bits = 0;        // KV cache quantization bits (0=off, 4 or 8)
     int kv_group_size = 64; // KV cache quantization group size
     int ctx_size = 0;       // Context size for KV cache pre-allocation (0=auto)
-    // I7 sub-task 5: MTP speculative decode (scaffolding, off by default).
     bool use_mtp = false;
     int n_draft_tokens = 1;
 };

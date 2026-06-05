@@ -252,7 +252,7 @@ MiMoModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
     if (config_.tie_word_embeddings)
         weights.erase("lm_head.weight");
 
-    // Filter rotary_emb.inv_freq, stash model.mtp_layers.* for MTPHead (I7 sub-task 1).
+    // Filter rotary_emb.inv_freq, stash model.mtp_layers.* for MTPHead.
     std::vector<std::string> to_remove;
     for (auto& [k, v] : weights) {
         if (k.find("self_attn.rotary_emb.inv_freq") != std::string::npos)

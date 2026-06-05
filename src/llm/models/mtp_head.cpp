@@ -1,9 +1,3 @@
-// Copyright (c) 2024-2026 Apple Inc. -- Ported to C++
-// MTP head + decoder layer -- I7 sub-task 2 (scaffolding).
-//
-// Reference: mlx-lm-private qwen35_mtp branch, mlx_lm/models/qwen3_5.py
-//   MTPDecoderLayer (310-333): self_attn + MLP + RMSNorms
-//   MTPHead         (336-360): pre_fc norms + Linear(2H -> H) + 1 layer
 
 #include <mlx-lm/llm/models/mtp_head.h>
 

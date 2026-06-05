@@ -305,6 +305,8 @@ struct Server::Impl {
                         return GenerateDisposition::more;
                     });
 
+                std::cerr << "[TPS] " << info.summary() << std::endl;
+
                 openai::ChatCompletionResponse response;
                 response.id = request_id;
                 response.created = created;
@@ -387,7 +389,7 @@ struct Server::Impl {
                         }
 
                         // Generate tokens and stream as SSE.
-                        generate_text(
+                        auto info = generate_text(
                             ctx, lm_input, params, eos_set,
                             [&](const std::string& text, int /*token*/) {
                                 openai::ChatCompletionChunk chunk;
@@ -403,6 +405,8 @@ struct Server::Impl {
                                 send_sse(sink, nlohmann::json(chunk).dump());
                                 return GenerateDisposition::more;
                             });
+
+                        std::cerr << "[TPS] " << info.summary() << std::endl;
 
                         // Send final chunk with finish_reason.
                         {
@@ -467,6 +471,8 @@ struct Server::Impl {
                         generated_count++;
                         return GenerateDisposition::more;
                     });
+
+                std::cerr << "[TPS] " << info.summary() << std::endl;
 
                 openai::CompletionResponse response;
                 response.id = request_id;
