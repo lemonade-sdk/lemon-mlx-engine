@@ -255,6 +255,75 @@ TEST_CASE("RepetitionProcessor empty context", "[generate]") {
     }
 }
 
+// Test RepetitionProcessor with non-trivial penalty exercises the scatter path.
+// This verifies the fix for negative axis in mx::scatter (was -1, now logits.ndim() - 1).
+TEST_CASE("RepetitionProcessor applies penalty via scatter", "[generate]") {
+    mlx_lm::RepetitionProcessor proc(2.0f, 10);
+
+    // Prompt contains token 3, which maps to index 3 in the vocab.
+    auto prompt = mx::array({3}, mx::int32);
+    proc.prompt(prompt);
+
+    // Create logits where index 3 has a positive value (should be divided by penalty).
+    auto logits = mx::array({1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+    logits = mx::reshape(logits, {1, 5});
+    auto processed = proc.process(logits);
+    mx::eval(processed);
+
+    auto data = processed.data<float>();
+    // Index 3 was penalized: 4.0 / 2.0 = 2.0
+    CHECK(data[3] == 2.0f);
+    // Other indices should be unchanged.
+    CHECK(data[0] == 1.0f);
+    CHECK(data[1] == 2.0f);
+    CHECK(data[2] == 3.0f);
+    CHECK(data[4] == 5.0f);
+}
+
+// Test RepetitionProcessor with negative logits (multiplied by penalty).
+TEST_CASE("RepetitionProcessor handles negative logits", "[generate]") {
+    mlx_lm::RepetitionProcessor proc(2.0f, 10);
+
+    // Prompt contains token 2.
+    auto prompt = mx::array({2}, mx::int32);
+    proc.prompt(prompt);
+
+    // Create logits where index 2 has a negative value.
+    auto logits = mx::array({1.0f, 2.0f, -3.0f, 4.0f, 5.0f});
+    logits = mx::reshape(logits, {1, 5});
+    auto processed = proc.process(logits);
+    mx::eval(processed);
+
+    auto data = processed.data<float>();
+    // Index 2 was penalized: -3.0 * 2.0 = -6.0
+    CHECK(data[2] == -6.0f);
+    // Other indices should be unchanged.
+    CHECK(data[0] == 1.0f);
+    CHECK(data[1] == 2.0f);
+    CHECK(data[3] == 4.0f);
+    CHECK(data[4] == 5.0f);
+}
+
+// Test RepetitionProcessor with 1D logits (single batch, no batch dim).
+TEST_CASE("RepetitionProcessor works with 1D logits", "[generate]") {
+    mlx_lm::RepetitionProcessor proc(2.0f, 10);
+
+    auto prompt = mx::array({1}, mx::int32);
+    proc.prompt(prompt);
+
+    // 1D logits: [10.0f, -5.0f, 3.0f, 7.0f]
+    auto logits = mx::array({10.0f, -5.0f, 3.0f, 7.0f});
+    auto processed = proc.process(logits);
+    mx::eval(processed);
+
+    auto data = processed.data<float>();
+    // Index 1 was negative: -5.0 * 2.0 = -10.0
+    CHECK(data[1] == -10.0f);
+    CHECK(data[0] == 10.0f);
+    CHECK(data[2] == 3.0f);
+    CHECK(data[3] == 7.0f);
+}
+
 // Test AnyProcessor creation from params.
 TEST_CASE("AnyProcessor from params", "[generate]") {
     SECTION("no repetition penalty returns nullopt") {

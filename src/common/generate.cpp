@@ -183,9 +183,8 @@ mx::array RepetitionProcessor::process(const mx::array& logits) {
         mx::divide(selected_logits, mx::array(penalty_)));
 
     // Scatter the penalized values back into the logits at the original positions.
-    // scatter requires indices with shape [num_updates, ...] for axis scatter.
-    // For axis=-1: indices shape [N] (or [1, N] for 2D), updates same shape as selected.
-    auto result = mx::scatter(logits, shaped_indices, penalized, -1);
+    // put_along_axis is the mirror of take_along_axis and handles negative axis normalization.
+    auto result = mx::put_along_axis(logits, shaped_indices, penalized, -1);
 
     return result;
 }
