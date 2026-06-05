@@ -382,7 +382,11 @@ jobs:
         fi
 
         echo "Starting server on port $PORT ..."
-        mlx-binaries/server --port $PORT > server.log 2>&1 &
+        if [ "${{ matrix.install_rocm }}" = "true" ]; then
+          MLX_ROCM_QMM_DEQUANT_GEMM=0 mlx-binaries/server --port $PORT > server.log 2>&1 &
+        else
+          mlx-binaries/server --port $PORT > server.log 2>&1 &
+        fi
         SERVER_PID=$!
 
         # Poll for server readiness (max 60s, 1s interval)
