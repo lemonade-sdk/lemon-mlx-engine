@@ -125,6 +125,8 @@ add_library(mlx-lm-common
     src/common/quantize_utils.cpp
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
+    src/llm/models/mtp_head.cpp
+    src/llm/models/mtp_moe.cpp
 )
 # NOTE: src/common/mtp_delta_kernel.cpp intentionally excluded from build.
 # Contains dead code (mtp_delta_fused / mtp_draft_forward) not wired into
@@ -189,8 +191,6 @@ add_library(mlx-lm-llm
     src/llm/models/lfm2.cpp
     src/llm/models/nemotron_h.cpp
     src/llm/models/granite_moe_hybrid.cpp
-    src/llm/models/mtp_head.cpp
-    src/llm/models/mtp_moe.cpp
 )
 target_link_libraries(mlx-lm-llm PUBLIC mlx-lm-common)
 
