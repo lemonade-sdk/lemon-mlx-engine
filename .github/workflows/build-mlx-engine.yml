@@ -488,6 +488,17 @@ jobs:
 
         echo "SMOKE TEST PASSED -- server started, health check, and inference OK"
 
+        # --- Benchmark: extract TPS / prompt processing metrics from server log ---
+        echo "=== Performance Benchmarks ==="
+        echo "${{ matrix.model }}:"
+        grep "\[TPS\]" server.log 2>/dev/null | while IFS= read -r line; do
+          echo "  $line"
+        done
+        if ! grep -q "\[TPS\]" server.log 2>/dev/null; then
+          echo "  (no TPS data found in server log)"
+        fi
+        echo "=== End Benchmarks ==="
+
         kill $SERVER_PID 2>/dev/null || true
         wait $SERVER_PID 2>/dev/null || true
 

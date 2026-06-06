@@ -364,28 +364,4 @@ GenerateCompletionInfo generate_text(
     const std::set<int>& eos_token_ids,
     const std::function<GenerateDisposition(const std::string& text, int token)>& on_text);
 
-// MTP speculative decoding outer loop.
-struct MtpDraftFn {
-    // Predict the next draft token from a trunk hidden state + last token id.
-    // Returns (next_token_id, next_hidden_state).
-    std::function<std::pair<int, mlx::core::array>(
-        const mlx::core::array& hidden, int last_token)> draft;
-};
-
-// Run one outer MTP step. Returns the list of accepted token ids (always at
-// least one). `cache` is mutated in place. Hidden-state passthrough is the
-// caller's responsibility (kept simple in this scaffold).
-//
-// Note: this lives at the header level for scaffolding and is implemented in
-// `src/common/generate.cpp` next to TokenIterator. The body is intentionally
-// minimal -- it relies on cache->get_position() / set_position() and
-// repeatedly calls `mtp_draft_fn.draft`.
-std::vector<int> mtp_generate_step(
-    ModelContext& context,
-    std::vector<KVCache>& cache,
-    int seed_token,
-    const mlx::core::array& seed_hidden,
-    const MtpDraftFn& mtp_draft_fn,
-    int n_draft);
-
 } // namespace mlx_lm

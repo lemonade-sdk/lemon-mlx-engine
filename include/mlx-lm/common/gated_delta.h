@@ -44,18 +44,4 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_update(
     const std::optional<mlx::core::array>& state = std::nullopt,
     const std::optional<mlx::core::array>& mask = std::nullopt);
 
-// Emits per-step recurrent state for MTP partial-acceptance rollback.
-struct GatedDeltaIntermediates {
-    mlx::core::array y;
-    mlx::core::array state;
-    mlx::core::array state_all;
-};
-
-GatedDeltaIntermediates gated_delta_kernel_intermediates(
-    const mlx::core::array& q, const mlx::core::array& k,
-    const mlx::core::array& v, const mlx::core::array& g,
-    const mlx::core::array& beta,
-    const std::optional<mlx::core::array>& state = std::nullopt,
-    const std::optional<mlx::core::array>& mask = std::nullopt);
-
 } // namespace mlx_lm
