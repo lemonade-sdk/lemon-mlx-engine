@@ -636,14 +636,12 @@ mx::array Qwen35MoEModelInner::operator()(
     const std::optional<mx::array>& /*visual_mask*/,
     const std::vector<mx::array>* /*deepstack_embeds*/)
 {
-    mx::array h;
-    if (input_embedding.has_value()) {
-        h = input_embedding.value();
-    } else if (inputs.has_value()) {
-        h = mx::take(embed_tokens_weight_, inputs.value(), 0);
-    } else {
+    auto init_h = [&]() -> mx::array {
+        if (input_embedding.has_value()) return input_embedding.value();
+        if (inputs.has_value()) return mx::take(embed_tokens_weight_, inputs.value(), 0);
         throw std::runtime_error("Either inputs or input_embedding must be provided");
-    }
+    };
+    mx::array h = init_h();
 
     // Find the first full-attention index for attention mask
     int fa_idx = full_attention_interval_ - 1;
