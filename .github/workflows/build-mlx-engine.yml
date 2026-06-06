@@ -386,7 +386,7 @@ jobs:
         # are caused by an upstream MLX ROCm quantized matmul kernel bug.
         # No env var workaround exists in the MLX codebase.
         # Tracking upstream for a fix.
-        mlx-binaries/server --port $PORT > server.log 2>&1 &
+        mlx-binaries/server --port $PORT --use-mtp > server.log 2>&1 &
         SERVER_PID=$!
 
         # Poll for server readiness (max 60s, 1s interval)
@@ -499,16 +499,21 @@ jobs:
 
         model = '${{ matrix.model }}'
         platform = '${{ matrix.os }}'
-        ts = lines = []
+        ts = ''
         try:
             with open('server.log', 'r') as f:
-                lines = f.readlines()
+                content = f.read()
         except FileNotFoundError:
             print('  (no server.log found)', file=sys.stderr)
+            content = ''
 
         results = []
-        for line in lines:
-            m = re.search(r'\[TPS\].*?Prompt:\s+(\d+)\s+tokens.*?([\d.]+)\s+tokens/s.*?([\d.e+-]+)s.*?Generation:\s+(\d+)\s+tokens.*?([\d.]+)\s+tokens/s.*?([\d.e+-]+)s', line, re.DOTALL)
+        # Split on [TPS] markers to get each generation block
+        tps_blocks = re.split(r'(?=\[TPS\])', content)
+        for block in tps_blocks:
+            if '[TPS]' not in block:
+                continue
+            m = re.search(r'\[TPS\].*?Prompt:\s+(\d+)\s+tokens.*?([\d.]+)\s+tokens/s.*?([\d.e+-]+)s.*?Generation:\s+(\d+)\s+tokens.*?([\d.]+)\s+tokens/s.*?([\d.e+-]+)s', block, re.DOTALL)
             if m:
                 prompt_tok = int(m.group(1))
                 prompt_tps = float(m.group(2))
@@ -518,7 +523,7 @@ jobs:
                 gen_time = float(m.group(6))
 
                 # Extract optional MTP metrics
-                mtp_m = re.search(r'MTP:\s+drafts=(\d+)\s+accepted=(\d+)\s+speculative_steps=(\d+)\s+acceptance_rate=([\d.]+)%', line, re.DOTALL)
+                mtp_m = re.search(r'MTP:\s+drafts=(\d+)\s+accepted=(\d+)\s+speculative_steps=(\d+)\s+acceptance_rate=([\d.]+)%', block, re.DOTALL)
                 mtp_enabled = mtp_m is not None
                 entry = {
                     'model': model,

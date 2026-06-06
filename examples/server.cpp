@@ -45,6 +45,7 @@ struct CliArgs {
     int ctx_size = 0;
     bool no_download = false;
     int max_loaded = 1;
+    bool use_mtp = false;
 };
 
 static CliArgs parse_args(int argc, char* argv[]) {
@@ -78,6 +79,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.kv_group_size = std::stoi(argv[++i]);
         } else if (flag == "--ctx-size" && i + 1 < argc) {
             args.ctx_size = std::stoi(argv[++i]);
+        } else if (flag == "--use-mtp") {
+            args.use_mtp = true;
         } else if (flag == "-h" || flag == "--help") {
             std::cerr << "Usage: " << argv[0] << " [model_id_or_directory] [options]\n"
                       << "\n"
@@ -98,6 +101,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                       << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                       << "  --ctx-size N            Pre-allocate KV cache (0=auto)\n"
+                      << "  --use-mtp               Enable MTP speculative decoding (model must have mtp.* weights)\n"
                       << "\n"
                       << "Endpoints:\n"
                       << "  GET  /health              Health check\n"
@@ -160,6 +164,7 @@ int main(int argc, char* argv[]) {
         if (args.ctx_size > 0) {
             default_params.ctx_size = args.ctx_size;
         }
+        default_params.use_mtp = args.use_mtp;
         manager->set_default_params(default_params);
 
         // If a model was specified, pre-load it.

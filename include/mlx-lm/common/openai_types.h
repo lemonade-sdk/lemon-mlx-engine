@@ -92,12 +92,13 @@ struct ChatCompletionRequest {
     int max_tokens = 2048;
     float repetition_penalty = 0.0f;
     bool stream = false;
+    bool use_mtp = false;
     // stop sequences (optional, parsed manually)
     std::vector<std::string> stop;
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ChatCompletionRequest,
     model, messages, temperature, top_p, max_tokens,
-    repetition_penalty, stream, stop)
+    repetition_penalty, stream, use_mtp, stop)
 
 // ---------------------------------------------------------------------------
 // Chat Completions — Response (non-streaming)
@@ -188,11 +189,12 @@ struct CompletionRequest {
     int max_tokens = 2048;
     float repetition_penalty = 0.0f;
     bool stream = false;
+    bool use_mtp = false;
     std::vector<std::string> stop;
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CompletionRequest,
     model, prompt, temperature, top_p, max_tokens,
-    repetition_penalty, stream, stop)
+    repetition_penalty, stream, use_mtp, stop)
 
 // ---------------------------------------------------------------------------
 // Text Completions — Response
