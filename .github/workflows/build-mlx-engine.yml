@@ -307,7 +307,7 @@ jobs:
             artifact: mlx-engine-ubuntu-rocm-x64
             runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: true
-            model: anthonymikinka/Qwen3.5-4B-MTP-4bit
+            model: mlx-community/Qwen3.5-4B-MTP-4bit
             use_mtp: true
             timeout_minutes: 30
           - os: ubuntu-cpu
