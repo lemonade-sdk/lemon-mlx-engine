@@ -38,7 +38,7 @@ struct ModelContext {
     // MTP head access (returns nullptr if MTP not available).
     // These function pointers are set only when the model has MTP support.
     std::function<void*()> get_mtp_head_fn;  // Returns MTPHead*
-    std::function<std::vector<KVCache>()> new_mtp_cache_fn;  // Returns single-layer KVCache
+    std::function<std::vector<KVCache>(const GenerateParameters&)> new_mtp_cache_fn;  // Returns single-layer KVCache
 
     // Tokenizer operations (type-erased).
     std::function<std::vector<int>(const std::string&)> encode_fn;

@@ -5,12 +5,14 @@
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/switch_layers.h>
-#include <mlx-lm/llm/models/mtp_head.h>
+#include <mlx-lm/llm/models/mtp_config.h>
 #include <mlx/mlx.h>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
+
+namespace mlx_lm {
 
 namespace mlx_lm {
 
