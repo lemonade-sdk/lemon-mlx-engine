@@ -55,6 +55,50 @@ struct Qwen35MoEConfiguration {
 
 void from_json(const nlohmann::json& j, Qwen35MoEConfiguration& c);
 
+// ── Qwen3.5 VLM Configuration (vision tower + multimodal) ──────────────
+
+struct Qwen35VLVisionConfiguration {
+    std::string model_type;
+    int depth = 24;
+    int hidden_size = 1024;
+    int intermediate_size = 4096;
+    int out_hidden_size = 2560;
+    int num_heads = 16;
+    int patch_size = 16;
+    int spatial_merge_size = 2;
+    int temporal_patch_size = 2;
+    int num_position_embeddings = 2304;
+    int in_channels = 3;
+    std::string hidden_act = "gelu_pytorch_tanh";
+    std::vector<int> deepstack_visual_indexes;
+    float rms_norm_eps = 1e-6f;
+    // PatchMerger intermediate dimension. 0 = auto (hidden * spatial_merge^2).
+    // Qwen3.5-4B uses 5120 explicitly.
+    int merger_intermediate_size = 0;
+};
+
+void from_json(const nlohmann::json& j, Qwen35VLVisionConfiguration& c);
+
+struct Qwen35VLBaseConfiguration {
+    std::string model_type;
+    int vocab_size = 248320;
+    int image_token_id = 248056;
+    int video_token_id = 248057;
+    int vision_start_token_id = 248053;
+    int vision_end_token_id = 248054;
+    int vision_token_id = 248055;
+};
+
+void from_json(const nlohmann::json& j, Qwen35VLBaseConfiguration& c);
+
+struct Qwen35VLConfiguration {
+    Qwen35MoEConfiguration text_config;
+    Qwen35VLVisionConfiguration vision_config;
+    Qwen35VLBaseConfiguration base_config;
+};
+
+void from_json(const nlohmann::json& j, Qwen35VLConfiguration& c);
+
 // Standard attention with sigmoid gating on q_proj output
 class Qwen35MoEAttention {
     int num_heads_;
@@ -174,6 +218,18 @@ class Qwen35MoEModelInner {
 public:
     explicit Qwen35MoEModelInner(const Qwen35MoEConfiguration& args);
     mlx::core::array operator()(const mlx::core::array& inputs, std::vector<KVCache>* cache = nullptr);
+
+    // Overloaded operator() for multimodal use: accepts pre-computed embeddings.
+    // position_ids, visual_mask, and deepstack_embeds are suppressed (unused for Qwen3.5).
+    mlx::core::array operator()(
+        const std::optional<mlx::core::array>& inputs,
+        std::vector<KVCache>* cache = nullptr,
+        const std::optional<mlx::core::array>& input_embedding = std::nullopt,
+        const AttentionMask& mask = AttentionMask{},
+        const std::optional<mlx::core::array>& position_ids = std::nullopt,
+        const std::optional<mlx::core::array>& visual_mask = std::nullopt,
+        const std::vector<mlx::core::array>* deepstack_embeds = nullptr);
+
     mlx::core::array embed_as_linear(const mlx::core::array& x) const;
     mlx::core::array apply_lm_head(const mlx::core::array& hidden) const;
     std::unordered_map<std::string, mlx::core::array*> weight_map();

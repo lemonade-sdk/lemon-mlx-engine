@@ -11,6 +11,7 @@
 #include <mlx-lm/vlm/models/mistral3.h>
 #include <mlx-lm/vlm/models/lfm2_vl.h>
 #include <mlx-lm/vlm/models/fastvlm.h>
+#include <mlx-lm/vlm/models/qwen35_vl.h>
 #include <mlx-lm/common/base_config.h>
 #include <mlx-lm/common/safetensors.h>
 #include <mlx-lm/common/hub_api.h>
@@ -69,6 +70,7 @@ static std::unordered_map<std::string, VLMLoaderFn>& vlm_loaders() {
         {"lfm2_vl",    load_typed_model<LFM2VLConfiguration, LFM2VLModel>},
         {"fastvlm",    load_typed_model<FastVLMConfiguration, FastVLMModel>},
         {"llava_qwen2", load_typed_model<FastVLMConfiguration, FastVLMModel>},
+        {"qwen3_5",     load_typed_model<Qwen35VLConfiguration, Qwen35VLModel>},
     };
     return loaders;
 }
@@ -89,6 +91,7 @@ ModelTypeRegistry& vlm_type_registry() {
         {"lfm2_vl",    create_model<LFM2VLConfiguration, LFM2VLModel>},
         {"fastvlm",    create_model<FastVLMConfiguration, FastVLMModel>},
         {"llava_qwen2", create_model<FastVLMConfiguration, FastVLMModel>},
+        {"qwen3_5",     create_model<Qwen35VLConfiguration, Qwen35VLModel>},
     });
     return registry;
 }

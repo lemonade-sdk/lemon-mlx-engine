@@ -101,6 +101,48 @@ void from_json(const nlohmann::json& j, Qwen35MoEConfiguration& c) {
     }
 }
 
+// --- Qwen3.5 VLM Configuration parsing ---
+
+void from_json(const nlohmann::json& j, Qwen35VLVisionConfiguration& c) {
+    const auto& cfg = j.contains("vision_config") ? j.at("vision_config") : j;
+    c.model_type = cfg.value("model_type", std::string("qwen3_5"));
+    c.depth = cfg.value("depth", 24);
+    c.hidden_size = cfg.value("hidden_size", 1024);
+    c.intermediate_size = cfg.value("intermediate_size", 4096);
+    c.out_hidden_size = cfg.value("out_hidden_size", 2560);
+    c.num_heads = cfg.value("num_heads", 16);
+    c.patch_size = cfg.value("patch_size", 16);
+    c.spatial_merge_size = cfg.value("spatial_merge_size", 2);
+    c.temporal_patch_size = cfg.value("temporal_patch_size", 2);
+    c.num_position_embeddings = cfg.value("num_position_embeddings", 2304);
+    c.in_channels = cfg.value("in_channels", 3);
+    c.hidden_act = cfg.value("hidden_act", std::string("gelu_pytorch_tanh"));
+    c.rms_norm_eps = cfg.value("rms_norm_eps", 1e-6f);
+    if (cfg.contains("deepstack_visual_indexes") && !cfg.at("deepstack_visual_indexes").is_null()) {
+        c.deepstack_visual_indexes = cfg.at("deepstack_visual_indexes").get<std::vector<int>>();
+    }
+    c.merger_intermediate_size = cfg.value("merger_intermediate_size", 0);
+    if (c.merger_intermediate_size == 0) {
+        c.merger_intermediate_size = c.hidden_size * c.spatial_merge_size * c.spatial_merge_size;
+    }
+}
+
+void from_json(const nlohmann::json& j, Qwen35VLBaseConfiguration& c) {
+    c.model_type = j.value("model_type", std::string("qwen3_5"));
+    c.vocab_size = j.value("vocab_size", 248320);
+    c.image_token_id = j.value("image_token_id", 248056);
+    c.video_token_id = j.value("video_token_id", 248057);
+    c.vision_start_token_id = j.value("vision_start_token_id", 248053);
+    c.vision_end_token_id = j.value("vision_end_token_id", 248054);
+    c.vision_token_id = j.value("vision_token_id", 248055);
+}
+
+void from_json(const nlohmann::json& j, Qwen35VLConfiguration& c) {
+    from_json(j, c.text_config);
+    from_json(j, c.vision_config);
+    from_json(j, c.base_config);
+}
+
 static mx::array linear_fwd(const mx::array& x, const mx::array& w,
                               const std::optional<mx::array>& bias = std::nullopt) {
     return linear_forward(x, w, bias.has_value() ? &bias.value() : nullptr);
@@ -579,6 +621,47 @@ mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<K
         KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
         auto attn_mask = layers_[i].is_linear() ? AttentionMask{} : fa_mask;
         h = layers_[i](h, attn_mask, ssm_mask, lc);
+    }
+
+    return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
+}
+
+// Overloaded operator() for VLM multimodal use: accepts pre-computed embeddings.
+mx::array Qwen35MoEModelInner::operator()(
+    const std::optional<mx::array>& inputs,
+    std::vector<KVCache>* cache,
+    const std::optional<mx::array>& input_embedding,
+    const AttentionMask& mask,
+    const std::optional<mx::array>& /*position_ids*/,
+    const std::optional<mx::array>& /*visual_mask*/,
+    const std::vector<mx::array>* /*deepstack_embeds*/)
+{
+    mx::array h;
+    if (input_embedding.has_value()) {
+        h = input_embedding.value();
+    } else if (inputs.has_value()) {
+        h = mx::take(embed_tokens_weight_, inputs.value(), 0);
+    } else {
+        throw std::runtime_error("Either inputs or input_embedding must be provided");
+    }
+
+    // Find the first full-attention index for attention mask
+    int fa_idx = full_attention_interval_ - 1;
+    if (fa_idx >= static_cast<int>(layers_.size())) fa_idx = 0;
+
+    auto attn_mask = mask;
+    if (attn_mask.is_none()) {
+        attn_mask = create_attention_mask(
+            h, cache && fa_idx < static_cast<int>(cache->size()) ? &(*cache)[fa_idx] : nullptr);
+    }
+
+    // SSM mask: always nullopt
+    std::optional<mx::array> ssm_mask;
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
+        auto layer_attn_mask = layers_[i].is_linear() ? AttentionMask{} : attn_mask;
+        h = layers_[i](h, layer_attn_mask, ssm_mask, lc);
     }
 
     return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);

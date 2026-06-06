@@ -214,6 +214,7 @@ add_library(mlx-lm-vlm
     src/vlm/models/qwen25_vl.cpp
     src/vlm/models/gemma3.cpp
     src/vlm/models/qwen3_vl.cpp
+    src/vlm/models/qwen35_vl.cpp
     src/vlm/models/pixtral.cpp
     src/vlm/models/mistral3.cpp
     src/vlm/models/lfm2_vl.cpp
