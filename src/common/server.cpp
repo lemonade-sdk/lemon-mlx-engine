@@ -208,7 +208,9 @@ struct Server::Impl {
         if (chat_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = chat_req.repetition_penalty;
         }
-        params.use_mtp = chat_req.use_mtp;
+        if (chat_req.use_mtp) {
+            params.use_mtp = chat_req.use_mtp;
+        }
 
         if (chat_req.stream) {
             handle_chat_stream(res, model, chat_req, params);
@@ -257,7 +259,9 @@ struct Server::Impl {
         if (comp_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = comp_req.repetition_penalty;
         }
-        params.use_mtp = comp_req.use_mtp;
+        if (comp_req.use_mtp) {
+            params.use_mtp = comp_req.use_mtp;
+        }
 
         handle_completion_blocking(res, model, comp_req, params);
     }
