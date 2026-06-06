@@ -71,6 +71,7 @@ static std::unordered_map<std::string, VLMLoaderFn>& vlm_loaders() {
         {"fastvlm",    load_typed_model<FastVLMConfiguration, FastVLMModel>},
         {"llava_qwen2", load_typed_model<FastVLMConfiguration, FastVLMModel>},
         {"qwen3_5",     load_typed_model<Qwen35VLConfiguration, Qwen35VLModel>},
+        {"qwen3_5_mtp", load_typed_model<Qwen35VLConfiguration, Qwen35VLModel>},
     };
     return loaders;
 }
@@ -92,6 +93,7 @@ ModelTypeRegistry& vlm_type_registry() {
         {"fastvlm",    create_model<FastVLMConfiguration, FastVLMModel>},
         {"llava_qwen2", create_model<FastVLMConfiguration, FastVLMModel>},
         {"qwen3_5",     create_model<Qwen35VLConfiguration, Qwen35VLModel>},
+        {"qwen3_5_mtp", create_model<Qwen35VLConfiguration, Qwen35VLModel>},
     });
     return registry;
 }
