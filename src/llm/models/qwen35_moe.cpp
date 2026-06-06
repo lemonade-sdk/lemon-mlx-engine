@@ -8,6 +8,7 @@
 // - MoE sanitize splits fused gate_up_proj into gate_proj + up_proj
 
 #include <mlx-lm/llm/models/qwen35_moe.h>
+#include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
@@ -587,6 +588,10 @@ mx::array Qwen35MoEModelInner::embed_as_linear(const mx::array& x) const {
     return mx::matmul(x, mx::transpose(embed_tokens_weight_));
 }
 
+mx::array Qwen35MoEModelInner::apply_lm_head(const mx::array& hidden) const {
+    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+}
+
 std::unordered_map<std::string, mx::array*> Qwen35MoEModelInner::weight_map() {
     std::unordered_map<std::string, mx::array*> map;
     map["embed_tokens.weight"] = &embed_tokens_weight_;
@@ -613,8 +618,17 @@ PrepareResult Qwen35MoEModel::prepare_impl(const LMInput& input, std::vector<KVC
     return llm_default_prepare(*this, input, cache, ws);
 }
 
-LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State*) {
-    return LMOutput(forward_impl(input.tokens, cache));
+LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state) {
+    auto hidden = model_(input.tokens, cache);
+    if (state && state->hidden_intermediates.has_value()) {
+        return LMOutput(
+            lm_head_weight_.has_value() ? linear_fwd(hidden, lm_head_weight_.value())
+                                         : model_.embed_as_linear(hidden),
+            LMOutput::State(std::nullopt, hidden));
+    }
+    return LMOutput(
+        lm_head_weight_.has_value() ? linear_fwd(hidden, lm_head_weight_.value())
+                                     : model_.embed_as_linear(hidden));
 }
 
 mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
@@ -774,6 +788,34 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
         auto it = weights.find(name);
         if (it != weights.end()) *target = it->second;
     }
+    // Wire MTPHead if we have MTP weights.
+    if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
+        build_mtp_head();
+    }
+}
+
+void Qwen35MoEModel::build_mtp_head() {
+    MTPHeadConfig cfg;
+    cfg.hidden_size = config_.hidden_size;
+    cfg.intermediate_size = config_.intermediate_size;
+    cfg.num_attention_heads = config_.num_attention_heads;
+    cfg.num_key_value_heads = config_.num_key_value_heads;
+    cfg.head_dim = config_.resolved_head_dim();
+    cfg.rms_norm_eps = config_.rms_norm_eps;
+    cfg.rope_theta = config_.rope_theta;
+    cfg.partial_rotary_factor = config_.partial_rotary_factor;
+    // MoE MTP head: use shared_expert as the MLP (dense path).
+    // Full MoE MTP support is a future extension (TODO-7).
+    mtp_head_ = MTPHead(cfg);
+    mtp_head_->load_mtp_weights(mtp_weights_);
+}
+
+std::vector<KVCache> Qwen35MoEModel::new_mtp_cache(const GenerateParameters& params) const {
+    // MTP head has one decoder layer with standard attention.
+    std::vector<KVCache> caches;
+    caches.reserve(1);
+    caches.emplace_back(KVCacheSimple{});
+    return caches;
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35MoEModel::weight_map() {

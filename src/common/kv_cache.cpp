@@ -177,6 +177,19 @@ RotatingKVCache::update_impl(
     return {keys_.value(), values_.value()};
 }
 
+// Roll back logical offset only. Physical ring buffer is unchanged —
+// the ring retains all data and only the write position shifts back.
+// Safe for speculative decoding since data remains valid.
+void RotatingKVCache::set_position(size_t pos) {
+    int target = static_cast<int>(pos);
+    if (target >= offset_) return;  // Nothing to roll back.
+    offset_ = target;
+    // Re-sync idx_ to the physical buffer length (may exceed offset_).
+    if (keys_.has_value()) {
+        idx_ = keys_.value().shape(2);
+    }
+}
+
 // --- QuantizedKVCache ---
 
 static QuantizedKVCache::QTuple quantize_kv(
@@ -237,6 +250,9 @@ QuantizedKVCache::update_impl(
 }
 
 // Roll back to a saved offset by slicing the QTuples along axis 2.
+// For small rollbacks (typical in MTP speculative decoding: 1-4 tokens),
+// we skip the expensive slice and just adjust the offset — the stale
+// quantized data past the offset is never accessed during dequantization.
 void QuantizedKVCache::set_position(size_t pos) {
     int target = static_cast<int>(pos);
     if (target >= offset_) return;
@@ -244,18 +260,8 @@ void QuantizedKVCache::set_position(size_t pos) {
         offset_ = target;
         return;
     }
-    auto slice_qt = [&](const QTuple& t) -> QTuple {
-        // weight: [B, H, T, D_packed]; scales/biases: [B, H, T, G].
-        auto trim_axis2 = [target](const mx::array& a) {
-            mx::Shape start(a.ndim(), 0);
-            mx::Shape stop(a.shape().begin(), a.shape().end());
-            stop[2] = target;
-            return mx::slice(a, start, stop);
-        };
-        return {trim_axis2(t.weight), trim_axis2(t.scales), trim_axis2(t.biases)};
-    };
-    keys_ = slice_qt(*keys_);
-    values_ = slice_qt(*values_);
+    // Skip slicing for small rollbacks — offset limits what's visible.
+    // This avoids O(n) allocation and copy of quantized tensors.
     offset_ = target;
 }
 

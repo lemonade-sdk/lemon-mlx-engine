@@ -2,6 +2,7 @@
 
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/model_container.h>
+#include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx/mlx.h>
 #include <algorithm>
 #include <chrono>
@@ -459,7 +460,13 @@ TokenIterator::TokenIterator(
     , kv_bits_(params.kv_bits)
     , kv_group_size_(params.kv_group_size)
     , quantized_kv_start_(params.quantized_kv_start)
+    , use_mtp_(params.use_mtp && context.get_mtp_head_fn != nullptr)
+    , n_draft_tokens_(params.n_draft_tokens)
+    , accept_history_(kAcceptHistorySize, 1)  // Initialize with 1 (accepted)
 {
+    if (use_mtp_) {
+        mtp_caches_ = context.new_mtp_cache_fn(params);
+    }
     prompt_prefill_time_ = measure([&]() {
         prepare(input, params.prefill_step_size);
     });
@@ -480,11 +487,159 @@ TokenIterator::TokenIterator(
     , sampler_(std::move(sampler))
     , processor_(std::move(processor))
     , max_tokens_(max_tokens)
+    , use_mtp_(false)  // MTP not supported with explicit cache
+    , accept_history_(kAcceptHistorySize, 1)
 {
     prompt_prefill_time_ = measure([&]() {
         prepare(input, prefill_step_size);
     });
     generation_start_ = std::chrono::steady_clock::now();
+}
+
+// ---------------------------------------------------------------------------
+// TokenIterator — MTP speculative decoding
+// ---------------------------------------------------------------------------
+
+std::vector<int> TokenIterator::mtp_speculative_step() {
+    // Fallback if MTP not available.
+    if (!use_mtp_ || context_.get_mtp_head_fn == nullptr || context_.embed_fn == nullptr
+        || context_.apply_lm_head_fn == nullptr) {
+        auto token = step(y_);
+        y_ = LMInput::Text(token);
+        mx::eval(token);
+        return {token.item<int32_t>()};
+    }
+
+    MTPHead* mtp_head = static_cast<MTPHead*>(context_.get_mtp_head_fn());
+    int n_draft = current_draft_count();
+    int trunk_cache_pos = static_cast<int>(cache_.empty() ? 0 : cache_[0].get_position());
+
+    // Embed the current token for MTP input.
+    auto token_embed = context_.embed_fn(y_.tokens);
+
+    // Draft phase: run MTP head n_draft times.
+    auto hidden = token_embed;  // Start with embedded token
+    std::vector<int> draft_tokens;
+    draft_tokens.reserve(n_draft);
+
+    for (int i = 0; i < n_draft; ++i) {
+        // Apply output norm to get hidden state ready for lm_head.
+        auto norm_h = mtp_head->apply_output_norm(hidden);
+
+        // Apply trunk's lm_head to get draft logits.
+        auto logits = context_.apply_lm_head_fn(norm_h);
+
+        // Sample draft token (argmax for deterministic matching).
+        int draft_tok = mx::argmax(logits, -1).item<int32_t>();
+        draft_tokens.push_back(draft_tok);
+
+        // Embed draft token for next MTP step.
+        auto draft_arr = mx::array({draft_tok}, {1, 1}, mx::int32);
+        token_embed = context_.embed_fn(draft_arr);
+
+        // Run MTP head forward: hidden = mtp(hidden, embed(draft), mask, cache)
+        // For T=1 decode, use no mask.
+        hidden = (*mtp_head)(hidden, token_embed, AttentionMask{},
+                            mtp_caches_.empty() ? nullptr : &mtp_caches_[0]);
+
+        mx::clear_cache();
+    }
+
+    // Trunk verification: run trunk model on draft tokens.
+    if (draft_tokens.empty()) {
+        auto token = step(y_);
+        y_ = LMInput::Text(token);
+        mx::eval(token);
+        return {token.item<int32_t>()};
+    }
+
+    // Build draft token sequence for trunk verification.
+    std::vector<int32_t> draft_seq;
+    draft_seq.reserve(draft_tokens.size());
+    for (int t : draft_tokens) draft_seq.push_back(static_cast<int32_t>(t));
+    auto draft_arr = mx::array(draft_seq.data(), {1, static_cast<int>(draft_seq.size())}, mx::int32);
+    LMInput::Text draft_text(draft_arr);
+
+    // Run trunk model forward on all draft tokens.
+    // Request hidden intermediates so state_ is properly updated.
+    auto state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
+    auto result = context_.call_fn(draft_text, cache_.empty() ? nullptr : &cache_, &state);
+    state_ = result.state;
+    maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+
+    // Compare trunk argmax vs draft tokens.
+    auto logits = result.logits;  // [1, n_draft, vocab]
+    int accepted = 0;
+
+    if (n_draft == 1) {
+        // Single draft: argmax match check.
+        auto trunk_token = mx::argmax(logits, -1).item<int32_t>();
+        if (trunk_token == draft_tokens[0]) {
+            accepted = 1;  // Draft accepted
+        }
+        // Either way, trunk_token is the output
+        y_ = LMInput::Text(mx::array({trunk_token}, {1}, mx::int32));
+    } else {
+        // Multiple drafts: compare each position.
+        for (int i = 0; i < n_draft; ++i) {
+            // Slice logits at position i: [1, 1, vocab] -> [vocab]
+            auto logit_i = mx::slice(logits, {0, i, 0}, {1, i + 1, static_cast<int>(logits.shape(2))});
+            logit_i = mx::squeeze(logit_i, 1);
+            auto trunk_token = mx::argmax(logit_i, -1).item<int32_t>();
+
+            if (trunk_token == draft_tokens[i]) {
+                accepted++;
+            } else {
+                // Mismatch — use trunk token instead, stop accepting.
+                draft_tokens[i] = trunk_token;
+                break;
+            }
+        }
+
+        // Set y_ to the last accepted/rejected token.
+        int last_token = (accepted < n_draft) ? draft_tokens[accepted] : draft_tokens.back();
+        y_ = LMInput::Text(mx::array({last_token}, {1}, mx::int32));
+    }
+
+    // Roll back KV cache if not all drafts were accepted.
+    if (accepted < n_draft && !cache_.empty()) {
+        size_t new_pos = static_cast<size_t>(trunk_cache_pos + accepted);
+        for (auto& c : cache_) {
+            c.set_position(new_pos);
+        }
+    }
+
+    // Record acceptance for adaptive draft length.
+    record_acceptance(n_draft, accepted);
+
+    // Return first accepted token; remaining accepted drafts are buffered.
+    draft_buffer_.clear();
+    for (size_t i = 1; i < draft_tokens.size() && static_cast<int>(i) <= accepted; ++i) {
+        draft_buffer_.push_back(draft_tokens[i]);
+    }
+    draft_buffer_idx_ = 0;
+
+    return {draft_tokens[0]};
+}
+
+void TokenIterator::record_acceptance(int proposed, int accepted) {
+    uint8_t val = static_cast<uint8_t>(accepted);
+    accept_history_[accept_history_idx_ % kAcceptHistorySize] = val;
+    accept_history_idx_++;
+}
+
+int TokenIterator::current_draft_count() const {
+    if (accept_history_idx_ == 0) return n_draft_tokens_;  // No history yet.
+
+    int sum = 0;
+    for (int i = 0; i < kAcceptHistorySize; ++i) {
+        sum += accept_history_[i];
+    }
+    float accept_rate = static_cast<float>(sum) / (kAcceptHistorySize * n_draft_tokens_);
+
+    // Adaptive: scale draft count by acceptance rate.
+    int adapted = std::max(1, static_cast<int>(n_draft_tokens_ * accept_rate));
+    return std::min(adapted, n_draft_tokens_);
 }
 
 // ---------------------------------------------------------------------------
@@ -497,19 +652,32 @@ std::optional<int> TokenIterator::next() {
         return std::nullopt;
     }
 
-    // The current y_ holds the previously computed token.
-    auto previous_y = y_;
+    // MTP path: drain buffer first, then run speculative step.
+    if (use_mtp_) {
+        if (!draft_buffer_.empty() && draft_buffer_idx_ < draft_buffer_.size()) {
+            // Return a buffered draft token.
+            int tok = draft_buffer_[draft_buffer_idx_++];
+            y_ = LMInput::Text(mx::array({tok}, {1}, mx::int32));
+            token_count_++;
+            mx::eval(y_.tokens);
+            return tok;
+        }
 
-    // Compute the next token (evaluates the model for the *next* step).
+        // Buffer exhausted — run new MTP speculative step.
+        draft_buffer_.clear();
+        draft_buffer_idx_ = 0;
+        auto accepted = mtp_speculative_step();
+        token_count_++;
+        mx::eval(y_.tokens);
+        return accepted.empty() ? std::nullopt : std::optional<int>(accepted[0]);
+    }
+
+    // Standard path: single token generation.
+    auto previous_y = y_;
     auto token = step(previous_y);
     y_ = LMInput::Text(token);
-
-    // Async eval the next token so the GPU pipeline stays full.
     mx::async_eval(token);
-
     token_count_++;
-
-    // Return the *previous* token (which was already computed and ready).
     mx::eval(previous_y.tokens);
     return previous_y.tokens.item<int32_t>();
 }

@@ -327,6 +327,28 @@ private:
     GraphState graph_state_ = GraphState::Warmup;
     int warmup_steps_ = 0;
     static constexpr int kGraphWarmupSteps = 3; // Steps before attempting capture
+
+    // MTP speculative decoding state.
+    bool use_mtp_ = false;
+    int n_draft_tokens_ = 2;
+    std::vector<KVCache> mtp_caches_;  // Per-layer KV cache for MTP head
+    std::vector<int> draft_buffer_;    // Speculative draft tokens ready to emit
+    int draft_buffer_idx_ = 0;
+
+    // Adaptive draft length: 8-bit accept-history ring buffer.
+    std::vector<uint8_t> accept_history_;
+    size_t accept_history_idx_ = 0;
+    static constexpr int kAcceptHistorySize = 64;
+
+    // MTP speculative step: generates draft tokens via MTP head,
+    // verifies against trunk model, returns accepted tokens.
+    std::vector<int> mtp_speculative_step();
+
+    // Record acceptance history for adaptive draft length.
+    void record_acceptance(int proposed, int accepted);
+
+    // Get the current draft token count (adaptive or fixed).
+    int current_draft_count() const;
 };
 
 // ---------------------------------------------------------------------------

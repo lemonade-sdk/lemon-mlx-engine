@@ -7,6 +7,7 @@
 #include <mlx-lm/common/switch_layers.h>
 #include <mlx-lm/common/types.h>
 #include <mlx-lm/llm/llm_model.h>
+#include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx/mlx.h>
 #include <mlx-lm/common/gated_delta.h>
 #include <mlx-lm/llm/models/qwen3_next.h>
@@ -174,6 +175,7 @@ public:
     explicit Qwen35MoEModelInner(const Qwen35MoEConfiguration& args);
     mlx::core::array operator()(const mlx::core::array& inputs, std::vector<KVCache>* cache = nullptr);
     mlx::core::array embed_as_linear(const mlx::core::array& x) const;
+    mlx::core::array apply_lm_head(const mlx::core::array& hidden) const;
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
     const std::vector<Qwen35MoEDecoderLayer>& get_layers() const { return layers_; }
@@ -191,6 +193,10 @@ class Qwen35MoEModel
 
     // Stash mtp.* weights for MTPHead.
     std::unordered_map<std::string, mlx::core::array> mtp_weights_;
+    std::optional<class MTPHead> mtp_head_;
+
+    // Build MTPHead from config and load stashed weights.
+    void build_mtp_head();
 
     PrepareResult prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int window_size);
     LMOutput call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state);
@@ -207,10 +213,19 @@ public:
     void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
-    bool has_mtp() const { return !mtp_weights_.empty(); }
+    bool has_mtp() const { return mtp_head_.has_value(); }
     const std::unordered_map<std::string, mlx::core::array>& mtp_weights() const {
         return mtp_weights_;
     }
+    MTPHead* get_mtp_head() {
+        return mtp_head_ ? &mtp_head_.value() : nullptr;
+    }
+    const MTPHead* get_mtp_head() const {
+        return mtp_head_ ? &mtp_head_.value() : nullptr;
+    }
+
+    // Create a single KVCache for the MTP head (one decoder layer).
+    std::vector<KVCache> new_mtp_cache(const GenerateParameters& params) const;
 };
 
 } // namespace mlx_lm

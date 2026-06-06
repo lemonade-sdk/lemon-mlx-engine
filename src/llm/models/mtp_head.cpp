@@ -65,7 +65,7 @@ mx::array MTPDecoderLayer::operator()(
         mx::fast::rms_norm(k4, k_norm_weight_, args_.rms_norm_eps), {0, 2, 1, 3});
     v4 = mx::transpose(v4, {0, 2, 1, 3});
 
-    int rope_dims = args_.rope_dims != 0 ? args_.rope_dims : hd;
+    int rope_dims = args_.resolved_rope_dims();
     int offset = cache ? cache->offset() : 0;
     q4 = mx::fast::rope(q4, rope_dims, /*traditional=*/false, args_.rope_theta, 1.0f, offset);
     k4 = mx::fast::rope(k4, rope_dims, /*traditional=*/false, args_.rope_theta, 1.0f, offset);

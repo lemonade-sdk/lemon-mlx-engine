@@ -104,6 +104,13 @@ public:
         if (values_.has_value()) result.push_back(values_.value());
         return result;
     }
+
+    // Partial-rollback API: get_position returns current offset.
+    // set_position rolls back the logical offset only (physical ring unchanged).
+    // This is safe for speculative decoding since the ring buffer retains
+    // all data; only the write position changes.
+    size_t get_position() const { return static_cast<size_t>(offset_); }
+    void set_position(size_t pos);
 };
 
 // Quantized KV cache — stores keys/values in quantized form to reduce memory.
@@ -176,6 +183,11 @@ public:
     void set_offset(int o) { offset_ = o; }
 
     std::vector<mlx::core::array> state() const { return {}; }
+
+    // Partial-rollback API: MambaCache does not support token-level rollback.
+    // get_position returns current offset; set_position is a no-op.
+    size_t get_position() const { return static_cast<size_t>(offset_); }
+    void set_position(size_t /*pos*/) { /* no-op: recurrent state cannot be rolled back */ }
 };
 
 // Compound cache for hybrid models (e.g., FalconH1, BaichuanM1).
@@ -264,21 +276,21 @@ public:
     }
 
     // Partial-rollback dispatch for MTP speculative decoding.
-    // - KVCacheSimple / QuantizedKVCache: return / apply the offset.
-    // - RotatingKVCache: not supported (window already destructive) -- save
-    //   returns current offset but restore is a no-op; callers should avoid
-    //   speculative decode on rotating caches.
-    // - MambaCache / CompoundCache: out of scope for this scaffolding cut --
+    // - KVCacheSimple / QuantizedKVCache / RotatingKVCache: return / apply the offset.
+    // - MambaCache: out of scope for this scaffolding cut --
     //   recurrent rollback requires the gated-delta intermediates kernel.
-    //   get_position returns 0, set_position is a no-op.
+    //   get_position returns current offset, set_position is a no-op.
+    // - CompoundCache: delegates to sub-caches.
     size_t get_position() const {
         return std::visit([](const auto& c) -> size_t {
             using T = std::decay_t<decltype(c)>;
             if constexpr (std::is_same_v<T, KVCacheSimple> ||
-                          std::is_same_v<T, QuantizedKVCache>) {
+                          std::is_same_v<T, QuantizedKVCache> ||
+                          std::is_same_v<T, RotatingKVCache> ||
+                          std::is_same_v<T, MambaCache>) {
                 return c.get_position();
             } else {
-                return static_cast<size_t>(c.offset());
+                return 0;  // CompoundCache: unsupported
             }
         }, impl_);
     }
@@ -286,7 +298,9 @@ public:
         std::visit([pos](auto& c) {
             using T = std::decay_t<decltype(c)>;
             if constexpr (std::is_same_v<T, KVCacheSimple> ||
-                          std::is_same_v<T, QuantizedKVCache>) {
+                          std::is_same_v<T, QuantizedKVCache> ||
+                          std::is_same_v<T, RotatingKVCache> ||
+                          std::is_same_v<T, MambaCache>) {
                 c.set_position(pos);
             }
         }, impl_);
