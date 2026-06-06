@@ -389,16 +389,19 @@ ModelContext load_mtp_delta_model(
     }
     std::cerr << "[MTP] Merged " << mtp_keys << " MTP head weights with base model\n";
 
-    // Step 5: Read delta model config.json (contains text_config for base model).
-    auto config_path = fs::path(delta_dir) / "config.json";
-    std::ifstream config_file(config_path);
-    nlohmann::json config_json;
-    config_file >> config_json;
+    // Step 5: Read BASE model config.json for architectural parameters.
+    // The base model config matches the actual text backbone weights we loaded.
+    // The delta model's config has model_type="qwen3_5_mtp" which is for the
+    // MTP head only, not the full text model architecture.
+    auto base_config_path = fs::path(base_dir) / "config.json";
+    std::ifstream base_config_file(base_config_path);
+    nlohmann::json base_model_config_json;
+    base_config_file >> base_model_config_json;
 
-    auto base_config = parse_base_configuration(config_json);
+    auto base_config = parse_base_configuration(base_model_config_json);
 
-    // Step 6: Create model, sanitize, register quantized weights, load.
-    auto j = nlohmann::json::parse(config_json.dump());
+    // Step 6: Create model from base config (matches loaded weights), sanitize, register quantized weights, load.
+    auto j = nlohmann::json::parse(base_model_config_json.dump());
     Qwen35MoEConfiguration config = j.get<Qwen35MoEConfiguration>();
     auto model = std::make_shared<Qwen35MoEModel>(config);
 
@@ -416,7 +419,7 @@ ModelContext load_mtp_delta_model(
         ctx.eos_token_ids = base_config.eos_token_ids->values;
     }
 
-    // Load tokenizer from delta model directory.
+    // Load tokenizer from delta model directory (shared with base model).
     std::shared_ptr<Tokenizer> tokenizer;
     auto tokenizer_json_path = fs::path(delta_dir) / "tokenizer.json";
     if (fs::exists(tokenizer_json_path)) {
@@ -429,7 +432,7 @@ ModelContext load_mtp_delta_model(
         };
     }
 
-    // Load chat template.
+    // Load chat template from delta model directory.
     auto chat_tmpl = load_chat_template(delta_dir);
     if (chat_tmpl.has_value() && tokenizer) {
         auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));

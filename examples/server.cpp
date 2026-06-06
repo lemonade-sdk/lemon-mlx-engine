@@ -35,8 +35,8 @@ struct CliArgs {
     std::string host = "127.0.0.1";
     int port = 8080;
     int max_tokens = 2048;
-    float temperature = 0.7f;
-    float top_p = 0.9f;
+    float temperature = 0.6f;
+    float top_p = 1.0f;
     float repetition_penalty = 0.0f;
     size_t memory_limit_mb = 0;
     bool no_think = false;
@@ -91,8 +91,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --host HOST             Bind address (default: 127.0.0.1)\n"
                       << "  --port PORT             Listen port (default: 8080)\n"
                       << "  --max-tokens N          Default max tokens (default: 2048)\n"
-                      << "  --temperature T         Default temperature (default: 0.7)\n"
-                      << "  --top-p P               Default top-p (default: 0.9)\n"
+                      << "  --temperature T         Default temperature (default: 0.6)\n"
+                      << "  --top-p P               Default top-p (default: 1.0)\n"
                       << "  --repetition-penalty F  Default repetition penalty (off)\n"
                       << "  --memory-limit MB       GPU wired memory limit\n"
                       << "  --no-think              Disable thinking/reasoning\n"

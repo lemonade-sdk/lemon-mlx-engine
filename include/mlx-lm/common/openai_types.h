@@ -87,7 +87,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ChatMessage, role, content)
 struct ChatCompletionRequest {
     std::string model;
     std::vector<ChatMessage> messages;
-    float temperature = 0.7f;
+    float temperature = 0.6f;
     float top_p = 1.0f;
     int max_tokens = 2048;
     float repetition_penalty = 0.0f;
@@ -184,7 +184,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ChatCompletionChunk,
 struct CompletionRequest {
     std::string model;
     std::string prompt;
-    float temperature = 0.7f;
+    float temperature = 0.6f;
     float top_p = 1.0f;
     int max_tokens = 2048;
     float repetition_penalty = 0.0f;
