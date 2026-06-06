@@ -292,7 +292,7 @@ jobs:
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
     runs-on: ${{ fromJSON(matrix.runs_on) }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -302,16 +302,26 @@ jobs:
             runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: true
             model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+          - os: ubuntu-mtp
+            artifact: mlx-engine-ubuntu-rocm-x64
+            runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
+            install_rocm: true
+            model: anthonymikinka/Qwen3.5-4B-MTP-4bit
+            use_mtp: true
+            timeout_minutes: 30
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
             runs_on: '"macos-latest"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
@@ -364,11 +374,38 @@ jobs:
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
         fi
 
+    - name: Memory pre-check (MTP test)
+      if: matrix.use_mtp
+      run: |
+        total_mem_mb=$(free -m | awk '/^Mem:/{print $2}')
+        echo "Total system memory: ${total_mem_mb} MB"
+        free_mem_mb=$(free -m | awk '/^Mem:/{print $7}')
+        echo "Available memory: ${free_mem_mb} MB"
+        if [ "$free_mem_mb" -lt 4000 ]; then
+          echo "SKIP: Insufficient memory for MTP test (${free_mem_mb}MB < 4000MB required)"
+          exit 0
+        else
+          echo "Memory OK for MTP test"
+        fi
+
     - name: 'Smoke test: server start and health'
       run: |
         set -e
 
         PORT=18999
+
+        # Conditionally enable MTP speculative decoding
+        MTP_FLAG=""
+        if [ "${{ matrix.use_mtp }}" = "true" ]; then
+          MTP_FLAG="--use-mtp"
+        fi
+
+        # Increase readiness timeout for MTP models
+        if [ "${{ matrix.use_mtp }}" = "true" ]; then
+          READY_TIMEOUT=180
+        else
+          READY_TIMEOUT=60
+        fi
 
         echo "Checking binary dependencies..."
         if [ "$(uname)" = "Darwin" ]; then
@@ -381,18 +418,18 @@ jobs:
           echo "All shared libraries resolved OK"
         fi
 
-        echo "Starting server on port $PORT ..."
+        echo "Starting server on port $PORT (MTP=${MTP_FLAG:+ON:-OFF})..."
         # NOTE: ROCm smoke test inference failures with 4-bit quantized models
         # are caused by an upstream MLX ROCm quantized matmul kernel bug.
         # No env var workaround exists in the MLX codebase.
         # Tracking upstream for a fix.
-        mlx-binaries/server --port $PORT --use-mtp > server.log 2>&1 &
+        mlx-binaries/server --port $PORT $MTP_FLAG > server.log 2>&1 &
         SERVER_PID=$!
 
-        # Poll for server readiness (max 60s, 1s interval)
-        echo "Waiting for server to become ready..."
+        # Poll for server readiness
+        echo "Waiting for server to become ready (timeout: ${READY_TIMEOUT}s)..."
         READY=false
-        for i in $(seq 1 60); do
+        for i in $(seq 1 $READY_TIMEOUT); do
           http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health 2>/dev/null || echo "000")
           if [ "$http_code" = "200" ]; then
             echo "Server ready after ${i}s (HTTP $http_code)"
@@ -571,7 +608,7 @@ jobs:
 
   collect-benchmarks:
     needs: [test-simple-math]
-    if: always() && needs.test-simple-math.result == 'success'
+    if: always() && (needs.test-simple-math.result == 'success' || needs.test-simple-math.result == 'failure')
     runs-on: ubuntu-22.04
     steps:
     - name: Download all benchmark artifacts
