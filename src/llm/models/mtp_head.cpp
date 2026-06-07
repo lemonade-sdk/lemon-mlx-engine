@@ -56,7 +56,6 @@ mx::array MTPDecoderLayer::operator()(
     auto q_proj_out = linear_no_bias(normed, q_proj_weight_);
     // Reshape to [B, L, num_heads, 2*head_dim] then split into queries + gate
     auto q_proj_reshaped = mx::reshape(q_proj_out, {B, L, n_heads, -1});
-    int hd = head_dim_;
     auto queries = mx::slice(q_proj_reshaped, {0, 0, 0, 0}, {B, L, n_heads, hd});
     auto q_gate = mx::slice(q_proj_reshaped, {0, 0, 0, hd}, {B, L, n_heads, 2 * hd});
 
