@@ -83,8 +83,9 @@ mx::array MTPDecoderLayer::operator()(
 
     auto attn_out = sdpa(q4, k4, v4, scale, mask);
     attn_out = mx::reshape(mx::transpose(attn_out, {0, 2, 1, 3}), {B, L, n_heads * hd});
-    // Apply sigmoid gate: output *= sigmoid(q_gate)
-    auto gate_sigmoid = mx::sigmoid(q_gate);
+    // Apply sigmoid gate: reshape q_gate [B, L, n_heads, hd] -> [B, L, n_heads * hd]
+    // to match attention output shape, matching Qwen35MoEAttention line 189.
+    auto gate_sigmoid = mx::sigmoid(mx::reshape(q_gate, {B, L, -1}));
     attn_out = mx::multiply(attn_out, gate_sigmoid);
     attn_out = linear_no_bias(attn_out, o_proj_weight_);
 
