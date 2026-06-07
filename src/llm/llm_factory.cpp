@@ -407,12 +407,41 @@ ModelContext load_mtp_delta_model(
 
     weights = model->sanitize(std::move(weights));
 
+    // Diagnostic: check if MTP weights were captured during sanitization.
+    // Qwen35MoEModel::sanitize_impl() stashes "mtp.*" keys into mtp_weights_.
+    // We can't access mtp_weights_ directly (private), but we can check
+    // has_mtp() after load_weights to see if build_mtp_head() was called.
+    // Log before load_weights to confirm the sanitize step didn't strip MTP keys.
+    std::cerr << "[MTP_DEBUG] After sanitize: model has_mtp()="
+              << (model->has_mtp() ? "true" : "false")
+              << " (expected false, load_weights not called yet)\n";
+
     auto wmap = model->weight_map();
     register_quantized_weights(weights, base_config, wmap);
 
     model->load_weights(weights);
 
+    // Diagnostic: confirm MTP head was built.
+    std::cerr << "[MTP_DEBUG] After load_weights: model has_mtp()="
+              << (model->has_mtp() ? "true (MTP head built)" : "false (MTP head NOT built!)")
+              << "\n";
+    if (model->has_mtp()) {
+        std::cerr << "[MTP_DEBUG] MTP head pointer: "
+                  << (model->get_mtp_head() ? "non-null" : "NULL")
+                  << "\n";
+    }
+
     ModelContext ctx = ModelContext::from_model_owned(model);
+
+    // Double-check: the bound get_mtp_head_fn should return non-null.
+    bool mtp_fn_ok = (ctx.get_mtp_head_fn != nullptr && ctx.get_mtp_head_fn() != nullptr);
+    bool embed_ok = (ctx.embed_fn != nullptr);
+    bool lm_head_ok = (ctx.apply_lm_head_fn != nullptr);
+    std::cerr << "[MTP_DEBUG] Context binding: get_mtp_head_fn="
+              << (mtp_fn_ok ? "OK" : "FAIL")
+              << " embed_fn=" << (embed_ok ? "OK" : "FAIL")
+              << " apply_lm_head_fn=" << (lm_head_ok ? "OK" : "FAIL")
+              << "\n";
     ctx.model_id = delta_model_id;
 
     if (base_config.eos_token_ids.has_value()) {

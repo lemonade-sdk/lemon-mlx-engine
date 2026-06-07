@@ -215,16 +215,29 @@ struct Server::Impl {
         // Diagnostic: log MTP activation state for first request.
         static std::once_flag mtp_diag_once;
         std::call_once(mtp_diag_once, [&]() {
-            bool has_mtp_head = false;
+            bool has_mtp_head_fn = false;
+            bool mtp_head_returns_non_null = false;
+            bool has_embed_fn = false;
+            bool has_apply_lm_head_fn = false;
+            std::string model_id;
             model->perform_read([&](const ModelContext& ctx) {
-                has_mtp_head = (ctx.get_mtp_head_fn != nullptr);
+                has_mtp_head_fn = (ctx.get_mtp_head_fn != nullptr);
+                if (ctx.get_mtp_head_fn) {
+                    void* ptr = ctx.get_mtp_head_fn();
+                    mtp_head_returns_non_null = (ptr != nullptr);
+                }
+                has_embed_fn = (ctx.embed_fn != nullptr);
+                has_apply_lm_head_fn = (ctx.apply_lm_head_fn != nullptr);
+                model_id = ctx.model_id;
             });
             std::cerr << "[MTP_DIAG] defaults.use_mtp=" << defaults.use_mtp
                       << " chat_req.use_mtp=" << chat_req.use_mtp
                       << " params.use_mtp=" << params.use_mtp
-                      << " model.get_mtp_head_fn="
-                      << (has_mtp_head ? "non-null" : "NULL")
-                      << " model_id=" << model->model_id()
+                      << " get_mtp_head_fn=" << (has_mtp_head_fn ? "bound" : "NULL")
+                      << " get_mtp_head()=" << (mtp_head_returns_non_null ? "non-null" : "NULL")
+                      << " embed_fn=" << (has_embed_fn ? "non-null" : "NULL")
+                      << " apply_lm_head_fn=" << (has_apply_lm_head_fn ? "non-null" : "NULL")
+                      << " model_id=" << model_id
                       << "\n";
         });
 
