@@ -798,13 +798,50 @@ void Qwen35Model::load_weights(const std::unordered_map<std::string, mx::array>&
 void Qwen35Model::build_mtp_head() {
     MTPHeadConfig cfg;
     cfg.hidden_size = config_.hidden_size;
-    cfg.intermediate_size = config_.intermediate_size;
-    cfg.num_attention_heads = config_.num_attention_heads;
-    cfg.num_key_value_heads = config_.num_key_value_heads;
-    cfg.head_dim = config_.resolved_head_dim();
+
+    // Infer MTP head config from the actual checkpoint weight shapes.
+    // The MTP delta model has different architectural parameters than the base
+    // model (e.g., different num_attention_heads, num_key_value_heads,
+    // intermediate_size, rope_theta). Using base model values creates
+    // mismatched weight shapes that cause reshape errors on ROCm.
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.find("mlp.gate_proj.weight") != std::string::npos ||
+            key.find("mlp.up_proj.weight") != std::string::npos) {
+            // gate_proj/up_proj: [intermediate_size, hidden_size]
+            if (weight.ndim() >= 1) {
+                cfg.intermediate_size = weight.shape(0);
+            }
+        } else if (key.find("self_attn.q_proj.weight") != std::string::npos) {
+            // q_proj: [num_attention_heads * head_dim * 2, hidden_size]
+            // (* 2 for fused Q+gate projection)
+            if (weight.ndim() >= 1) {
+                int q_proj_dim = weight.shape(0);
+                int hd = config_.resolved_head_dim();
+                if (hd > 0) {
+                    cfg.num_attention_heads = q_proj_dim / (hd * 2);
+                }
+            }
+        } else if (key.find("self_attn.k_proj.weight") != std::string::npos) {
+            // k_proj: [num_key_value_heads * head_dim, hidden_size]
+            if (weight.ndim() >= 1) {
+                int kv_proj_dim = weight.shape(0);
+                int hd = config_.resolved_head_dim();
+                if (hd > 0) {
+                    cfg.num_key_value_heads = kv_proj_dim / hd;
+                }
+            }
+        }
+    }
+
+    // Fallback: if weight inference didn't find values, use base model config.
+    if (cfg.intermediate_size == 0) cfg.intermediate_size = config_.intermediate_size;
+    if (cfg.num_attention_heads == 0) cfg.num_attention_heads = config_.num_attention_heads;
+    if (cfg.num_key_value_heads == 0) cfg.num_key_value_heads = config_.num_key_value_heads;
+    if (cfg.head_dim == 0) cfg.head_dim = config_.resolved_head_dim();
     cfg.rms_norm_eps = config_.rms_norm_eps;
     cfg.rope_theta = config_.rope_theta;
     cfg.partial_rotary_factor = config_.partial_rotary_factor;
+
     mtp_head_ = MTPHead(cfg);
     mtp_head_->load_mtp_weights(mtp_weights_);
 }

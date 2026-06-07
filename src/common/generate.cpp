@@ -559,6 +559,13 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     auto hidden = mtp_trunk_hidden_.has_value()
         ? mtp_trunk_hidden_.value()
         : token_embed;
+    // Defensive: ensure hidden is always 3D [1, 1, H].
+    // token_embed from embed_fn may be 2D [1, H] for 1D token input.
+    // The MTP head reads L = x.shape(1); a 2D input would give L=H=2560,
+    // causing reshape crashes downstream.
+    if (hidden.ndim() == 2) {
+        hidden = mx::reshape(hidden, {1, 1, hidden.shape(-1)});
+    }
     std::vector<int> draft_tokens;
     draft_tokens.reserve(n_draft);
 
@@ -703,14 +710,28 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         // When all drafts are rejected (accepted==0), no re-run happened above
         // but state_/hidden_intermediates still contain data from the full
         // n_draft verification pass — which is at the wrong cache position.
-        // Re-run on the trunk's correct token (now in y_) so hidden state
-        // matches the rolled-back cache position.
+        // Re-run on the trunk's correct token (now in y_) so the KV cache
+        // advances by 1, then directly capture the hidden state.
+        // Note: call_fn for L=1 does NOT populate hidden_intermediates,
+        // so we must capture manually.
         if (accepted == 0) {
+            // Advance cache by running trunk on the single correct token.
             auto rerun_state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
             result = context_.call_fn(y_, &cache_, &rerun_state);
             state_ = result.state;
             maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
             logits = result.logits;  // [1, 1, vocab]
+
+            // Capture hidden state directly: embed token + apply output norm.
+            // This is what mtp_trunk_hidden_ should be for the next MTP step.
+            // call_fn doesn't populate hidden_intermediates for L=1 sequences.
+            auto embed_h = context_.embed_fn(y_.tokens);  // [1, H] or [1, 1, H]
+            if (embed_h.ndim() == 2) {
+                embed_h = mx::reshape(embed_h, {1, 1, embed_h.shape(-1)});
+            }
+            auto trunk_hidden = mtp_head->apply_output_norm(embed_h);
+            mtp_trunk_hidden_ = trunk_hidden;
+            mx::eval(trunk_hidden);
         }
     }
 

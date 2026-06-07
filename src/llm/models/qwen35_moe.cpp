@@ -895,6 +895,16 @@ void Qwen35MoEModel::build_mtp_head() {
             if (weight.ndim() >= 1) {
                 cfg.intermediate_size = weight.shape(0);
             }
+        } else if (key.find("self_attn.q_proj.weight") != std::string::npos) {
+            // q_proj: [num_attention_heads * head_dim * 2, hidden_size]
+            // (* 2 for fused Q+gate projection in MTP head)
+            if (weight.ndim() >= 1) {
+                int q_proj_dim = weight.shape(0);
+                int hd = config_.resolved_head_dim();
+                if (hd > 0) {
+                    cfg.num_attention_heads = q_proj_dim / (hd * 2);
+                }
+            }
         } else if (key.find("self_attn.k_proj.weight") != std::string::npos) {
             // k_proj: [num_kv_heads * head_dim, hidden_size]
             if (weight.ndim() >= 1) {
