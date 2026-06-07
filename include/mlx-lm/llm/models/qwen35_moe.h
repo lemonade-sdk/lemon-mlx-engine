@@ -256,17 +256,6 @@ class Qwen35MoEModel
     // Build MTPHead from config and load stashed weights.
     void build_mtp_head();
 
-public:
-    explicit Qwen35MoEModel(const Qwen35MoEConfiguration& args);
-    const std::vector<int>& kv_heads() const { return kv_heads_; }
-    int vocab_size() const { return config_.vocab_size; }
-    void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights);
-    std::unordered_map<std::string, mlx::core::array*> weight_map();
-
-    // Set MTP head config before load_weights(). Used by load_mtp_delta_model()
-    // to pass MTP-specific architectural parameters from the delta model's config.json.
-    void set_mtp_head_config(const MTPHeadConfig& cfg) { mtp_head_cfg_ = cfg; }
-
     PrepareResult prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int window_size);
     LMOutput call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state);
     mlx::core::array forward_impl(const mlx::core::array& inputs, std::vector<KVCache>* cache);
@@ -283,6 +272,11 @@ public:
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
     bool has_mtp() const { return mtp_head_.has_value(); }
+
+    // Set MTP head config before load_weights(). Used by load_mtp_delta_model()
+    // to pass MTP-specific architectural parameters from the delta model's config.json.
+    void set_mtp_head_config(const MTPHeadConfig& cfg) { mtp_head_cfg_ = cfg; }
+
     const std::unordered_map<std::string, mlx::core::array>& mtp_weights() const {
         return mtp_weights_;
     }

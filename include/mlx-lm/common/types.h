@@ -27,7 +27,7 @@ struct LMInput {
         mlx::core::array tokens;
         std::optional<mlx::core::array> mask;
 
-        Text() = default;
+        Text() : tokens(mlx::core::array({}, mlx::core::int32)), mask(std::nullopt) {}
         Text(mlx::core::array tokens, std::optional<mlx::core::array> mask = std::nullopt)
             : tokens(std::move(tokens)), mask(std::move(mask)) {}
     };
@@ -54,7 +54,7 @@ struct LMInput {
     std::optional<ProcessedImage> image;
     std::optional<ProcessedVideo> video;
 
-    LMInput() = default;
+    LMInput() : text(), image(std::nullopt), video(std::nullopt) {}
 
     LMInput(mlx::core::array tokens, std::optional<mlx::core::array> mask = std::nullopt)
         : text(std::move(tokens), std::move(mask)) {}
