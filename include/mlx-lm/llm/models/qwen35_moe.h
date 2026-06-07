@@ -281,6 +281,16 @@ public:
         return mtp_head_ ? &mtp_head_.value() : nullptr;
     }
 
+    // Delegate embedding/lm_head access to the inner model.
+    // Required for SFINAE binding of embed_fn and apply_lm_head_fn
+    // in ModelContext, which MTP speculative decoding depends on.
+    mlx::core::array embed_as_linear(const mlx::core::array& x) const {
+        return model_.embed_as_linear(x);
+    }
+    mlx::core::array apply_lm_head(const mlx::core::array& hidden) const {
+        return model_.apply_lm_head(hidden);
+    }
+
     // Create a single KVCache for the MTP head (one decoder layer).
     std::vector<KVCache> new_mtp_cache(const GenerateParameters& params) const;
 };
