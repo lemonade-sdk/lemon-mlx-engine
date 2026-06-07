@@ -653,7 +653,7 @@ PrepareResult Qwen3NextModel::prepare_impl(const LMInput& input, std::vector<KVC
 
 LMOutput Qwen3NextModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state) {
     auto hidden = model_(input.tokens, cache);
-    if (state && state->hidden_intermediates.has_value()) {
+    if (state) {
         return LMOutput(
             lm_head_weight_.has_value() ? linear_fwd(hidden, lm_head_weight_.value())
                                          : model_.embed_as_linear(hidden),

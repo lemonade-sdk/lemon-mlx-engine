@@ -448,9 +448,25 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
         mx::async_eval(y_.tokens);
     } else {
         // Model returned logits directly — sample the first token.
-        auto token = convert_to_token(prep_result.as_logits().logits);
+        auto& prep_output = prep_result.as_logits();
+        auto token = convert_to_token(prep_output.logits);
         y_ = LMInput::Text(token);
         mx::async_eval(y_.tokens);
+
+        // Capture hidden state from prefill for MTP.
+        if (prep_output.state.has_value()) {
+            state_ = prep_output.state;
+        }
+    }
+
+    // Capture trunk hidden state at last prompt position for first MTP step.
+    if (use_mtp_ && state_.has_value() && state_->hidden_intermediates.has_value()) {
+        auto trunk_h = state_->hidden_intermediates.value();  // [B, T, H]
+        int last_pos = trunk_h.shape(1) - 1;
+        auto h_slice = mx::slice(trunk_h, {0, last_pos, 0},
+                                 {1, last_pos + 1, trunk_h.shape(2)});  // [1, 1, H]
+        mx::eval(h_slice);
+        mtp_trunk_hidden_ = h_slice;
     }
 }
 
@@ -475,8 +491,12 @@ TokenIterator::TokenIterator(
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)  // Initialize with 1 (accepted)
 {
+    // When MTP is active, initialize state_ so step() always requests
+    // hidden_intermediates from the model. The MTP head needs the trunk's
+    // hidden state as input.
     if (use_mtp_) {
         mtp_caches_ = context.new_mtp_cache_fn(params);
+        state_ = LMOutput::State();  // Empty state signals model to return hidden
     }
     prompt_prefill_time_ = measure([&]() {
         prepare(input, params.prefill_step_size);
@@ -529,7 +549,13 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     auto token_embed = context_.embed_fn(y_.tokens);
 
     // Draft phase: run MTP head n_draft times.
-    auto hidden = token_embed;  // Start with embedded token
+    // MTP head requires (trunk_hidden, token_embed) — the trunk's post-norm
+    // hidden state as first input, not just the token embedding.
+    // Use cached trunk hidden if available (from previous step), otherwise
+    // fall back to token_embed (first step after prefill).
+    auto hidden = mtp_trunk_hidden_.has_value()
+        ? mtp_trunk_hidden_.value()
+        : token_embed;
     std::vector<int> draft_tokens;
     draft_tokens.reserve(n_draft);
 
@@ -618,6 +644,17 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         for (auto& c : cache_) {
             c.set_position(new_pos);
         }
+    }
+
+    // Capture trunk hidden state at last-used position for next MTP step.
+    // The MTP head needs the trunk's post-norm hidden state as input.
+    if (result.state.has_value() && result.state->hidden_intermediates.has_value()) {
+        auto trunk_h = result.state->hidden_intermediates.value();  // [1, n_draft, H]
+        int last_pos = std::min(accepted, n_draft - 1);
+        // Slice at position last_pos -> [1, 1, H]. Keep 3D shape for MTPDecoderLayer.
+        auto h_slice = mx::slice(trunk_h, {0, last_pos, 0}, {1, last_pos + 1, trunk_h.shape(2)});
+        mx::eval(h_slice);
+        mtp_trunk_hidden_ = h_slice;
     }
 
     // Record acceptance for adaptive draft length.

@@ -345,6 +345,7 @@ private:
     bool use_mtp_ = false;
     int n_draft_tokens_ = 2;
     std::vector<KVCache> mtp_caches_;  // Per-layer KV cache for MTP head
+    std::optional<mlx::core::array> mtp_trunk_hidden_;  // Trunk hidden state for MTP input
     std::vector<int> draft_buffer_;    // Speculative draft tokens ready to emit
     int draft_buffer_idx_ = 0;
 
