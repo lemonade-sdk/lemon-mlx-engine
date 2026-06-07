@@ -32,6 +32,10 @@ struct MTPHeadConfig {
     }
 
     bool is_moe() const { return num_experts > 0; }
+
+    // Quantization parameters (0 = auto-detect from weight dtype).
+    int quant_group_size = 64;
+    int quant_bits = 4;
 };
 
 } // namespace mlx_lm
