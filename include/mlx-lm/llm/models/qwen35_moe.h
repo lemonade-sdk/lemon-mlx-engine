@@ -284,8 +284,11 @@ public:
     // Delegate embedding/lm_head access to the inner model.
     // Required for SFINAE binding of embed_fn and apply_lm_head_fn
     // in ModelContext, which MTP speculative decoding depends on.
+    // Note: embed_as_linear is bound as embed_fn by SFINAE, but MTP
+    // passes raw token IDs (not embeddings), so we delegate to
+    // embed_tokens which does the correct embedding lookup (mx::take).
     mlx::core::array embed_as_linear(const mlx::core::array& x) const {
-        return model_.embed_as_linear(x);
+        return model_.embed_tokens(x);
     }
     mlx::core::array apply_lm_head(const mlx::core::array& hidden) const {
         return model_.apply_lm_head(hidden);
