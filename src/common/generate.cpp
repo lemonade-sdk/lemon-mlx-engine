@@ -667,8 +667,6 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     // For KVCacheSimple: set_position trims KV arrays to the accepted count.
     // For MambaCache: set_position is a no-op — we restore from snapshot and re-run.
     if (accepted < n_draft && !cache_.empty()) {
-        size_t new_pos = static_cast<size_t>(trunk_cache_pos + accepted);
-
         // Restore MambaCache to pre-verification state.
         for (size_t i = 0; i < cache_.size(); ++i) {
             if (saved_mamba[i].has_mamba) {
@@ -701,13 +699,28 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
             logits = result.logits;  // [1, accepted, vocab]
         }
+
+        // When all drafts are rejected (accepted==0), no re-run happened above
+        // but state_/hidden_intermediates still contain data from the full
+        // n_draft verification pass — which is at the wrong cache position.
+        // Re-run on the trunk's correct token (now in y_) so hidden state
+        // matches the rolled-back cache position.
+        if (accepted == 0) {
+            auto rerun_state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
+            result = context_.call_fn(y_, &cache_, &rerun_state);
+            state_ = result.state;
+            maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+            logits = result.logits;  // [1, 1, vocab]
+        }
     }
 
     // Capture trunk hidden state at last-used position for next MTP step.
     // The MTP head needs the trunk's post-norm hidden state as input.
+    // After the rollback + re-run logic above, result.state now reflects
+    // the tokens that are actually in the cache + the emitted y_ token.
     if (result.state.has_value() && result.state->hidden_intermediates.has_value()) {
-        auto trunk_h = result.state->hidden_intermediates.value();  // [1, n_draft, H]
-        int last_pos = std::min(accepted, n_draft - 1);
+        auto trunk_h = result.state->hidden_intermediates.value();
+        int last_pos = trunk_h.shape(1) - 1;  // last position in the actual result
         // Slice at position last_pos -> [1, 1, H]. Keep 3D shape for MTPDecoderLayer.
         auto h_slice = mx::slice(trunk_h, {0, last_pos, 0}, {1, last_pos + 1, trunk_h.shape(2)});
         mx::eval(h_slice);
