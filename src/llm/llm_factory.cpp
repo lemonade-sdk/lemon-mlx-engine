@@ -380,10 +380,15 @@ ModelContext load_mtp_delta_model(
     std::cerr << "[MTP] Loaded base model weights: " << weights.size() << " tensors\n";
 
     // Step 4: Load delta model safetensors (MTP head), prefix keys with "mtp.".
+    // The MLX Python library saves weights with module-path prefixes (e.g.,
+    // "mtp.fc.weight"), so keys already have the "mtp." prefix. Only add it
+    // if missing to avoid double-prefixing (mtp.mtp.*) which would break
+    // weight loading in MTPHead::load_mtp_weights.
     auto delta_weights = load_safetensors_from_directory(delta_dir);
     int mtp_keys = 0;
     for (auto& [key, value] : delta_weights) {
-        std::string prefixed = "mtp." + key;
+        std::string prefixed =
+            key.rfind("mtp.", 0) == 0 ? key : "mtp." + key;
         weights.insert_or_assign(prefixed, std::move(value));
         mtp_keys++;
     }
