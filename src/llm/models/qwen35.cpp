@@ -798,11 +798,19 @@ void Qwen35Model::load_weights(const std::unordered_map<std::string, mx::array>&
 void Qwen35Model::build_mtp_head() {
     MTPHeadConfig cfg;
 
-    // Infer MTP head config entirely from the actual checkpoint weight shapes.
-    // The MTP delta model has different architectural parameters than the base
-    // model (e.g., hidden_size 2560 vs 4096, head_dim 64 vs 128). Deriving
-    // any field from the base model config creates shape mismatches that cause
-    // reshape errors during inference.
+    // Priority 1: Use MTP config set by load_mtp_delta_model() from the
+    // delta model's config.json. This is the authoritative source of MTP
+    // head architectural parameters (hidden_size=2560, head_dim=256, etc.).
+    if (mtp_head_cfg_.has_value()) {
+        cfg = mtp_head_cfg_.value();
+        mtp_head_ = MTPHead(cfg);
+        mtp_head_->load_mtp_weights(mtp_weights_);
+        return;
+    }
+
+    // Priority 2: Infer from the actual checkpoint weight shapes.
+    // This path is used when MTP weights are loaded outside of
+    // load_mtp_delta_model() (e.g., local directory loading).
     for (const auto& [key, weight] : mtp_weights_) {
         if (key.find("mlp.gate_proj.weight") != std::string::npos ||
             key.find("mlp.up_proj.weight") != std::string::npos) {
@@ -818,7 +826,7 @@ void Qwen35Model::build_mtp_head() {
                 cfg.hidden_size = weight.shape(0);
                 int attn_dim = weight.shape(1);
                 // head_dim must divide hidden_size evenly. Try common values.
-                // For Qwen3.5-4B-MTP: hidden=2560, attn_dim=2048 → head_dim=64, num_heads=32
+                // For Qwen3.5-4B-MTP: hidden=2560, attn_dim=2048 -> head_dim=64, num_heads=32
                 for (int try_hd : {64, 80, 96, 128, 160}) {
                     if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
                         cfg.head_dim = try_hd;

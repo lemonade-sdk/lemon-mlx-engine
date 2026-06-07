@@ -398,12 +398,49 @@ ModelContext load_mtp_delta_model(
     nlohmann::json base_model_config_json;
     base_config_file >> base_model_config_json;
 
+    // Step 5b: Read MTP delta model config.json for MTP head parameters.
+    // The MTP model's text_config contains the correct architectural parameters
+    // for the MTP head (hidden_size=2560, head_dim=256, rope_theta=10000000, etc.)
+    // which differ from the base model. We pass these to the model so that
+    // build_mtp_head() uses the authoritative config instead of inferring from weights.
+    auto mtp_config_path = fs::path(delta_dir) / "config.json";
+    std::optional<MTPHeadConfig> mtp_head_cfg;
+    if (fs::exists(mtp_config_path)) {
+        std::ifstream mtp_config_file(mtp_config_path);
+        nlohmann::json mtp_config_json;
+        mtp_config_file >> mtp_config_json;
+        if (mtp_config_json.contains("text_config")) {
+            auto& tc = mtp_config_json["text_config"];
+            mtp_head_cfg = MTPHeadConfig{};
+            mtp_head_cfg->hidden_size = tc.value("hidden_size", 0);
+            mtp_head_cfg->intermediate_size = tc.value("intermediate_size", 0);
+            mtp_head_cfg->num_attention_heads = tc.value("num_attention_heads", 0);
+            mtp_head_cfg->num_key_value_heads = tc.value("num_key_value_heads", 0);
+            mtp_head_cfg->head_dim = tc.value("head_dim", 0);
+            mtp_head_cfg->rms_norm_eps = tc.value("rms_norm_eps", 1e-6f);
+            mtp_head_cfg->quant_bits = tc.value("quant_bits", 4);
+            mtp_head_cfg->quant_group_size = tc.value("quant_group_size", 64);
+            // rope_parameters is a nested object
+            if (tc.contains("rope_parameters")) {
+                auto& rp = tc["rope_parameters"];
+                mtp_head_cfg->rope_theta = rp.value("rope_theta", 10000.0f);
+                mtp_head_cfg->partial_rotary_factor = rp.value("partial_rotary_factor", 0.25f);
+            }
+        }
+    }
+
     auto base_config = parse_base_configuration(base_model_config_json);
 
     // Step 6: Create model from base config (matches loaded weights), sanitize, register quantized weights, load.
     auto j = nlohmann::json::parse(base_model_config_json.dump());
     Qwen35MoEConfiguration config = j.get<Qwen35MoEConfiguration>();
     auto model = std::make_shared<Qwen35MoEModel>(config);
+
+    // Pass MTP head config before loading weights so build_mtp_head() uses
+    // the authoritative config from the MTP model's config.json.
+    if (mtp_head_cfg.has_value()) {
+        model->set_mtp_head_config(mtp_head_cfg.value());
+    }
 
     weights = model->sanitize(std::move(weights));
 

@@ -206,6 +206,7 @@ class Qwen35Model
     // Stash mtp.* weights for MTPHead.
     std::unordered_map<std::string, mlx::core::array> mtp_weights_;
     std::optional<class MTPHead> mtp_head_;
+    std::optional<MTPHeadConfig> mtp_head_cfg_;
 
     // Build MTPHead from config and load stashed weights.
     void build_mtp_head();
@@ -224,6 +225,10 @@ public:
     int vocab_size() const { return config_.vocab_size; }
     void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+
+    // Set MTP head config before load_weights(). Used by load_mtp_delta_model()
+    // to pass MTP-specific architectural parameters from the delta model's config.json.
+    void set_mtp_head_config(const MTPHeadConfig& cfg) { mtp_head_cfg_ = cfg; }
 
     // MTP accessors (see mtp_head.h / sub-task 1 of I7).
     bool has_mtp() const { return mtp_head_.has_value(); }
