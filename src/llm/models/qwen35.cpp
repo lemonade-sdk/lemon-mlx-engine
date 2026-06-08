@@ -12,6 +12,7 @@
 #include <mlx-lm/common/quantized_linear.h>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace mx = mlx::core;
 
@@ -821,22 +822,33 @@ void Qwen35Model::build_mtp_head() {
     std::unordered_map<std::string, mx::array> dequantized_weights;
     std::vector<std::string> quant_prefixes;
 
+    // Named suffix constants for clarity and maintainability.
+    constexpr std::string_view kScalesSuffix = ".scales";
+    constexpr std::string_view kBiasesSuffix = ".biases";
+    constexpr std::string_view kWeightSuffix = ".weight";
+    const size_t scales_len = kScalesSuffix.size();
+    const size_t biases_len = kBiasesSuffix.size();
+    const size_t weight_len = kWeightSuffix.size();
+
     // Find quantized weight prefixes (those with .scales).
     for (const auto& [key, weight] : mtp_weights_) {
-        if (key.size() > 7 && key.compare(key.size() - 7, 7, ".scales") == 0) {
-            std::string prefix = key.substr(0, key.size() - 7);
-            std::string weight_key = prefix + ".weight";
+        if (key.size() > scales_len &&
+            key.compare(key.size() - scales_len, scales_len, kScalesSuffix) == 0) {
+            std::string prefix = key.substr(0, key.size() - scales_len);
+            std::string weight_key = prefix + std::string(kWeightSuffix);
             if (mtp_weights_.count(weight_key)) {
                 quant_prefixes.push_back(prefix);
             }
         }
     }
 
+    std::cerr << "[MTP] Found " << quant_prefixes.size() << " quantized weight groups" << std::endl;
+
     // Dequantize quantized weights.
     for (const auto& prefix : quant_prefixes) {
-        std::string weight_key = prefix + ".weight";
-        std::string scales_key = prefix + ".scales";
-        std::string biases_key = prefix + ".biases";
+        std::string weight_key = prefix + std::string(kWeightSuffix);
+        std::string scales_key = prefix + std::string(kScalesSuffix);
+        std::string biases_key = prefix + std::string(kBiasesSuffix);
 
         const auto& packed = mtp_weights_.at(weight_key);
         const auto& scales = mtp_weights_.at(scales_key);
@@ -852,14 +864,16 @@ void Qwen35Model::build_mtp_head() {
 
     // Copy non-quantized weights (skip scales/biases and already-dequantized).
     for (const auto& [key, weight] : mtp_weights_) {
-        if (key.size() > 7 && (key.compare(key.size() - 7, 7, ".scales") == 0 ||
-                               key.compare(key.size() - 7, 7, ".biases") == 0)) {
+        if (key.size() > scales_len &&
+            (key.compare(key.size() - scales_len, scales_len, kScalesSuffix) == 0 ||
+             key.compare(key.size() - biases_len, biases_len, kBiasesSuffix) == 0)) {
             continue;
         }
         bool is_quantized = false;
-        if (key.size() > 7 && key.compare(key.size() - 7, 7, ".weight") == 0) {
-            std::string prefix = key.substr(0, key.size() - 7);
-            is_quantized = mtp_weights_.count(prefix + ".scales") > 0;
+        if (key.size() > weight_len &&
+            key.compare(key.size() - weight_len, weight_len, kWeightSuffix) == 0) {
+            std::string prefix = key.substr(0, key.size() - weight_len);
+            is_quantized = mtp_weights_.count(prefix + std::string(kScalesSuffix)) > 0;
         }
         if (!is_quantized) {
             dequantized_weights[key] = weight;
@@ -919,13 +933,24 @@ void Qwen35Model::build_mtp_head() {
     }
 
     // Fallback: if weight inference didn't find values, use base model config.
-    if (cfg.hidden_size == 0) cfg.hidden_size = config_.hidden_size;
-    if (cfg.intermediate_size == 0) cfg.intermediate_size = config_.intermediate_size;
-    if (cfg.num_attention_heads == 0) cfg.num_attention_heads = config_.num_attention_heads;
-    if (cfg.num_key_value_heads == 0) cfg.num_key_value_heads = config_.num_key_value_heads;
-    if (cfg.head_dim == 0) cfg.head_dim = config_.resolved_head_dim();
+    bool used_fallback = false;
+    if (cfg.hidden_size == 0) { cfg.hidden_size = config_.hidden_size; used_fallback = true; }
+    if (cfg.intermediate_size == 0) { cfg.intermediate_size = config_.intermediate_size; used_fallback = true; }
+    if (cfg.num_attention_heads == 0) { cfg.num_attention_heads = config_.num_attention_heads; used_fallback = true; }
+    if (cfg.num_key_value_heads == 0) { cfg.num_key_value_heads = config_.num_key_value_heads; used_fallback = true; }
+    if (cfg.head_dim == 0) { cfg.head_dim = config_.resolved_head_dim(); used_fallback = true; }
     if (cfg.rms_norm_eps == 0) cfg.rms_norm_eps = config_.rms_norm_eps;
     if (cfg.rope_theta == 0) cfg.rope_theta = config_.rope_theta;
+
+    std::cerr << "[MTP] Inferred config: hidden_size=" << cfg.hidden_size
+              << " head_dim=" << cfg.head_dim
+              << " num_attention_heads=" << cfg.num_attention_heads
+              << " num_key_value_heads=" << cfg.num_key_value_heads
+              << " intermediate_size=" << cfg.intermediate_size
+              << " quant_bits=" << cfg.quant_bits
+              << " quant_group_size=" << cfg.quant_group_size
+              << (used_fallback ? " (used base model fallback)" : " (weight-derived)")
+              << std::endl;
 
     mtp_head_ = MTPHead(cfg);
     mtp_head_->load_mtp_weights(mtp_weights_);
