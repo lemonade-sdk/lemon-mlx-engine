@@ -880,6 +880,20 @@ void Qwen35Model::build_mtp_head() {
         }
     }
 
+    std::cerr << "[MTP] Dequantized " << dequantized_weights.size() << " weights total" << std::endl;
+
+    // Debug: print all keys containing "o_proj"
+    for (const auto& [key, weight] : dequantized_weights) {
+        if (key.find("o_proj") != std::string::npos) {
+            std::cerr << "[MTP] Found o_proj key: " << key << " shape=[";
+            for (int i = 0; i < weight.ndim(); ++i) {
+                if (i > 0) std::cerr << ",";
+                std::cerr << weight.shape(i);
+            }
+            std::cerr << "]" << std::endl;
+        }
+    }
+
     // Now read shapes from dequantized weights.
     // o_proj: [hidden_size, num_attention_heads * head_dim]
     // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
@@ -889,6 +903,7 @@ void Qwen35Model::build_mtp_head() {
     // since multiple head_dim values can divide the same attn_dim (e.g.,
     // both 64 and 128 divide 2048), and we must match the base model.
     int base_hd = config_.resolved_head_dim();
+    std::cerr << "[MTP] Base model head_dim: " << base_hd << std::endl;
     std::vector<int> hd_candidates = {base_hd};
     for (int c : {64, 80, 96, 128, 160, 256}) {
         if (c != base_hd) hd_candidates.push_back(c);
