@@ -966,44 +966,56 @@ void Qwen35MoEModel::build_mtp_head() {
 
     std::cerr << "[MTP] Dequantized " << dequantized_weights.size() << " weights total" << std::endl;
 
-    // Debug: print all keys containing "o_proj"
+    // --- Pass 1: Determine head_dim from q_norm/k_norm weight shapes (ground truth).
+    // q_norm and k_norm are RMSNorm layers applied per-head, so their weight
+    // size ALWAYS equals head_dim.  This is unambiguous regardless of
+    // quantisation format, unlike matmul weight factorisation which can have
+    // multiple valid (head_dim, num_heads) decompositions.
     for (const auto& [key, weight] : dequantized_weights) {
-        if (key.find("o_proj") != std::string::npos) {
-            std::cerr << "[MTP] Found o_proj key: " << key << " shape=[";
-            for (int i = 0; i < weight.ndim(); ++i) {
-                if (i > 0) std::cerr << ",";
-                std::cerr << weight.shape(i);
-            }
-            std::cerr << "]" << std::endl;
+        if ((key.find("self_attn.q_norm.weight") != std::string::npos ||
+             key.find("self_attn.k_norm.weight") != std::string::npos) &&
+            weight.ndim() >= 1) {
+            cfg.head_dim = weight.shape(0);
+            std::cerr << "[MTP] Got head_dim=" << cfg.head_dim
+                      << " from " << key << " (norm-weight ground truth)"
+                      << std::endl;
+            break;
         }
     }
 
-    // Now read shapes from dequantized weights.
+    // --- Pass 2: Infer remaining dimensions from projection weights.
     // o_proj: [hidden_size, num_attention_heads * head_dim]
     // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
     // k_proj: [num_kv_heads * head_dim, hidden_size]
     //
-    // IMPORTANT: Do NOT use config_.resolved_head_dim() as it's the BASE model's head_dim,
-    // which may differ from the MTP head's actual head_dim. Instead, try standard values
-    // in order of likelihood for Qwen architectures.
-    std::vector<int> hd_candidates = {128, 256, 64, 96, 80, 160};
+    // If head_dim was already determined from norms (Pass 1), we compute
+    // num_attention_heads / num_key_value_heads directly.  Only fall back to
+    // a candidate search when norms are absent.
+    std::vector<int> hd_candidates = {256, 128, 64, 96, 80, 160};
 
     for (const auto& [key, weight] : dequantized_weights) {
         if (key.find("self_attn.o_proj.weight") != std::string::npos) {
             if (weight.ndim() >= 2) {
                 int o_proj_dim0 = weight.shape(0);
                 int attn_dim = weight.shape(1);
-                // Use weight-derived hidden_size if config didn't provide it.
                 if (cfg.hidden_size == 0) cfg.hidden_size = o_proj_dim0;
-                // head_dim must divide both hidden_size and attn_dim evenly.
-                for (int try_hd : hd_candidates) {
-                    if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
-                        cfg.head_dim = try_hd;
-                        cfg.num_attention_heads = attn_dim / try_hd;
-                        std::cerr << "[MTP] Selected head_dim=" << try_hd
-                                  << " (divides both hidden_size=" << cfg.hidden_size
-                                  << " and attn_dim=" << attn_dim << ")" << std::endl;
-                        break;
+                if (cfg.head_dim > 0) {
+                    // head_dim already known — derive num_attention_heads directly.
+                    cfg.num_attention_heads = attn_dim / cfg.head_dim;
+                    std::cerr << "[MTP] head_dim=" << cfg.head_dim
+                              << " num_attention_heads=" << cfg.num_attention_heads
+                              << " (from o_proj attn_dim=" << attn_dim << ")"
+                              << std::endl;
+                } else {
+                    // Fallback: try standard head_dim values (largest first).
+                    for (int try_hd : hd_candidates) {
+                        if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
+                            cfg.head_dim = try_hd;
+                            cfg.num_attention_heads = attn_dim / try_hd;
+                            std::cerr << "[MTP] Selected head_dim=" << try_hd
+                                      << " via candidate search" << std::endl;
+                            break;
+                        }
                     }
                 }
             }
