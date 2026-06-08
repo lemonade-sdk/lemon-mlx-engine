@@ -125,7 +125,11 @@ mx::array MTPDecoderLayerMoE::operator()(
     auto shared_gate = mx::sigmoid(linear_no_bias(post, shared_expert_gate_weight_));
     // Shared expert uses single "expert" (num_experts=1), so indices = [[0]].
     auto shared_inds = mx::full({post.shape(0), post.shape(1), 1}, 0, mx::int32);
-    auto shared_out = shared_expert_(post, shared_inds);
+    // SwitchGLU with indices shape [B, L, 1] returns [B, L, 1, intermediate].
+    // We need 3D [B, L, intermediate] to match the main MoE output from
+    // compiled_combine, so squeeze at -2.
+    auto shared_raw = shared_expert_(post, shared_inds);
+    auto shared_out = mx::squeeze(shared_raw, -2);
     auto mlp_out = mx::add(combined, mx::multiply(shared_gate, shared_out));
 
     return mx::add(h, mlp_out);

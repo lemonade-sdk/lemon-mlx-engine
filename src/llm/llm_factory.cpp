@@ -263,6 +263,57 @@ ModelContext load_llm_from_directory(
     nlohmann::json config_json;
     config_file >> config_json;
 
+    // Detect MTP delta models (model_type="qwen3_5_mtp") and redirect
+    // to the delta loading path which merges with the base model.
+    // MTP delta models contain only the MTP head weights (single decoder
+    // layer + fc/norm) and cannot be loaded standalone.
+    std::string model_type = config_json.value("model_type", "");
+    if (model_type == "qwen3_5_mtp") {
+        std::string model_id = config.id.empty() ? model_directory : config.id;
+        std::cerr << "[MTP] Delta model detected via load_llm, redirecting to load_mtp_delta_model\n";
+        auto ctx = load_mtp_delta_model(model_id);
+        ctx.model_id = model_id;
+
+        if (!ctx.eos_token_ids.has_value()) {
+            if (config_json.contains("text_config") && config_json["text_config"].contains("eos_token_id")) {
+                ctx.eos_token_ids = {config_json["text_config"]["eos_token_id"].get<int>()};
+            }
+        }
+
+        // Load tokenizer from delta model directory
+        std::shared_ptr<Tokenizer> tokenizer;
+        auto tokenizer_json_path = fs::path(model_directory) / "tokenizer.json";
+        if (fs::exists(tokenizer_json_path)) {
+            tokenizer = Tokenizer::from_directory(model_directory);
+            ctx.encode_fn = [tokenizer](const std::string& text) {
+                return tokenizer->encode(text);
+            };
+            ctx.decode_fn = [tokenizer](const std::vector<int>& ids) {
+                return tokenizer->decode(ids);
+            };
+        }
+
+        // Load chat template
+        auto chat_tmpl = load_chat_template(model_directory);
+        if (chat_tmpl.has_value() && tokenizer) {
+            auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
+            if (ctx.eos_token_ids.has_value() && !shared_tmpl->eos_token().empty()) {
+                int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
+                if (eos_id >= 0) {
+                    ctx.eos_token_ids = std::vector<int>{eos_id};
+                }
+            }
+            auto extra_ctx = std::make_shared<nlohmann::json>();
+            ctx.template_extra_context = extra_ctx;
+            ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
+                const std::vector<Message>& messages) -> std::vector<int> {
+                auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
+                return tokenizer->encode(rendered);
+            };
+        }
+        return ctx;
+    }
+
     auto base_config = parse_base_configuration(config_json);
 
     // Find the loader for this model type
@@ -399,10 +450,12 @@ ModelContext load_mtp_delta_model(
     base_config_file >> base_model_config_json;
 
     // Step 5b: Read MTP delta model config.json for MTP head parameters.
-    // The MTP model's text_config contains the correct architectural parameters
-    // for the MTP head (hidden_size=2560, head_dim=256, rope_theta=10000000, etc.)
-    // which differ from the base model. We pass these to the model so that
-    // build_mtp_head() uses the authoritative config instead of inferring from weights.
+    // The MTP model's text_config contains some correct architectural parameters
+    // (hidden_size=2560, intermediate_size=9216, rope_theta=10000000) but the
+    // head_dim and num_attention_heads fields are inconsistent with actual weights.
+    // We extract only the reliable fields (hidden_size, intermediate_size, rope)
+    // and leave head_dim/num_attention_heads/num_key_value_heads as 0 so that
+    // build_mtp_head() derives them from actual weight shapes.
     auto mtp_config_path = fs::path(delta_dir) / "config.json";
     std::optional<MTPHeadConfig> mtp_head_cfg;
     if (fs::exists(mtp_config_path)) {
@@ -414,9 +467,12 @@ ModelContext load_mtp_delta_model(
             mtp_head_cfg = MTPHeadConfig{};
             mtp_head_cfg->hidden_size = tc.value("hidden_size", 0);
             mtp_head_cfg->intermediate_size = tc.value("intermediate_size", 0);
-            mtp_head_cfg->num_attention_heads = tc.value("num_attention_heads", 0);
-            mtp_head_cfg->num_key_value_heads = tc.value("num_key_value_heads", 0);
-            mtp_head_cfg->head_dim = tc.value("head_dim", 0);
+            // DO NOT set head_dim, num_attention_heads, num_key_value_heads —
+            // these are wrong in the MTP config.json. build_mtp_head() will
+            // derive them from actual weight shapes (o_proj, q_proj, k_proj).
+            mtp_head_cfg->head_dim = 0;
+            mtp_head_cfg->num_attention_heads = 0;
+            mtp_head_cfg->num_key_value_heads = 0;
             mtp_head_cfg->rms_norm_eps = tc.value("rms_norm_eps", 1e-6f);
             mtp_head_cfg->quant_bits = tc.value("quant_bits", 4);
             mtp_head_cfg->quant_group_size = tc.value("quant_group_size", 64);
@@ -437,7 +493,8 @@ ModelContext load_mtp_delta_model(
     auto model = std::make_shared<Qwen35MoEModel>(config);
 
     // Pass MTP head config before loading weights so build_mtp_head() uses
-    // the authoritative config from the MTP model's config.json.
+    // config.json for hidden_size, intermediate_size, rope_theta, while
+    // deriving head_dim/num_attention_heads/num_key_value_heads from weights.
     if (mtp_head_cfg.has_value()) {
         model->set_mtp_head_config(mtp_head_cfg.value());
     }

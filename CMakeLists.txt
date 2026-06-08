@@ -39,10 +39,45 @@ FetchContent_Declare(
     # with hipcc 7.13 / LLVM 23, the clear_streams() ROCm backend patch,
     # AND the affine_dequantize_packed_kernel #pragma unroll fix (PR #10)
     # that fixes 4-bit quantized inference corruption on gfx1151 RDNA 3.5.
+    #
+    # Local patch (patches/rocm-skip-dequant-gemm-uint32.patch):
+    # Fixes silent data corruption in dequant+GEMM path where 4-bit
+    # packed weights (uint32 dtype) are read as uint8_t* by
+    # affine_dequantize, producing garbage output. See:
+    # ROCM_4BIT_QUANTIZATION_ROOT_CAUSE.md
     GIT_TAG        45f6ee187f0d6a151ef5c44a610148e7ee36de1b
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
+
+# Apply local ROCm 4-bit quantization fix.
+# The affine_dequantize kernel reads uint32 packed weights as uint8_t*,
+# causing only 12.5% of output to be computed. This patch skips the
+# broken dequant+GEMM path for uint32 weights, falling through to the
+# QMV kernel path which handles uint32 correctly.
+set(MLX_ROCM_FIX_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/rocm-skip-dequant-gemm-uint32.patch")
+if(EXISTS "${MLX_ROCM_FIX_PATCH}")
+    execute_process(
+        COMMAND git apply --check "${MLX_ROCM_FIX_PATCH}"
+        WORKING_DIRECTORY "${mlx_SOURCE_DIR}"
+        RESULT_VARIABLE PATCH_CHECK_RESULT
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+    if(PATCH_CHECK_RESULT EQUAL 0)
+        message(STATUS "Applying ROCm 4-bit quantization fix patch...")
+        execute_process(
+            COMMAND git apply "${MLX_ROCM_FIX_PATCH}"
+            WORKING_DIRECTORY "${mlx_SOURCE_DIR}"
+            RESULT_VARIABLE PATCH_RESULT
+        )
+        if(NOT PATCH_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to apply ROCm 4-bit quantization fix patch. See ROCM_4BIT_QUANTIZATION_ROOT_CAUSE.md for details.")
+        endif()
+    else()
+        message(STATUS "ROCm 4-bit quantization fix patch already applied or not needed")
+    endif()
+endif()
 
 # nlohmann/json (MLX may already provide this)
 if(NOT TARGET nlohmann_json::nlohmann_json)

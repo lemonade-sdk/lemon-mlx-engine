@@ -148,10 +148,20 @@ mx::array MTPHead::operator()(
     const mx::array& token_embedding,
     const AttentionMask& mask,
     KVCache* cache) {
+    // Defensive: ensure inputs are 3D [B, L, H] for rms_norm.
+    // During speculative decoding, single-token inputs may arrive as 2D.
+    auto hs = hidden_state;
+    auto te = token_embedding;
+    if (hs.ndim() == 2) {
+        hs = mx::reshape(hs, {1, 1, hs.shape(-1)});
+    }
+    if (te.ndim() == 2) {
+        te = mx::reshape(te, {1, 1, te.shape(-1)});
+    }
     auto h_norm = mx::fast::rms_norm(
-        hidden_state, pre_fc_norm_hidden_weight_, args_.rms_norm_eps);
+        hs, pre_fc_norm_hidden_weight_, args_.rms_norm_eps);
     auto e_norm = mx::fast::rms_norm(
-        token_embedding, pre_fc_norm_embedding_weight_, args_.rms_norm_eps);
+        te, pre_fc_norm_embedding_weight_, args_.rms_norm_eps);
     // Note: qwen3_5.py:357 concatenates [e_norm, h_norm] (embedding first).
     auto cat = mx::concatenate({e_norm, h_norm}, -1);
     auto h = linear_no_bias(cat, fc_weight_);

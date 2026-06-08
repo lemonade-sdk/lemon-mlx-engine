@@ -798,35 +798,34 @@ void Qwen35Model::load_weights(const std::unordered_map<std::string, mx::array>&
 void Qwen35Model::build_mtp_head() {
     MTPHeadConfig cfg;
 
-    // Priority 1: Use MTP config set by load_mtp_delta_model() from the
-    // delta model's config.json. This is the authoritative source of MTP
-    // head architectural parameters (hidden_size=2560, head_dim=256, etc.).
-    if (mtp_head_cfg_.has_value()) {
-        cfg = mtp_head_cfg_.value();
-        mtp_head_ = MTPHead(cfg);
-        mtp_head_->load_mtp_weights(mtp_weights_);
-        return;
+    // Step 1: Apply config.json values for fields that are reliable:
+    // hidden_size, intermediate_size, rope_theta, rms_norm_eps.
+    // head_dim, num_attention_heads, num_key_value_heads are intentionally
+    // set to 0 in llm_factory.cpp because the MTP config.json has wrong
+    // values for these — they must be derived from actual weight shapes.
+    bool has_config = mtp_head_cfg_.has_value();
+    if (has_config) {
+        auto& src = mtp_head_cfg_.value();
+        if (src.hidden_size > 0) cfg.hidden_size = src.hidden_size;
+        if (src.intermediate_size > 0) cfg.intermediate_size = src.intermediate_size;
+        if (src.rope_theta > 0) cfg.rope_theta = src.rope_theta;
+        if (src.rms_norm_eps > 0) cfg.rms_norm_eps = src.rms_norm_eps;
+        cfg.partial_rotary_factor = src.partial_rotary_factor;
     }
 
-    // Priority 2: Infer from the actual checkpoint weight shapes.
-    // This path is used when MTP weights are loaded outside of
-    // load_mtp_delta_model() (e.g., local directory loading).
+    // Step 2: Derive head_dim, num_attention_heads, num_key_value_heads
+    // from the actual checkpoint weight shapes.
+    // o_proj: [hidden_size, num_attention_heads * head_dim]
+    // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
+    // k_proj: [num_kv_heads * head_dim, hidden_size]
     for (const auto& [key, weight] : mtp_weights_) {
-        if (key.find("mlp.gate_proj.weight") != std::string::npos ||
-            key.find("mlp.up_proj.weight") != std::string::npos) {
-            // gate_proj/up_proj: [intermediate_size, hidden_size]
-            if (weight.ndim() >= 1) {
-                cfg.intermediate_size = weight.shape(0);
-                cfg.hidden_size = weight.shape(1);
-            }
-        } else if (key.find("self_attn.o_proj.weight") != std::string::npos) {
-            // o_proj: [hidden_size, num_attention_heads * head_dim]
-            // The second dimension gives us num_attention_heads * head_dim.
+        if (key.find("self_attn.o_proj.weight") != std::string::npos) {
             if (weight.ndim() >= 2) {
-                cfg.hidden_size = weight.shape(0);
+                int o_proj_dim0 = weight.shape(0);
                 int attn_dim = weight.shape(1);
-                // head_dim must divide hidden_size evenly. Try common values.
-                // For Qwen3.5-4B-MTP: hidden=2560, attn_dim=2048 -> head_dim=64, num_heads=32
+                // Use weight-derived hidden_size if config didn't provide it.
+                if (cfg.hidden_size == 0) cfg.hidden_size = o_proj_dim0;
+                // head_dim must divide both hidden_size and attn_dim evenly.
                 for (int try_hd : {64, 80, 96, 128, 160}) {
                     if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
                         cfg.head_dim = try_hd;
@@ -836,20 +835,23 @@ void Qwen35Model::build_mtp_head() {
                 }
             }
         } else if (key.find("self_attn.k_proj.weight") != std::string::npos) {
-            // k_proj: [num_kv_heads * head_dim, hidden_size]
             if (weight.ndim() >= 2 && cfg.head_dim > 0) {
                 cfg.num_key_value_heads = weight.shape(0) / cfg.head_dim;
             }
         } else if (key.find("self_attn.q_proj.weight") != std::string::npos) {
-            // q_proj: [num_attention_heads * head_dim * 2, hidden_size]
-            // (* 2 for fused Q+gate projection)
-            // Use as cross-check: q_proj_dim should equal num_heads * head_dim * 2.
+            // Cross-check: q_proj[0] = num_heads * head_dim * 2
             if (weight.ndim() >= 1 && cfg.head_dim > 0) {
                 int q_proj_dim = weight.shape(0);
                 int inferred_heads = q_proj_dim / (cfg.head_dim * 2);
                 if (inferred_heads > 0) {
                     cfg.num_attention_heads = inferred_heads;
                 }
+            }
+        } else if (key.find("mlp.gate_proj.weight") != std::string::npos ||
+                   key.find("mlp.up_proj.weight") != std::string::npos) {
+            if (weight.ndim() >= 1) {
+                if (cfg.intermediate_size == 0) cfg.intermediate_size = weight.shape(0);
+                if (cfg.hidden_size == 0) cfg.hidden_size = weight.shape(1);
             }
         }
     }
@@ -860,9 +862,8 @@ void Qwen35Model::build_mtp_head() {
     if (cfg.num_attention_heads == 0) cfg.num_attention_heads = config_.num_attention_heads;
     if (cfg.num_key_value_heads == 0) cfg.num_key_value_heads = config_.num_key_value_heads;
     if (cfg.head_dim == 0) cfg.head_dim = config_.resolved_head_dim();
-    cfg.rms_norm_eps = config_.rms_norm_eps;
-    cfg.rope_theta = config_.rope_theta;
-    cfg.partial_rotary_factor = config_.partial_rotary_factor;
+    if (cfg.rms_norm_eps == 0) cfg.rms_norm_eps = config_.rms_norm_eps;
+    if (cfg.rope_theta == 0) cfg.rope_theta = config_.rope_theta;
 
     mtp_head_ = MTPHead(cfg);
     mtp_head_->load_mtp_weights(mtp_weights_);
