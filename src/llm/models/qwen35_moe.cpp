@@ -895,10 +895,62 @@ void Qwen35MoEModel::build_mtp_head() {
         if (src.rope_theta > 0) cfg.rope_theta = src.rope_theta;
         if (src.rms_norm_eps > 0) cfg.rms_norm_eps = src.rms_norm_eps;
         cfg.partial_rotary_factor = src.partial_rotary_factor;
+        if (src.quant_bits > 0) cfg.quant_bits = src.quant_bits;
+        if (src.quant_group_size > 0) cfg.quant_group_size = src.quant_group_size;
     }
 
-    // Step 2: Derive head_dim, num_attention_heads, num_key_value_heads
-    // from the actual checkpoint weight shapes.
+    // Step 2: Dequantize weights BEFORE reading shapes.
+    // Quantized weights are stored as packed uint32 arrays with shape [M, N*bits/32].
+    // We need the original dimensions for correct head_dim/num_attention_heads inference.
+    std::unordered_map<std::string, mx::array> dequantized_weights;
+    std::vector<std::string> quant_prefixes;
+
+    // Find quantized weight prefixes (those with .scales).
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.size() > 7 && key.compare(key.size() - 7, 7, ".scales") == 0) {
+            std::string prefix = key.substr(0, key.size() - 7);
+            std::string weight_key = prefix + ".weight";
+            if (mtp_weights_.count(weight_key)) {
+                quant_prefixes.push_back(prefix);
+            }
+        }
+    }
+
+    // Dequantize quantized weights.
+    for (const auto& prefix : quant_prefixes) {
+        std::string weight_key = prefix + ".weight";
+        std::string scales_key = prefix + ".scales";
+        std::string biases_key = prefix + ".biases";
+
+        const auto& packed = mtp_weights_.at(weight_key);
+        const auto& scales = mtp_weights_.at(scales_key);
+        std::optional<mx::array> biases;
+        auto bit = mtp_weights_.find(biases_key);
+        if (bit != mtp_weights_.end()) {
+            biases = bit->second;
+        }
+
+        auto deq = mx::dequantize(packed, scales, biases, cfg.quant_group_size, cfg.quant_bits);
+        dequantized_weights[weight_key] = std::move(deq);
+    }
+
+    // Copy non-quantized weights (skip scales/biases and already-dequantized).
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.size() > 7 && (key.compare(key.size() - 7, 7, ".scales") == 0 ||
+                               key.compare(key.size() - 7, 7, ".biases") == 0)) {
+            continue;
+        }
+        bool is_quantized = false;
+        if (key.size() > 7 && key.compare(key.size() - 7, 7, ".weight") == 0) {
+            std::string prefix = key.substr(0, key.size() - 7);
+            is_quantized = mtp_weights_.count(prefix + ".scales") > 0;
+        }
+        if (!is_quantized) {
+            dequantized_weights[key] = weight;
+        }
+    }
+
+    // Now read shapes from dequantized weights.
     // o_proj: [hidden_size, num_attention_heads * head_dim]
     // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
     // k_proj: [num_kv_heads * head_dim, hidden_size]
@@ -912,7 +964,7 @@ void Qwen35MoEModel::build_mtp_head() {
         if (c != base_hd) hd_candidates.push_back(c);
     }
 
-    for (const auto& [key, weight] : mtp_weights_) {
+    for (const auto& [key, weight] : dequantized_weights) {
         if (key.find("self_attn.o_proj.weight") != std::string::npos) {
             if (weight.ndim() >= 2) {
                 int o_proj_dim0 = weight.shape(0);
