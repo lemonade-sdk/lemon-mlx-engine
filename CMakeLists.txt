@@ -33,11 +33,13 @@ endif()
 FetchContent_Declare(
     mlx
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    # Pin MLX to post-PR#7 commit (2026-05-20).
+    # Pin MLX to post-PR#10 commit (2026-06-07).
     # Includes soloish90's 8-bit QMV fix (PR #6), the uint4 miscompile
     # fix (PR #7 — 9e768e4) where global_load_b128 miscompiles on RDNA 3.5
-    # with hipcc 7.13 / LLVM 23, AND the clear_streams() ROCm backend patch.
-    GIT_TAG        94d325ce5fda85f3a3266623d220af4e3a873fb6
+    # with hipcc 7.13 / LLVM 23, the clear_streams() ROCm backend patch,
+    # AND the affine_dequantize_packed_kernel #pragma unroll fix (PR #10)
+    # that fixes 4-bit quantized inference corruption on gfx1151 RDNA 3.5.
+    GIT_TAG        45f6ee187f0d6a151ef5c44a610148e7ee36de1b
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
