@@ -818,6 +818,16 @@ void Qwen35Model::build_mtp_head() {
     // o_proj: [hidden_size, num_attention_heads * head_dim]
     // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
     // k_proj: [num_kv_heads * head_dim, hidden_size]
+    //
+    // IMPORTANT: Build candidate list with base model's head_dim first,
+    // since multiple head_dim values can divide the same attn_dim (e.g.,
+    // both 64 and 128 divide 2048), and we must match the base model.
+    int base_hd = config_.resolved_head_dim();
+    std::vector<int> hd_candidates = {base_hd};
+    for (int c : {64, 80, 96, 128, 160, 256}) {
+        if (c != base_hd) hd_candidates.push_back(c);
+    }
+
     for (const auto& [key, weight] : mtp_weights_) {
         if (key.find("self_attn.o_proj.weight") != std::string::npos) {
             if (weight.ndim() >= 2) {
@@ -826,7 +836,7 @@ void Qwen35Model::build_mtp_head() {
                 // Use weight-derived hidden_size if config didn't provide it.
                 if (cfg.hidden_size == 0) cfg.hidden_size = o_proj_dim0;
                 // head_dim must divide both hidden_size and attn_dim evenly.
-                for (int try_hd : {64, 80, 96, 128, 160}) {
+                for (int try_hd : hd_candidates) {
                     if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
                         cfg.head_dim = try_hd;
                         cfg.num_attention_heads = attn_dim / try_hd;
