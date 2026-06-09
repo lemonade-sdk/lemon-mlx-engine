@@ -882,6 +882,17 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
         auto it = weights.find(name);
         if (it != weights.end()) *target = it->second;
     }
+    // If lm_head_weight_ was initialized (tie_word_embeddings=false) but the
+    // checkpoint didn't have lm_head.weight, the model actually uses tied
+    // embeddings. Clear the optional so call_impl falls back to embed_as_linear.
+    // Check if lm_head_weight_ is still all zeros (uninitialized placeholder).
+    if (lm_head_weight_.has_value()) {
+        auto it = weights.find("lm_head.weight");
+        if (it == weights.end()) {
+            // lm_head.weight not in checkpoint — model uses tied embeddings
+            lm_head_weight_ = std::nullopt;
+        }
+    }
     // Wire MTPHead if we have MTP weights.
     if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
         build_mtp_head();
