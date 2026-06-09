@@ -72,8 +72,9 @@ struct LMOutput {
         std::optional<mlx::core::array> cross_attention_states;
         std::optional<mlx::core::array> hidden_intermediates;  // [B, T, H] for MTP drafting
 
-        State(std::optional<mlx::core::array> cross_attention_states = std::nullopt,
-              std::optional<mlx::core::array> hidden_intermediates = std::nullopt)
+        State() = default;
+        State(std::optional<mlx::core::array> cross_attention_states,
+              std::optional<mlx::core::array> hidden_intermediates)
             : cross_attention_states(std::move(cross_attention_states)),
               hidden_intermediates(std::move(hidden_intermediates)) {}
     };
