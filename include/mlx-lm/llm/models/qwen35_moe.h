@@ -307,7 +307,7 @@ public:
         // For tied embeddings (or if lm_head_weight_ was cleared), delegate to
         // the inner model which uses embed_tokens_weight_.
         if (lm_head_weight_.has_value()) {
-            return mx::matmul(hidden, mx::transpose(lm_head_weight_.value()));
+            return mlx::core::matmul(hidden, mlx::core::transpose(lm_head_weight_.value()));
         }
         return model_.apply_lm_head(hidden);
     }
