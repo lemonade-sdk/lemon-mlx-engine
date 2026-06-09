@@ -716,8 +716,11 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         // so we must capture manually.
         if (accepted == 0) {
             // Advance cache by running trunk on the single correct token.
+            // add_batch_dim ensures 1D [1] → 2D [1,1] so the model produces
+            // 3D [1,1,H] hidden states (without it, mx::take embeds to 2D
+            // [1,H] and the GDN layer misreads hidden_size as seq_len).
             auto rerun_state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
-            result = context_.call_fn(y_, &cache_, &rerun_state);
+            result = context_.call_fn(add_batch_dim(y_), &cache_, &rerun_state);
             state_ = result.state;
             maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
             logits = result.logits;  // [1, 1, vocab]

@@ -606,7 +606,15 @@ Qwen35MoEModelInner::Qwen35MoEModelInner(const Qwen35MoEConfiguration& args)
 }
 
 mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<KVCache>* cache) {
-    auto h = mx::take(embed_tokens_weight_, inputs, 0);
+    // Defensive: ensure tokens are at least 2D [B, S].
+    // Some callers (e.g., MTP rerun in generate.cpp) may pass 1D [S] token IDs.
+    // Without this, mx::take produces 2D [S, H] instead of 3D [1, S, H],
+    // causing downstream layers to misinterpret hidden_size as sequence length.
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
 
     // Find the first full-attention index for attention mask
     int fa_idx = full_attention_interval_ - 1;

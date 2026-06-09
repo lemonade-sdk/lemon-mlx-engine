@@ -295,7 +295,6 @@ jobs:
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
     runs-on: ${{ fromJSON(matrix.runs_on) }}
-    continue-on-error: ${{ matrix.allow_failure || false }}
     timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
     strategy:
       fail-fast: false
@@ -316,10 +315,6 @@ jobs:
             use_mtp: true
             no_think: true
             timeout_minutes: 30
-            # Safety net: keep allow_failure until patch removal is verified on CI.
-            # PR #10 (MLX commit 45f6ee1) fixed the root cause upstream.
-            # Our local patch (rocm-skip-dequant-gemm-uint32.patch) has been deleted.
-            allow_failure: true
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'
@@ -536,16 +531,6 @@ jobs:
 
         if [ "$PASS" = "true" ]; then
           echo "INFERENCE TEST PASSED -- model answered correctly on attempt $ATTEMPT"
-        elif [ "${{ matrix.allow_failure }}" = "true" ]; then
-          echo "=== KNOWN FAILURE (upstream ROCm bug) ==="
-          echo "Inference test failed as expected due to upstream MLX ROCm kernel bug."
-          echo "This is NOT an MTP implementation bug. Server started correctly."
-          echo "=== Server Log (last 50 lines) ==="
-          tail -50 server.log 2>/dev/null || true
-          kill $SERVER_PID 2>/dev/null || true
-          wait $SERVER_PID 2>/dev/null || true
-          echo "SKIPPED (known ROCm upstream issue) -- server started OK, inference blocked by MLX bug"
-          exit 0
         else
           echo "=== Server Response ==="
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
