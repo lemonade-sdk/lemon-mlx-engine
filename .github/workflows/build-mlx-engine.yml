@@ -295,7 +295,6 @@ jobs:
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
     runs-on: ${{ fromJSON(matrix.runs_on) }}
-    continue-on-error: ${{ matrix.allow_failure || false }}
     timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
     strategy:
       fail-fast: false
@@ -316,7 +315,6 @@ jobs:
             use_mtp: true
             no_think: true
             timeout_minutes: 30
-            allow_failure: true  # ROCm MTP has GPU-specific issues (CPU MTP passes)
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'

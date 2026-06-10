@@ -548,6 +548,15 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     int n_draft = current_draft_count();
     int trunk_cache_pos = static_cast<int>(cache_.empty() ? 0 : cache_[0].get_position());
 
+    // Reset MTP head cache to prevent stale KV pairs from previous speculative
+    // steps (where drafts may have been rejected). Without this reset, the MTP
+    // head's attention would attend to KV from rejected drafts, corrupting the
+    // hidden state and producing garbage output — especially on ROCm where
+    // 4-bit quantization amplifies the noise.
+    for (auto& c : mtp_caches_) {
+        c.set_position(0);
+    }
+
     // Embed the current token for MTP input.
     auto token_embed = context_.embed_fn(y_.tokens);
 
