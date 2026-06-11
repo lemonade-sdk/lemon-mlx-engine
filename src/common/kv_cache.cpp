@@ -250,18 +250,62 @@ QuantizedKVCache::update_impl(
 }
 
 // Roll back to a saved offset by slicing the QTuples along axis 2.
-// For small rollbacks (typical in MTP speculative decoding: 1-4 tokens),
-// we skip the expensive slice and just adjust the offset — the stale
-// quantized data past the offset is never accessed during dequantization.
+// Matches KVCacheSimple behavior: physically removes stale entries so
+// dequantize_kv() never sees them. This is critical for MTP speculative
+// decoding where rejected draft tokens must be fully removed from cache.
 void QuantizedKVCache::set_position(size_t pos) {
     int target = static_cast<int>(pos);
-    if (target >= offset_) return;
+    if (target >= offset_) {
+        return;  // Nothing to roll back
+    }
+
     if (!keys_.has_value()) {
         offset_ = target;
         return;
     }
-    // Skip slicing for small rollbacks — offset limits what's visible.
-    // This avoids O(n) allocation and copy of quantized tensors.
+
+    // Calculate how many entries to remove
+    int delta = offset_ - target;
+    int total = keys_->weight.shape(2);
+    int to_remove = std::min(delta, total);
+
+    if (to_remove == total) {
+        // Remove all entries
+        keys_ = std::nullopt;
+        values_ = std::nullopt;
+    } else {
+        // Slice QTuples to keep only valid entries
+        int keep = total - to_remove;
+
+        // Slice keys QTuple
+        auto k_shape = keys_->weight.shape();
+        int B = k_shape[0], H = k_shape[1], packed_D = k_shape[3];
+        int scales_D = keys_->scales.shape(3);
+
+        keys_ = QTuple{
+            mx::slice(keys_->weight, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, packed_D}),
+            mx::slice(keys_->scales, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D}),
+            mx::slice(keys_->biases, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D})
+        };
+
+        // Slice values QTuple
+        auto v_shape = values_->weight.shape();
+        B = v_shape[0]; H = v_shape[1]; packed_D = v_shape[3];
+        scales_D = values_->scales.shape(3);
+
+        values_ = QTuple{
+            mx::slice(values_->weight, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, packed_D}),
+            mx::slice(values_->scales, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D}),
+            mx::slice(values_->biases, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D})
+        };
+    }
+
     offset_ = target;
 }
 
