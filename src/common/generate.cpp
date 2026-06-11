@@ -708,6 +708,13 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             c.set_position(trunk_cache_pos);
         }
 
+        // Also roll back MTP head caches to prevent stale KV from rejected
+        // drafts. The MTP head's cache must stay aligned with the trunk's
+        // cache position for correct speculative decoding.
+        for (auto& c : mtp_caches_) {
+            c.set_position(trunk_cache_pos);
+        }
+
         // Re-run trunk on accepted tokens. Feed [d0, d1, ..., d_{accepted}].
         // d0 is always accepted (not verified). d1...d_{accepted} were verified.
         // This advances the cache by accepted+1 tokens.

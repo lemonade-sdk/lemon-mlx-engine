@@ -255,6 +255,17 @@ QuantizedKVCache::update_impl(
 // decoding where rejected draft tokens must be fully removed from cache.
 void QuantizedKVCache::set_position(size_t pos) {
     int target = static_cast<int>(pos);
+
+    // Special case: resetting to position 0 should always clear the cache,
+    // even if offset_ is already 0 (e.g., after a speculative step with
+    // rejected drafts that left stale quantized KV data).
+    if (target == 0) {
+        keys_ = std::nullopt;
+        values_ = std::nullopt;
+        offset_ = 0;
+        return;
+    }
+
     if (target >= offset_) {
         return;  // Nothing to roll back
     }
