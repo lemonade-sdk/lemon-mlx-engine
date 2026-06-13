@@ -579,6 +579,9 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
 
     MTPHead* mtp_head = static_cast<MTPHead*>(context_.get_mtp_head_fn());
     int n_draft = current_draft_count();
+    static const bool kMtpTiming = (std::getenv("MTP_TIMING") != nullptr);
+    auto t_start = std::chrono::steady_clock::now();
+    auto t_draft = t_start, t_verify = t_start;
     // Read the trunk's sequence position from a FULL-ATTENTION (non-Mamba)
     // cache. This model is hybrid (Qwen3.5-Next): linear-attention layers use a
     // MambaCache whose get_position() is 0, so cache_[0] (often a MambaCache)
@@ -642,6 +645,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
 
         mx::clear_cache();
     }
+    if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
 
     // Trunk verification: run trunk model on draft tokens.
     if (draft_tokens.empty()) {
@@ -735,6 +739,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         // replaced with the trunk's token above.
         y_ = LMInput::Text(mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
     }
+    if (kMtpTiming) { mx::eval(y_.tokens); t_verify = std::chrono::steady_clock::now(); }
 
     // ---- Commit the accepted prefix WITHOUT re-running the trunk ----
     //
@@ -823,6 +828,27 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     mtp_draft_proposed_ += n_draft;
     mtp_draft_accepted_ += accepted;
 
+    static const bool kMtpDebug = (std::getenv("MTP_DEBUG") != nullptr);
+    if (kMtpDebug) {
+        std::fprintf(stderr, "[mtp] step=%d n_draft=%d accepted=%d drafts=[",
+                     mtp_speculative_steps_, n_draft, accepted);
+        for (size_t i = 0; i < draft_tokens.size(); ++i)
+            std::fprintf(stderr, "%d%s", draft_tokens[i],
+                         i + 1 < draft_tokens.size() ? "," : "");
+        std::fprintf(stderr, "]\n");
+    }
+    if (kMtpTiming) {
+        auto t_end = std::chrono::steady_clock::now();
+        auto us = [](auto a, auto b) {
+            return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
+        };
+        std::fprintf(stderr,
+            "[mtp-t] step=%d n_draft=%d accepted=%d draft=%ldus verify=%ldus commit=%ldus total=%ldus\n",
+            mtp_speculative_steps_, n_draft, accepted,
+            us(t_start, t_draft), us(t_draft, t_verify), us(t_verify, t_end),
+            us(t_start, t_end));
+    }
+
     // Emit contract: this step emits exactly the accepted prefix
     // [d0, d1, ..., d_{accepted}] (accepted+1 tokens), all of which are now
     // committed to the trunk KV cache. d0 is returned immediately; d1..d_accepted
@@ -849,26 +875,12 @@ void TokenIterator::record_acceptance(int proposed, int accepted) {
 }
 
 int TokenIterator::current_draft_count() const {
-    if (accept_history_idx_ == 0) return n_draft_tokens_;  // No history yet.
-
-    int sum = 0;
-    for (int i = 0; i < kAcceptHistorySize; ++i) {
-        sum += accept_history_[i];
-    }
-    float accept_rate = static_cast<float>(sum) / (kAcceptHistorySize * n_draft_tokens_);
-
-    // Adaptive: scale draft count by acceptance rate.
-    //
-    // The floor is 2, NOT 1. With n_draft == 1 the draft loop (i = 1..n_draft-1)
-    // runs zero iterations, so the MTP head never runs, the verify loop never
-    // runs, accepted is trivially 0, and the system degenerates to plain greedy
-    // decode with NO acceptance signal — a stuck state the count can never climb
-    // out of. Keeping a floor of 2 guarantees at least one real draft (d1) and a
-    // live acceptance measurement every step, so the count can recover. (When the
-    // configured n_draft_tokens_ is 1, honor it and return 1.)
-    int floor = std::min(2, n_draft_tokens_);
-    int adapted = std::max(floor, static_cast<int>(n_draft_tokens_ * accept_rate));
-    return std::min(adapted, n_draft_tokens_);
+    // Honor the configured draft count. The previous adaptive shrink computed
+    // accept_rate as accepted/(history * configured_max) while `accepted` was
+    // capped by the *current* (already-shrunk) count — so once it dropped to 2,
+    // the rate could never exceed 1/n and it stayed pinned at 2 forever,
+    // regardless of real acceptance. Drafting is driven by --n-draft instead.
+    return n_draft_tokens_;
 }
 
 // ---------------------------------------------------------------------------
