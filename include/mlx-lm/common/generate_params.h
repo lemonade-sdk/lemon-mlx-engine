@@ -40,6 +40,11 @@ struct GenerateParameters {
     // Pre-allocate KV cache for this many tokens (0=auto grow).
     // Avoids repeated grow-and-copy during generation.
     int ctx_size = 0;
+
+    // Enable MTP speculative decoding.
+    bool use_mtp = false;
+    // Draft tokens per outer step.
+    int n_draft_tokens = 1;
 };
 
 } // namespace mlx_lm

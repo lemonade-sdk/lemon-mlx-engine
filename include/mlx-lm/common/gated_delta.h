@@ -4,6 +4,7 @@
 
 #include <mlx/mlx.h>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace mlx_lm {
@@ -37,6 +38,29 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_ops(
 
 // Full gated delta update: computes beta, g, initializes state, calls gated_delta_ops.
 std::pair<mlx::core::array, mlx::core::array> gated_delta_update(
+    const mlx::core::array& q, const mlx::core::array& k,
+    const mlx::core::array& v, const mlx::core::array& a,
+    const mlx::core::array& b, const mlx::core::array& a_log,
+    const mlx::core::array& dt_bias,
+    const std::optional<mlx::core::array>& state = std::nullopt,
+    const std::optional<mlx::core::array>& mask = std::nullopt);
+
+// Speculative-decoding variant of gated_delta_ops. In addition to the output and
+// the final state, returns the per-token SSM state STACK `state_seq`
+// [B, T, Hv, Dv, Dk], where state_seq[:, t] is the recurrent state AFTER token t.
+// This lets a multi-token verification forward be rolled back to any accepted
+// prefix by selecting state_seq[:, keep-1] — no re-run of the forward needed.
+// Returns (output [B, T, Hv, Dv], final_state [B, Hv, Dv, Dk], state_seq).
+std::tuple<mlx::core::array, mlx::core::array, mlx::core::array> gated_delta_ops_seq(
+    const mlx::core::array& q, const mlx::core::array& k,
+    const mlx::core::array& v, const mlx::core::array& g,
+    const mlx::core::array& beta,
+    const std::optional<mlx::core::array>& state = std::nullopt,
+    const std::optional<mlx::core::array>& mask = std::nullopt);
+
+// Like gated_delta_update, but also returns the per-token state stack (see
+// gated_delta_ops_seq). Used by speculative decoding verification.
+std::tuple<mlx::core::array, mlx::core::array, mlx::core::array> gated_delta_update_seq(
     const mlx::core::array& q, const mlx::core::array& k,
     const mlx::core::array& v, const mlx::core::array& a,
     const mlx::core::array& b, const mlx::core::array& a_log,

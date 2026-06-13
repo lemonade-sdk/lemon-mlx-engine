@@ -97,6 +97,89 @@ static const char* gdn_hip_source = R"(
     }
 )";
 
+// Speculative-decoding variant of the GDN recurrence kernel. Identical to
+// gdn_hip_source but ALSO writes the recurrent state after EACH timestep into
+// `state_seq` [B, T, Hv, Dv, Dk]. Used so a multi-token verification forward can
+// be rolled back to any accepted prefix (state_seq[:, keep-1]) without re-running
+// the trunk. Kept separate from the hot single-step decode kernel so that path
+// is unaffected.
+static const char* gdn_seq_hip_source = R"(
+    auto n = blockIdx.z * blockDim.z + threadIdx.z;
+    auto b_idx = n / Hv;
+    auto hv_idx = n % Hv;
+    auto hk_idx = hv_idx / (Hv / Hk);
+    constexpr int n_per_t = Dk / 32;
+
+    int T_val = T[0];
+    auto q_ = q + b_idx * T_val * Hk * Dk + hk_idx * Dk;
+    auto k_ = k + b_idx * T_val * Hk * Dk + hk_idx * Dk;
+
+    auto v_ = v + b_idx * T_val * Hv * Dv + hv_idx * Dv;
+    y += b_idx * T_val * Hv * Dv + hv_idx * Dv;
+
+    auto dk_idx = threadIdx.x;
+    auto dv_idx = blockIdx.y * blockDim.y + threadIdx.y;
+
+    auto g_ = g + b_idx * T_val * Hv;
+    auto beta_ = beta + b_idx * T_val * Hv;
+
+    auto i_state = state_in + (n * Dv + dv_idx) * Dk;
+    auto o_state = state_out + (n * Dv + dv_idx) * Dk;
+
+    float state[n_per_t];
+    for (int i = 0; i < n_per_t; ++i) {
+        auto s_idx = n_per_t * dk_idx + i;
+        state[i] = static_cast<float>(i_state[s_idx]);
+    }
+
+    for (int t = 0; t < T_val; ++t) {
+        float kv_mem = 0.0f;
+        for (int i = 0; i < n_per_t; ++i) {
+            auto s_idx = n_per_t * dk_idx + i;
+            state[i] = state[i] * static_cast<float>(g_[hv_idx]);
+            kv_mem += state[i] * static_cast<float>(k_[s_idx]);
+        }
+        for (int offset = 16; offset > 0; offset >>= 1)
+            kv_mem += __shfl_xor(kv_mem, offset);
+
+        auto delta = (static_cast<float>(v_[dv_idx]) - kv_mem)
+                     * static_cast<float>(beta_[hv_idx]);
+
+        float out = 0.0f;
+        for (int i = 0; i < n_per_t; ++i) {
+            auto s_idx = n_per_t * dk_idx + i;
+            state[i] = state[i] + static_cast<float>(k_[s_idx]) * delta;
+            out += state[i] * static_cast<float>(q_[s_idx]);
+        }
+        for (int offset = 16; offset > 0; offset >>= 1)
+            out += __shfl_xor(out, offset);
+
+        if (threadIdx.x == 0) {
+            y[dv_idx] = static_cast<InT>(out);
+        }
+
+        // Per-token state snapshot: state AFTER processing token t.
+        // state_seq layout [B, T, Hv, Dv, Dk].
+        auto seq_base = (((b_idx * T_val + t) * Hv + hv_idx) * Dv + dv_idx) * Dk;
+        for (int i = 0; i < n_per_t; ++i) {
+            auto s_idx = n_per_t * dk_idx + i;
+            state_seq[seq_base + s_idx] = static_cast<InT>(state[i]);
+        }
+
+        q_ += Hk * Dk;
+        k_ += Hk * Dk;
+        v_ += Hv * Dv;
+        y += Hv * Dv;
+        g_ += Hv;
+        beta_ += Hv;
+    }
+
+    for (int i = 0; i < n_per_t; ++i) {
+        auto s_idx = n_per_t * dk_idx + i;
+        o_state[s_idx] = static_cast<InT>(state[i]);
+    }
+)";
+
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
 // Create and cache the HIP kernel
 static mx::fast::CustomKernelFunction make_gdn_kernel() {
@@ -105,6 +188,19 @@ static mx::fast::CustomKernelFunction make_gdn_kernel() {
         {"q", "k", "v", "g", "beta", "state_in", "T"},
         {"y", "state_out"},
         gdn_hip_source);
+}
+
+static mx::fast::CustomKernelFunction make_gdn_seq_kernel() {
+    return mx::fast::hip_kernel(
+        "gated_delta_step_seq",
+        {"q", "k", "v", "g", "beta", "state_in", "T"},
+        {"y", "state_out", "state_seq"},
+        gdn_seq_hip_source);
+}
+
+static mx::fast::CustomKernelFunction& get_gdn_seq_kernel() {
+    static auto kernel = make_gdn_seq_kernel();
+    return kernel;
 }
 
 static mx::fast::CustomKernelFunction& get_gdn_kernel() {
@@ -148,6 +244,42 @@ static std::pair<mx::array, mx::array> gated_delta_kernel(
 {
     // TODO: implement a CPU/Metal fallback using standard MLX ops.
     // For now, throw a descriptive error so the caller can handle it.
+    throw std::runtime_error(
+        "GDN HIP kernel is only available on ROCm builds. "
+        "Rebuild with -DMLX_BUILD_ROCM=ON for GPU acceleration.");
+}
+#endif
+
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+// Dispatch the fused HIP kernel, also returning the per-token state stack.
+static std::tuple<mx::array, mx::array, mx::array> gated_delta_kernel_seq(
+    const mx::array& q, const mx::array& k,
+    const mx::array& v, const mx::array& g,
+    const mx::array& beta, const mx::array& state)
+{
+    int B = k.shape(0), T = k.shape(1);
+    int Hk = k.shape(2), Dk = k.shape(3);
+    int Hv = v.shape(2), Dv = v.shape(3);
+    auto input_type = q.dtype();
+
+    auto results = get_gdn_seq_kernel()(
+        {q, k, v, g, beta, state, mx::array(T)},
+        {{B, T, Hv, Dv}, state.shape(), {B, T, Hv, Dv, Dk}},
+        {input_type, input_type, input_type},
+        {32, Dv, B * Hv},      // grid
+        {32, 4, 1},             // threadGroup
+        {{"InT", input_type}, {"Dk", Dk}, {"Dv", Dv}, {"Hk", Hk}, {"Hv", Hv}},
+        std::nullopt,           // init_value
+        true,                   // ensure_row_contiguous
+        {});
+
+    return {results[0], results[1], results[2]};
+}
+#else
+static std::tuple<mx::array, mx::array, mx::array> gated_delta_kernel_seq(
+    const mx::array&, const mx::array&, const mx::array&,
+    const mx::array&, const mx::array&, const mx::array&)
+{
     throw std::runtime_error(
         "GDN HIP kernel is only available on ROCm builds. "
         "Rebuild with -DMLX_BUILD_ROCM=ON for GPU acceleration.");
@@ -401,6 +533,82 @@ std::pair<mx::array, mx::array> gated_delta_update(
     auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
 
     return gated_delta_ops(q, k, v, g, beta, s, mask);
+}
+
+// ---------------------------------------------------------------------------
+// Speculative variants — also return the per-token state stack [B,T,Hv,Dv,Dk].
+// ---------------------------------------------------------------------------
+std::tuple<mx::array, mx::array, mx::array> gated_delta_ops_seq(
+    const mx::array& q, const mx::array& k,
+    const mx::array& v, const mx::array& g,
+    const mx::array& beta,
+    const std::optional<mx::array>& state,
+    const std::optional<mx::array>& mask)
+{
+    int B = q.shape(0), T = q.shape(1);
+    int Hk = q.shape(2), Dk = q.shape(3);
+    int Hv = v.shape(2), Dv = v.shape(3);
+
+    int repeat_factor = Hv / Hk;
+    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
+
+    // Fused HIP kernel (no mask) — writes per-token states directly.
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    if (!mask.has_value() && Dk % 32 == 0) {
+        auto q_work = repeat_heads(q, repeat_factor);
+        auto k_work = repeat_heads(k, repeat_factor);
+        return gated_delta_kernel_seq(q_work, k_work, v, g, beta, s);
+    }
+#endif
+
+    // Loop fallback: collect the recurrent state after each timestep.
+    auto q_work = repeat_heads(q, repeat_factor);
+    auto k_work = repeat_heads(k, repeat_factor);
+
+    std::vector<mx::array> ys;
+    std::vector<mx::array> states;
+    ys.reserve(T);
+    states.reserve(T);
+
+    for (int t = 0; t < T; ++t) {
+        auto q_t = mx::squeeze(mx::slice(q_work, {0, t, 0, 0}, {B, t + 1, q_work.shape(2), Dk}), 1);
+        auto k_t = mx::squeeze(mx::slice(k_work, {0, t, 0, 0}, {B, t + 1, k_work.shape(2), Dk}), 1);
+        auto v_t = mx::squeeze(mx::slice(v,      {0, t, 0, 0}, {B, t + 1, Hv, Dv}), 1);
+        auto g_t = mx::squeeze(mx::slice(g,      {0, t, 0},    {B, t + 1, g.shape(2)}), 1);
+        auto beta_t = mx::squeeze(mx::slice(beta, {0, t, 0},   {B, t + 1, beta.shape(2)}), 1);
+
+        std::optional<mx::array> mask_t;
+        if (mask.has_value()) {
+            mask_t = mx::squeeze(mx::slice(*mask, {0, t}, {B, t + 1}), 1);
+        }
+
+        auto [y, new_s] = gated_delta_step_ops(q_t, k_t, v_t, g_t, beta_t, s, mask_t);
+        ys.push_back(mx::expand_dims(y, 1));
+        s = new_s;
+        states.push_back(mx::expand_dims(s, 1));  // state AFTER token t -> [B,1,Hv,Dv,Dk]
+    }
+
+    return {mx::concatenate(ys, 1), s, mx::concatenate(states, 1)};
+}
+
+std::tuple<mx::array, mx::array, mx::array> gated_delta_update_seq(
+    const mx::array& q, const mx::array& k,
+    const mx::array& v, const mx::array& a,
+    const mx::array& b, const mx::array& a_log,
+    const mx::array& dt_bias,
+    const std::optional<mx::array>& state,
+    const std::optional<mx::array>& mask)
+{
+    auto bg = compiled_beta_and_g({b, a_log, a, dt_bias});
+    auto& beta = bg[0];
+    auto& g = bg[1];
+
+    int B = q.shape(0), Dk = q.shape(3);
+    int Hv = v.shape(2), Dv = v.shape(3);
+
+    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
+
+    return gated_delta_ops_seq(q, k, v, g, beta, s, mask);
 }
 
 } // namespace mlx_lm

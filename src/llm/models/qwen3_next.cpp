@@ -5,6 +5,7 @@
 // no float32 upcast in gated_delta_ops, no T=1 fast paths for conv1d.
 
 #include <mlx-lm/llm/models/qwen3_next.h>
+#include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
@@ -619,6 +620,10 @@ mx::array Qwen3NextModelInner::embed_as_linear(const mx::array& x) const {
     return mx::matmul(x, mx::transpose(embed_tokens_weight_));
 }
 
+mx::array Qwen3NextModelInner::apply_lm_head(const mx::array& hidden) const {
+    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+}
+
 std::unordered_map<std::string, mx::array*> Qwen3NextModelInner::weight_map() {
     std::unordered_map<std::string, mx::array*> map;
     map["embed_tokens.weight"] = &embed_tokens_weight_;
@@ -646,8 +651,17 @@ PrepareResult Qwen3NextModel::prepare_impl(const LMInput& input, std::vector<KVC
     return llm_default_prepare(*this, input, cache, ws);
 }
 
-LMOutput Qwen3NextModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State*) {
-    return LMOutput(forward_impl(input.tokens, cache));
+LMOutput Qwen3NextModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state) {
+    auto hidden = model_(input.tokens, cache);
+    if (state) {
+        return LMOutput(
+            lm_head_weight_.has_value() ? linear_fwd(hidden, lm_head_weight_.value())
+                                         : model_.embed_as_linear(hidden),
+            LMOutput::State(std::nullopt, hidden));
+    }
+    return LMOutput(
+        lm_head_weight_.has_value() ? linear_fwd(hidden, lm_head_weight_.value())
+                                     : model_.embed_as_linear(hidden));
 }
 
 mx::array Qwen3NextModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
@@ -673,9 +687,10 @@ std::unordered_map<std::string, mx::array>
 Qwen3NextModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
     if (config_.tie_word_embeddings) weights.erase("lm_head.weight");
 
-    // Remove mtp.* keys
+    // Stash mtp.* keys for MTPHead wiring.
     for (auto it = weights.begin(); it != weights.end(); ) {
         if (it->first.find("mtp.") != std::string::npos) {
+            mtp_weights_.emplace(it->first, it->second);
             it = weights.erase(it);
         } else {
             ++it;
@@ -772,6 +787,42 @@ void Qwen3NextModel::load_weights(const std::unordered_map<std::string, mx::arra
         auto it = weights.find(name);
         if (it != weights.end()) *target = it->second;
     }
+    // Wire MTPHead if we have MTP weights.
+    if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
+        build_mtp_head();
+    }
+}
+
+void Qwen3NextModel::build_mtp_head() {
+    MTPHeadConfig cfg;
+    cfg.hidden_size = config_.hidden_size;
+    cfg.intermediate_size = config_.intermediate_size;
+    cfg.num_attention_heads = config_.num_attention_heads;
+    cfg.num_key_value_heads = config_.num_key_value_heads;
+    cfg.head_dim = config_.resolved_head_dim();
+    cfg.rms_norm_eps = config_.rms_norm_eps;
+    cfg.rope_theta = config_.rope_theta;
+    cfg.partial_rotary_factor = config_.partial_rotary_factor;
+
+    // MoE MTP head: use MoE decoder layer when trunk has experts.
+    cfg.num_experts = config_.num_experts;
+    cfg.num_experts_per_tok = config_.num_experts_per_tok;
+    cfg.shared_expert_intermediate_size = config_.shared_expert_intermediate_size;
+
+    if (cfg.is_moe()) {
+        mtp_head_ = MTPHead::create_moe(cfg);
+    } else {
+        mtp_head_ = MTPHead(cfg);
+    }
+    mtp_head_->load_mtp_weights(mtp_weights_);
+}
+
+std::vector<KVCache> Qwen3NextModel::new_mtp_cache(const GenerateParameters& params) const {
+    // MTP head has one decoder layer with standard attention.
+    std::vector<KVCache> caches;
+    caches.reserve(1);
+    caches.emplace_back(KVCacheSimple{});
+    return caches;
 }
 
 std::unordered_map<std::string, mx::array*> Qwen3NextModel::weight_map() {

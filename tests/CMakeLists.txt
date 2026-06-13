@@ -23,9 +23,10 @@ add_executable(test_config test_config.cpp)
 target_link_libraries(test_config PRIVATE mlx-lm-common Catch2::Catch2WithMain)
 add_test(NAME test_config COMMAND test_config)
 
-# Sampler tests
+# Sampler tests (+ MTPHead smoke, needs the LLM lib).
 add_executable(test_generate test_generate.cpp)
-target_link_libraries(test_generate PRIVATE mlx-lm-common Catch2::Catch2WithMain)
+target_link_libraries(test_generate PRIVATE
+    mlx-lm-llm mlx-lm-common Catch2::Catch2WithMain)
 add_test(NAME test_generate COMMAND test_generate)
 
 # Tool calling tests

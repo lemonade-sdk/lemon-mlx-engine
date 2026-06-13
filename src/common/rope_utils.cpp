@@ -1,6 +1,10 @@
 // Copyright (c) 2024-2025 Apple Inc. -- Ported to C++
 // Port of RoPEUtils.swift and SuScaledRoPE.swift
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <mlx-lm/common/rope_utils.h>
 #include <cmath>
 #include <stdexcept>

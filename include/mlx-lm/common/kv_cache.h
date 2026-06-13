@@ -68,6 +68,10 @@ public:
     // Access raw keys/values for conversion to QuantizedKVCache.
     const std::optional<mlx::core::array>& raw_keys() const { return keys_; }
     const std::optional<mlx::core::array>& raw_values() const { return values_; }
+
+    // Partial-rollback API for MTP speculative decoding.
+    size_t get_position() const { return static_cast<size_t>(offset_); }
+    void set_position(size_t pos);
 };
 
 // Rotating (fixed-size) KV cache with overwriting.
@@ -100,6 +104,13 @@ public:
         if (values_.has_value()) result.push_back(values_.value());
         return result;
     }
+
+    // Partial-rollback API: get_position returns current offset.
+    // set_position rolls back the logical offset only (physical ring unchanged).
+    // This is safe for speculative decoding since the ring buffer retains
+    // all data; only the write position changes.
+    size_t get_position() const { return static_cast<size_t>(offset_); }
+    void set_position(size_t pos);
 };
 
 // Quantized KV cache — stores keys/values in quantized form to reduce memory.
@@ -138,6 +149,11 @@ private:
 
     std::pair<mlx::core::array, mlx::core::array>
     update_impl(const mlx::core::array& new_keys, const mlx::core::array& new_values);
+
+public:
+    // Partial-rollback API for MTP speculative decoding.
+    size_t get_position() const { return static_cast<size_t>(offset_); }
+    void set_position(size_t pos);
 };
 
 // Mamba-style state space model cache.
@@ -147,6 +163,12 @@ class MambaCache {
     int offset_ = 0;
 
 public:
+    // Snapshot of MambaCache state for speculative decoding rollback.
+    struct Snapshot {
+        std::optional<mlx::core::array> states[2];
+        int offset = 0;
+    };
+
     MambaCache() = default;
 
     int offset() const { return offset_; }
@@ -167,6 +189,92 @@ public:
     void set_offset(int o) { offset_ = o; }
 
     std::vector<mlx::core::array> state() const { return {}; }
+
+    // Snapshot/restore for MTP speculative decoding.
+    // Save current state before trunk verification. If drafts are rejected,
+    // restore and re-run on accepted tokens to keep Mamba and KV caches in sync.
+    Snapshot snapshot() const {
+        Snapshot s;
+        s.states[0] = states_[0];
+        s.states[1] = states_[1];
+        s.offset = offset_;
+        return s;
+    }
+
+    void restore(const Snapshot& s) {
+        states_[0] = s.states[0];
+        states_[1] = s.states[1];
+        offset_ = s.offset;
+    }
+
+    // Partial-rollback API: MambaCache does not support token-level rollback
+    // via set_position (recurrent state cannot be trimmed). Use snapshot/restore
+    // or the spec-capture API below for speculative decoding.
+    size_t get_position() const { return static_cast<size_t>(offset_); }
+    void set_position(size_t /*pos*/) { /* no-op: recurrent state cannot be rolled back */ }
+
+    // --- Speculative-decoding intermediates ("gated-delta intermediates") ---
+    //
+    // To roll the recurrent state back to an accepted prefix WITHOUT re-running
+    // the trunk, the gated-delta layer records, during a multi-token verify
+    // forward, the SSM state after EACH token plus the full conv input. We then
+    // pick the state as-of the accepted prefix. Capture is opt-in (set per step
+    // by the speculative loop) so the large prompt prefill never pays for it.
+    void set_capture_spec(bool v) { capture_spec_ = v; if (!v) clear_spec(); }
+    bool capture_spec() const { return capture_spec_; }
+    bool has_spec() const { return spec_ssm_states_.has_value(); }
+
+    // Called by the gated-delta layer when capture_spec() is true.
+    //   ssm_states_seq: [B, T, Hv, Dv, Dk] — recurrent state AFTER each token.
+    //   conv_input:     [B, (kernel-1)+T, conv_dim] — full conv input this step.
+    //   base_offset:    cache offset before this verify forward.
+    void store_spec(const mlx::core::array& ssm_states_seq,
+                    const mlx::core::array& conv_input,
+                    int base_offset) {
+        spec_ssm_states_ = ssm_states_seq;
+        spec_conv_input_ = conv_input;
+        spec_base_offset_ = base_offset;
+    }
+
+    void clear_spec() {
+        spec_ssm_states_ = std::nullopt;
+        spec_conv_input_ = std::nullopt;
+    }
+
+    // Roll the recurrent + conv state back to the first `keep` tokens of the
+    // captured verify chunk (keep >= 1). Sets ssm_state to the state after token
+    // keep-1, conv_state to the (kernel-1)-token window ending at token keep-1,
+    // and offset to base_offset + keep. No-op if no intermediates were captured.
+    // The conv window size (kernel-1) is derived from the captured shapes.
+    void rollback_spec(int keep) {
+        if (!spec_ssm_states_.has_value() || !spec_conv_input_.has_value()) return;
+        namespace mx = mlx::core;
+        const auto& seq = spec_ssm_states_.value();   // [B, T, Hv, Dv, Dk]
+        const auto& ci = spec_conv_input_.value();    // [B, (k-1)+T, conv_dim]
+        int T = seq.shape(1);
+        int win = ci.shape(1) - T;                    // (kernel-1) prev-state rows
+        if (keep < 1) keep = 1;
+        if (keep > T) keep = T;
+
+        // ssm_state after `keep` tokens == seq[:, keep-1].
+        states_[1] = mx::squeeze(
+            mx::slice(seq, {0, keep - 1, 0, 0, 0},
+                      {seq.shape(0), keep, seq.shape(2), seq.shape(3), seq.shape(4)}),
+            1);
+
+        // conv_state == window [keep, keep + (kernel-1)) of the full conv input.
+        states_[0] = mx::slice(ci, {0, keep, 0},
+                               {ci.shape(0), keep + win, ci.shape(2)});
+
+        offset_ = spec_base_offset_ + keep;
+        clear_spec();
+    }
+
+private:
+    bool capture_spec_ = false;
+    std::optional<mlx::core::array> spec_ssm_states_;  // [B, T, Hv, Dv, Dk]
+    std::optional<mlx::core::array> spec_conv_input_;  // [B, (k-1)+T, conv_dim]
+    int spec_base_offset_ = 0;
 };
 
 // Compound cache for hybrid models (e.g., FalconH1, BaichuanM1).
@@ -252,6 +360,37 @@ public:
 
     int trim(int n) {
         return std::visit([n](auto& c) { return c.trim(n); }, impl_);
+    }
+
+    // Partial-rollback dispatch for MTP speculative decoding.
+    // - KVCacheSimple / QuantizedKVCache / RotatingKVCache: return / apply the offset.
+    // - MambaCache: out of scope for this scaffolding cut --
+    //   recurrent rollback requires the gated-delta intermediates kernel.
+    //   get_position returns current offset, set_position is a no-op.
+    // - CompoundCache: delegates to sub-caches.
+    size_t get_position() const {
+        return std::visit([](const auto& c) -> size_t {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, QuantizedKVCache> ||
+                          std::is_same_v<T, RotatingKVCache> ||
+                          std::is_same_v<T, MambaCache>) {
+                return c.get_position();
+            } else {
+                return 0;  // CompoundCache: unsupported
+            }
+        }, impl_);
+    }
+    void set_position(size_t pos) {
+        std::visit([pos](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, QuantizedKVCache> ||
+                          std::is_same_v<T, RotatingKVCache> ||
+                          std::is_same_v<T, MambaCache>) {
+                c.set_position(pos);
+            }
+        }, impl_);
     }
 
     // Access stored KV state for sharing between layers.

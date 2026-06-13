@@ -110,6 +110,9 @@ jobs:
         # Pin clang (ROCm 7.13 = clang 23) to GCC 13's libstdc++.
         GCC_INSTALL_DIR="/usr/lib/gcc/x86_64-linux-gnu/13"
 
+        # Clear FetchContent cache to force fresh MLX source checkout
+        rm -rf build/_deps/
+
         mkdir -p build && cd build
 
         cmake .. -G Ninja \
@@ -292,7 +295,7 @@ jobs:
        needs.build-ubuntu-cpu.result == 'success' ||
        needs.build-macos.result == 'success')
     runs-on: ${{ fromJSON(matrix.runs_on) }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -302,16 +305,38 @@ jobs:
             runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: true
             model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+            no_think: false
+          - os: ubuntu-mtp
+            artifact: mlx-engine-ubuntu-rocm-x64
+            runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
+            install_rocm: true
+            model: mlx-community/Qwen3.5-4B-MTP-4bit
+            use_mtp: true
+            no_think: true
+            timeout_minutes: 30
           - os: ubuntu-cpu
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+            no_think: false
+          - os: ubuntu-cpu-mtp
+            artifact: mlx-engine-ubuntu-cpu-x64
+            runs_on: '"ubuntu-22.04"'
+            install_rocm: false
+            model: mlx-community/Qwen3.5-4B-MTP-4bit
+            use_mtp: true
+            no_think: true
+            timeout_minutes: 30
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
             runs_on: '"macos-latest"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+            no_think: false
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
@@ -364,11 +389,44 @@ jobs:
           echo "LD_LIBRARY_PATH=$PWD/mlx-binaries" >> $GITHUB_ENV
         fi
 
+    - name: Memory pre-check (MTP test)
+      if: matrix.use_mtp
+      run: |
+        total_mem_mb=$(free -m | awk '/^Mem:/{print $2}')
+        echo "Total system memory: ${total_mem_mb} MB"
+        free_mem_mb=$(free -m | awk '/^Mem:/{print $7}')
+        echo "Available memory: ${free_mem_mb} MB"
+        if [ "$free_mem_mb" -lt 4000 ]; then
+          echo "SKIP: Insufficient memory for MTP test (${free_mem_mb}MB < 4000MB required)"
+          exit 0
+        else
+          echo "Memory OK for MTP test"
+        fi
+
     - name: 'Smoke test: server start and health'
       run: |
         set -e
 
         PORT=18999
+
+        # Conditionally enable MTP speculative decoding
+        MTP_FLAG=""
+        if [ "${{ matrix.use_mtp }}" = "true" ]; then
+          MTP_FLAG="--use-mtp --n-draft-tokens 3"
+        fi
+
+        # Disable thinking/reasoning for deterministic, fast answers in smoke tests
+        NO_THINK_FLAG=""
+        if [ "${{ matrix.no_think }}" = "true" ]; then
+          NO_THINK_FLAG="--no-think"
+        fi
+
+        # Increase readiness timeout for MTP models
+        if [ "${{ matrix.use_mtp }}" = "true" ]; then
+          READY_TIMEOUT=180
+        else
+          READY_TIMEOUT=60
+        fi
 
         echo "Checking binary dependencies..."
         if [ "$(uname)" = "Darwin" ]; then
@@ -381,18 +439,17 @@ jobs:
           echo "All shared libraries resolved OK"
         fi
 
-        echo "Starting server on port $PORT ..."
-        # NOTE: ROCm smoke test inference failures with 4-bit quantized models
-        # are caused by an upstream MLX ROCm quantized matmul kernel bug.
-        # No env var workaround exists in the MLX codebase.
-        # Tracking upstream for a fix.
-        mlx-binaries/server --port $PORT > server.log 2>&1 &
+        echo "Starting server on port $PORT (MTP=${MTP_FLAG:+ON:-OFF})..."
+        # PR #10 (MLX commit 45f6ee1) fixed affine_dequantize_packed_kernel #pragma unroll
+        # miscompile on RDNA 3.5. Our local patch was removed — dequant+GEMM path now works
+        # correctly for uint32 packed weights on ROCm.
+        mlx-binaries/server --port $PORT $MTP_FLAG $NO_THINK_FLAG > server.log 2>&1 &
         SERVER_PID=$!
 
-        # Poll for server readiness (max 60s, 1s interval)
-        echo "Waiting for server to become ready..."
+        # Poll for server readiness
+        echo "Waiting for server to become ready (timeout: ${READY_TIMEOUT}s)..."
         READY=false
-        for i in $(seq 1 60); do
+        for i in $(seq 1 $READY_TIMEOUT); do
           http_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health 2>/dev/null || echo "000")
           if [ "$http_code" = "200" ]; then
             echo "Server ready after ${i}s (HTTP $http_code)"
@@ -403,7 +460,7 @@ jobs:
         done
 
         if [ "$READY" != "true" ]; then
-          echo "Server failed to start within 60s. Last HTTP code: $http_code"
+          echo "Server failed to start within ${READY_TIMEOUT}s. Last HTTP code: $http_code"
           echo "=== Server Log ==="
           cat server.log || true
           exit 1
@@ -488,8 +545,190 @@ jobs:
 
         echo "SMOKE TEST PASSED -- server started, health check, and inference OK"
 
+        # --- Benchmark: extract TPS metrics as structured JSON ---
+        echo "=== Performance Benchmarks ==="
+        echo "${{ matrix.model }}:"
+
+        # Parse [TPS] lines from server.log and build benchmark JSON
+        python3 -c "
+        import json, re, sys, os
+        from datetime import datetime, timezone
+
+        model = '${{ matrix.model }}'
+        platform = '${{ matrix.os }}'
+        ts = ''
+        try:
+            with open('server.log', 'r') as f:
+                content = f.read()
+        except FileNotFoundError:
+            print('  (no server.log found)', file=sys.stderr)
+            content = ''
+
+        results = []
+        # Split on [TPS] markers to get each generation block
+        tps_blocks = re.split(r'(?=\[TPS\])', content)
+        for block in tps_blocks:
+            if '[TPS]' not in block:
+                continue
+            m = re.search(r'\[TPS\].*?Prompt:\s+(\d+)\s+tokens.*?([\d.]+)\s+tokens/s.*?([\d.e+-]+)s.*?Generation:\s+(\d+)\s+tokens.*?([\d.]+)\s+tokens/s.*?([\d.e+-]+)s', block, re.DOTALL)
+            if m:
+                prompt_tok = int(m.group(1))
+                prompt_tps = float(m.group(2))
+                prompt_time = float(m.group(3))
+                gen_tok = int(m.group(4))
+                gen_tps = float(m.group(5))
+                gen_time = float(m.group(6))
+
+                # Extract optional MTP metrics
+                mtp_m = re.search(r'MTP:\s+drafts=(\d+)\s+accepted=(\d+)\s+speculative_steps=(\d+)\s+acceptance_rate=([\d.]+)%', block, re.DOTALL)
+                mtp_enabled = mtp_m is not None
+                entry = {
+                    'model': model,
+                    'platform': platform,
+                    'prompt_tokens': prompt_tok,
+                    'generation_tokens': gen_tok,
+                    'prompt_tps': round(prompt_tps, 2),
+                    'generation_tps': round(gen_tps, 2),
+                    'prompt_time_s': round(prompt_time, 4),
+                    'generation_time_s': round(gen_time, 4),
+                    'mtp_enabled': mtp_enabled,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
+                if mtp_m:
+                    entry['mtp_draft_tokens_proposed'] = int(mtp_m.group(1))
+                    entry['mtp_draft_tokens_accepted'] = int(mtp_m.group(2))
+                    entry['mtp_speculative_steps'] = int(mtp_m.group(3))
+                    entry['mtp_acceptance_rate_pct'] = float(mtp_m.group(4))
+                results.append(entry)
+
+        if results:
+            with open('benchmark-results-${{ matrix.os }}.json', 'w') as f:
+                json.dump(results, f, indent=2)
+
+            # Print formatted datatable
+            print(f\"  {'Platform':<16} {'Prompt TPS':>12} {'Gen TPS':>10} {'Tokens':>8} {'MTP':>6}\")
+            print(f\"  {'-'*14:<16} {'-'*10:>12} {'-'*8:>10} {'-'*6:>8} {'-'*4:>6}\")
+            for r in results:
+                mtp_status = 'YES' if r.get('mtp_enabled') else 'no'
+                print(f\"  {r['platform']:<16} {r['prompt_tps']:>12.2f} {r['generation_tps']:>10.2f} {r['generation_tokens']:>8} {mtp_status:>6}\")
+        else:
+            # Write empty result so artifact still uploads
+            with open('benchmark-results-${{ matrix.os }}.json', 'w') as f:
+                json.dump([], f)
+            print('  (no TPS data found in server log)')
+        "
+        echo "=== End Benchmarks ==="
+
         kill $SERVER_PID 2>/dev/null || true
         wait $SERVER_PID 2>/dev/null || true
+
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v6
+      with:
+        name: bench-results-${{ matrix.os }}
+        path: benchmark-results-${{ matrix.os }}.json
+        retention-days: 30
+
+  collect-benchmarks:
+    needs: [test-simple-math]
+    if: always() && (needs.test-simple-math.result == 'success' || needs.test-simple-math.result == 'failure')
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Download all benchmark artifacts
+      uses: actions/download-artifact@v6
+      with:
+        path: ./bench-data
+        pattern: bench-results-*
+        merge-multiple: true
+
+    - name: Merge benchmarks and detect trends
+      run: |
+        set -e
+        python3 -c "
+        import json, glob, os, sys
+        from pathlib import Path
+
+        all_results = []
+        for f in sorted(glob.glob('./bench-data/benchmark-results-*.json')):
+            try:
+                with open(f) as fh:
+                    data = json.load(fh)
+                    if isinstance(data, list):
+                        all_results.extend(data)
+            except Exception as e:
+                print(f'Warning: could not read {f}: {e}', file=sys.stderr)
+
+        if not all_results:
+            print('No benchmark results collected', file=sys.stderr)
+            with open('benchmarks-latest.json', 'w') as fh:
+                json.dump({'results': [], 'trend_warnings': []}, fh, indent=2)
+            sys.exit(0)
+
+        # Group by model+platform for trend detection
+        from collections import defaultdict
+        grouped = defaultdict(list)
+        for r in all_results:
+            key = (r.get('model', ''), r.get('platform', ''))
+            grouped[key].append(r['generation_tps'])
+
+        # Rolling average (last 3 runs) and trend detection
+        trend_warnings = []
+        for (model, platform), tps_values in grouped.items():
+            if len(tps_values) >= 2:
+                # Current run vs rolling average of previous runs
+                current = tps_values[-1]
+                history = tps_values[:-1]
+                # Keep last 3 for rolling average
+                history = history[-3:]
+                avg = sum(history) / len(history)
+                if avg > 0:
+                    deviation = abs(current - avg) / avg
+                    if deviation > 0.15:
+                        direction = 'DOWN' if current < avg else 'UP'
+                        trend_warnings.append({
+                            'model': model,
+                            'platform': platform,
+                            'current_tps': round(current, 2),
+                            'rolling_avg_tps': round(avg, 2),
+                            'deviation_pct': round(deviation * 100, 1),
+                            'direction': direction
+                        })
+                        print(f'WARN: {model} on {platform} generation_tps deviated {deviation*100:.1f}% ({direction}) from {avg:.1f} rolling avg', file=sys.stderr)
+
+        output = {
+            'results': all_results,
+            'trend_warnings': trend_warnings,
+            'collected_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+        }
+
+        with open('benchmarks-latest.json', 'w') as fh:
+            json.dump(output, fh, indent=2)
+
+        # Print formatted datatable
+        print()
+        print(f\"  {'Platform':<16} {'Model':<40} {'Gen TPS':>10} {'Tokens':>8} {'MTP':>6} {'Trend':>8}\")
+        print(f\"  {'-'*14:<16} {'-'*38:<40} {'-'*8:>10} {'-'*6:>8} {'-'*4:>6} {'-'*6:>8}\")
+        for r in all_results:
+            model_short = r.get('model', '')[-35:]
+            mtp = 'YES' if r.get('mtp_enabled') else 'no'
+            trend = ''
+            for tw in trend_warnings:
+                if tw['model'] == r.get('model') and tw['platform'] == r.get('platform'):
+                    trend = f\"{tw['direction']} {tw['deviation_pct']}%\"
+                    break
+            print(f\"  {r['platform']:<16} {model_short:<40} {r['generation_tps']:>10.2f} {r['generation_tokens']:>8} {mtp:>6} {trend:>8}\")
+        print()
+
+        print(f'Collected {len(all_results)} benchmark results, {len(trend_warnings)} trend warnings')
+        "
+
+    - name: Upload merged benchmarks
+      uses: actions/upload-artifact@v6
+      with:
+        name: benchmarks-latest
+        path: benchmarks-latest.json
+        retention-days: 90
 
   create-release:
     needs: [prepare-matrix, build-ubuntu-rocm, build-ubuntu-cpu, build-macos, test-simple-math]

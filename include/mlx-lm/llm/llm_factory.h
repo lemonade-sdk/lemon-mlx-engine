@@ -28,4 +28,11 @@ ModelContext load_llm(
     const std::string& model_id,
     const std::string& cache_dir = "");
 
+// Load an MTP delta model (MTP head only) by merging with the base model.
+// Derives the base model ID by stripping "-MTP" from the delta model ID.
+//   mlx-community/Qwen3.5-4B-MTP-4bit -> mlx-community/Qwen3.5-4B-4bit
+ModelContext load_mtp_delta_model(
+    const std::string& delta_model_id,
+    const std::string& cache_dir = "");
+
 } // namespace mlx_lm

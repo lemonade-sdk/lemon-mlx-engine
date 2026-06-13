@@ -122,6 +122,7 @@ static std::unordered_map<std::string, LLMLoaderFn>& llm_loaders() {
         {"qwen3_next",  load_typed_model<Qwen3NextConfiguration, Qwen3NextModel>},
         {"qwen3_5",     load_typed_model<Qwen35MoEConfiguration, Qwen35MoEModel>},
         {"qwen3_5_moe", load_typed_model<Qwen35MoEConfiguration, Qwen35MoEModel>},
+        {"qwen3_5_mtp", load_typed_model<Qwen35MoEConfiguration, Qwen35MoEModel>},
         {"mistral3",    load_typed_model<Mistral3TextConfiguration, Mistral3TextModel>},
         {"ministral3",  load_typed_model<Mistral3TextConfiguration, Mistral3TextModel>},
         {"deepseek_v3", load_typed_model<DeepseekV3Configuration, DeepseekV3Model>},
@@ -180,6 +181,7 @@ ModelTypeRegistry& llm_type_registry() {
         {"qwen3_next",  create_model<Qwen3NextConfiguration, Qwen3NextModel>},
         {"qwen3_5",     create_model<Qwen35MoEConfiguration, Qwen35MoEModel>},
         {"qwen3_5_moe", create_model<Qwen35MoEConfiguration, Qwen35MoEModel>},
+        {"qwen3_5_mtp", create_model<Qwen35MoEConfiguration, Qwen35MoEModel>},
         {"mistral3",    create_model<Mistral3TextConfiguration, Mistral3TextModel>},
         {"ministral3",  create_model<Mistral3TextConfiguration, Mistral3TextModel>},
         {"deepseek_v3", create_model<DeepseekV3Configuration, DeepseekV3Model>},
@@ -261,6 +263,57 @@ ModelContext load_llm_from_directory(
     nlohmann::json config_json;
     config_file >> config_json;
 
+    // Detect MTP delta models (model_type="qwen3_5_mtp") and redirect
+    // to the delta loading path which merges with the base model.
+    // MTP delta models contain only the MTP head weights (single decoder
+    // layer + fc/norm) and cannot be loaded standalone.
+    std::string model_type = config_json.value("model_type", "");
+    if (model_type == "qwen3_5_mtp") {
+        std::string model_id = config.id.empty() ? model_directory : config.id;
+        std::cerr << "[MTP] Delta model detected via load_llm, redirecting to load_mtp_delta_model\n";
+        auto ctx = load_mtp_delta_model(model_id);
+        ctx.model_id = model_id;
+
+        if (!ctx.eos_token_ids.has_value()) {
+            if (config_json.contains("text_config") && config_json["text_config"].contains("eos_token_id")) {
+                ctx.eos_token_ids = {config_json["text_config"]["eos_token_id"].get<int>()};
+            }
+        }
+
+        // Load tokenizer from delta model directory
+        std::shared_ptr<Tokenizer> tokenizer;
+        auto tokenizer_json_path = fs::path(model_directory) / "tokenizer.json";
+        if (fs::exists(tokenizer_json_path)) {
+            tokenizer = Tokenizer::from_directory(model_directory);
+            ctx.encode_fn = [tokenizer](const std::string& text) {
+                return tokenizer->encode(text);
+            };
+            ctx.decode_fn = [tokenizer](const std::vector<int>& ids) {
+                return tokenizer->decode(ids);
+            };
+        }
+
+        // Load chat template
+        auto chat_tmpl = load_chat_template(model_directory);
+        if (chat_tmpl.has_value() && tokenizer) {
+            auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
+            if (ctx.eos_token_ids.has_value() && !shared_tmpl->eos_token().empty()) {
+                int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
+                if (eos_id >= 0) {
+                    ctx.eos_token_ids = std::vector<int>{eos_id};
+                }
+            }
+            auto extra_ctx = std::make_shared<nlohmann::json>();
+            ctx.template_extra_context = extra_ctx;
+            ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
+                const std::vector<Message>& messages) -> std::vector<int> {
+                auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
+                return tokenizer->encode(rendered);
+            };
+        }
+        return ctx;
+    }
+
     auto base_config = parse_base_configuration(config_json);
 
     // Find the loader for this model type
@@ -313,6 +366,210 @@ ModelContext load_llm_from_directory(
         auto extra_ctx = std::make_shared<nlohmann::json>();
         ctx.template_extra_context = extra_ctx;
 
+        ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
+            const std::vector<Message>& messages) -> std::vector<int> {
+            auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
+            return tokenizer->encode(rendered);
+        };
+    }
+
+    return ctx;
+}
+
+// --- MTP Delta Model Loading ---
+// MTP (Multi-Token Prediction) delta models contain only the MTP head weights
+// (single decoder layer + fc/norm). The base text model weights must be loaded
+// separately and merged. This function handles that flow automatically.
+
+static std::string derive_base_model_id(const std::string& delta_model_id) {
+    // Strip "-MTP" from the repo name:
+    //   mlx-community/Qwen3.5-4B-MTP-4bit -> mlx-community/Qwen3.5-4B-4bit
+    auto result = delta_model_id;
+    auto pos = result.find("-MTP");
+    while (pos != std::string::npos) {
+        result.erase(pos, 4);
+        pos = result.find("-MTP", pos);
+    }
+    return result;
+}
+
+// Recover the HuggingFace repo id ("org/repo") from a local HF cache path of
+// the form  .../models--<org>--<repo>/snapshots/<hash>/ . Returns "" if the
+// path is not an HF cache layout (e.g. an arbitrary local directory).
+static std::string repo_id_from_cache_path(const std::string& path_str) {
+    for (const auto& part : fs::path(path_str)) {
+        const std::string seg = part.string();
+        if (seg.rfind("models--", 0) == 0) {
+            const std::string body = seg.substr(8);  // after "models--"
+            const auto sep = body.find("--");
+            if (sep == std::string::npos) return "";
+            return body.substr(0, sep) + "/" + body.substr(sep + 2);
+        }
+    }
+    return "";
+}
+
+ModelContext load_mtp_delta_model(
+    const std::string& delta_model_id,
+    const std::string& cache_dir)
+{
+    auto& hub = HubApi::shared();
+    if (!cache_dir.empty()) {
+        hub.set_cache_dir(cache_dir);
+    }
+
+    // Step 1: Download / resolve delta model (MTP head weights).
+    std::string delta_dir;
+    if (fs::exists(fs::path(delta_model_id) / "config.json")) {
+        delta_dir = delta_model_id;
+    } else if (hub.is_cached(delta_model_id)) {
+        delta_dir = hub.model_directory(delta_model_id);
+    } else {
+        delta_dir = hub.snapshot_download(delta_model_id);
+    }
+
+    // Step 2: Derive and resolve base model (full text backbone).
+    // If the delta was given as a local HF cache path, the base repo lives in a
+    // SIBLING cache dir under its own snapshot hash — not the delta's hash — so
+    // recover the repo id and resolve the base through the hub. Only fall back to
+    // naive "-MTP" string-stripping on the raw id when it is a plain repo id.
+    std::string base_model_id;
+    std::string base_dir;
+    const std::string delta_repo_id = repo_id_from_cache_path(delta_model_id);
+    if (!delta_repo_id.empty()) {
+        base_model_id = derive_base_model_id(delta_repo_id);
+        std::cerr << "[MTP] Delta model: " << delta_model_id
+                  << ", base model: " << base_model_id << "\n";
+        if (hub.is_cached(base_model_id)) {
+            base_dir = hub.model_directory(base_model_id);
+        } else {
+            base_dir = hub.snapshot_download(base_model_id);
+        }
+    } else {
+        base_model_id = derive_base_model_id(delta_model_id);
+        std::cerr << "[MTP] Delta model: " << delta_model_id
+                  << ", base model: " << base_model_id << "\n";
+        if (fs::exists(fs::path(base_model_id) / "config.json")) {
+            base_dir = base_model_id;
+        } else if (hub.is_cached(base_model_id)) {
+            base_dir = hub.model_directory(base_model_id);
+        } else {
+            base_dir = hub.snapshot_download(base_model_id);
+        }
+    }
+
+    // Step 3: Load base model safetensors (full 32-layer text backbone).
+    auto weights = load_safetensors_from_directory(base_dir);
+    std::cerr << "[MTP] Loaded base model weights: " << weights.size() << " tensors\n";
+
+    // Step 4: Load delta model safetensors (MTP head), prefix keys with "mtp.".
+    auto delta_weights = load_safetensors_from_directory(delta_dir);
+    int mtp_keys = 0;
+    for (auto& [key, value] : delta_weights) {
+        std::string prefixed = "mtp." + key;
+        weights.insert_or_assign(prefixed, std::move(value));
+        mtp_keys++;
+    }
+    std::cerr << "[MTP] Merged " << mtp_keys << " MTP head weights with base model\n";
+
+    // Step 5: Read BASE model config.json for architectural parameters.
+    // The base model config matches the actual text backbone weights we loaded.
+    // The delta model's config has model_type="qwen3_5_mtp" which is for the
+    // MTP head only, not the full text model architecture.
+    auto base_config_path = fs::path(base_dir) / "config.json";
+    std::ifstream base_config_file(base_config_path);
+    nlohmann::json base_model_config_json;
+    base_config_file >> base_model_config_json;
+
+    // Step 5b: Read MTP delta model config.json for MTP head parameters.
+    // The MTP model's text_config contains some correct architectural parameters
+    // (hidden_size=2560, intermediate_size=9216, rope_theta=10000000) but the
+    // head_dim and num_attention_heads fields are inconsistent with actual weights.
+    // We extract only the reliable fields (hidden_size, intermediate_size, rope)
+    // and leave head_dim/num_attention_heads/num_key_value_heads as 0 so that
+    // build_mtp_head() derives them from actual weight shapes.
+    auto mtp_config_path = fs::path(delta_dir) / "config.json";
+    std::optional<MTPHeadConfig> mtp_head_cfg;
+    if (fs::exists(mtp_config_path)) {
+        std::ifstream mtp_config_file(mtp_config_path);
+        nlohmann::json mtp_config_json;
+        mtp_config_file >> mtp_config_json;
+        if (mtp_config_json.contains("text_config")) {
+            auto& tc = mtp_config_json["text_config"];
+            mtp_head_cfg = MTPHeadConfig{};
+            mtp_head_cfg->hidden_size = tc.value("hidden_size", 0);
+            mtp_head_cfg->intermediate_size = tc.value("intermediate_size", 0);
+            // DO NOT set head_dim, num_attention_heads, num_key_value_heads —
+            // these are wrong in the MTP config.json. build_mtp_head() will
+            // derive them from actual weight shapes (o_proj, q_proj, k_proj).
+            mtp_head_cfg->head_dim = 0;
+            mtp_head_cfg->num_attention_heads = 0;
+            mtp_head_cfg->num_key_value_heads = 0;
+            mtp_head_cfg->rms_norm_eps = tc.value("rms_norm_eps", 1e-6f);
+            mtp_head_cfg->quant_bits = tc.value("quant_bits", 4);
+            mtp_head_cfg->quant_group_size = tc.value("quant_group_size", 64);
+            // rope_parameters is a nested object
+            if (tc.contains("rope_parameters")) {
+                auto& rp = tc["rope_parameters"];
+                mtp_head_cfg->rope_theta = rp.value("rope_theta", 10000.0f);
+                mtp_head_cfg->partial_rotary_factor = rp.value("partial_rotary_factor", 0.25f);
+            }
+        }
+    }
+
+    auto base_config = parse_base_configuration(base_model_config_json);
+
+    // Step 6: Create model from base config (matches loaded weights), sanitize, register quantized weights, load.
+    auto j = nlohmann::json::parse(base_model_config_json.dump());
+    Qwen35MoEConfiguration config = j.get<Qwen35MoEConfiguration>();
+    auto model = std::make_shared<Qwen35MoEModel>(config);
+
+    // Pass MTP head config before loading weights so build_mtp_head() uses
+    // config.json for hidden_size, intermediate_size, rope_theta, while
+    // deriving head_dim/num_attention_heads/num_key_value_heads from weights.
+    if (mtp_head_cfg.has_value()) {
+        model->set_mtp_head_config(mtp_head_cfg.value());
+    }
+
+    weights = model->sanitize(std::move(weights));
+
+    auto wmap = model->weight_map();
+    register_quantized_weights(weights, base_config, wmap);
+
+    model->load_weights(weights);
+
+    ModelContext ctx = ModelContext::from_model_owned(model);
+    ctx.model_id = delta_model_id;
+
+    if (base_config.eos_token_ids.has_value()) {
+        ctx.eos_token_ids = base_config.eos_token_ids->values;
+    }
+
+    // Load tokenizer from delta model directory (shared with base model).
+    std::shared_ptr<Tokenizer> tokenizer;
+    auto tokenizer_json_path = fs::path(delta_dir) / "tokenizer.json";
+    if (fs::exists(tokenizer_json_path)) {
+        tokenizer = Tokenizer::from_directory(delta_dir);
+        ctx.encode_fn = [tokenizer](const std::string& text) {
+            return tokenizer->encode(text);
+        };
+        ctx.decode_fn = [tokenizer](const std::vector<int>& ids) {
+            return tokenizer->decode(ids);
+        };
+    }
+
+    // Load chat template from delta model directory.
+    auto chat_tmpl = load_chat_template(delta_dir);
+    if (chat_tmpl.has_value() && tokenizer) {
+        auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
+        if (!ctx.eos_token_ids.has_value() && !shared_tmpl->eos_token().empty()) {
+            int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
+            if (eos_id >= 0) {
+                ctx.eos_token_ids = std::vector<int>{eos_id};
+            }
+        }
+        auto extra_ctx = std::make_shared<nlohmann::json>();
+        ctx.template_extra_context = extra_ctx;
         ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
             const std::vector<Message>& messages) -> std::vector<int> {
             auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);

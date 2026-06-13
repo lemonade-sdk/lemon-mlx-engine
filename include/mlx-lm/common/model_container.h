@@ -26,6 +26,20 @@ struct ModelContext {
     std::function<std::unordered_map<std::string, mlx::core::array>(
         std::unordered_map<std::string, mlx::core::array>)> sanitize_fn;
 
+    // Token embedding lookup (for MTP speculative decoding).
+    // Maps token IDs to embedding vectors [B, T, H].
+    std::function<mlx::core::array(const mlx::core::array&)> embed_fn;
+
+    // Apply lm_head to hidden states (for MTP speculative decoding).
+    // For tied embeddings: matmul(x, embed_tokens.T).
+    // For untied: linear_fwd(x, lm_head_weight).
+    std::function<mlx::core::array(const mlx::core::array&)> apply_lm_head_fn;
+
+    // MTP head access (returns nullptr if MTP not available).
+    // These function pointers are set only when the model has MTP support.
+    std::function<void*()> get_mtp_head_fn;  // Returns MTPHead*
+    std::function<std::vector<KVCache>(const GenerateParameters&)> new_mtp_cache_fn;  // Returns single-layer KVCache
+
     // Tokenizer operations (type-erased).
     std::function<std::vector<int>(const std::string&)> encode_fn;
     std::function<std::string(const std::vector<int>&)> decode_fn;
@@ -59,6 +73,27 @@ struct ModelContext {
         ctx.sanitize_fn = [&model](std::unordered_map<std::string, mlx::core::array> w) {
             return model.sanitize(std::move(w));
         };
+        if constexpr (requires { model.embed_as_linear(std::declval<mlx::core::array>()); }) {
+            ctx.embed_fn = [&model](const mlx::core::array& tokens) {
+                return model.embed_as_linear(tokens);
+            };
+        }
+        if constexpr (requires { model.apply_lm_head(std::declval<mlx::core::array>()); }) {
+            ctx.apply_lm_head_fn = [&model](const mlx::core::array& hidden) {
+                return model.apply_lm_head(hidden);
+            };
+        }
+        // MTP bindings (if model has MTP support).
+        if constexpr (requires { model.get_mtp_head(); }) {
+            ctx.get_mtp_head_fn = [&model]() -> void* {
+                return static_cast<void*>(model.get_mtp_head());
+            };
+        }
+        if constexpr (requires { model.new_mtp_cache(std::declval<const GenerateParameters&>()); }) {
+            ctx.new_mtp_cache_fn = [&model](const GenerateParameters& p) {
+                return model.new_mtp_cache(p);
+            };
+        }
         return ctx;
     }
 
@@ -82,6 +117,27 @@ struct ModelContext {
         ctx.sanitize_fn = [model](std::unordered_map<std::string, mlx::core::array> w) {
             return model->sanitize(std::move(w));
         };
+        if constexpr (requires { model->embed_as_linear(std::declval<mlx::core::array>()); }) {
+            ctx.embed_fn = [model](const mlx::core::array& tokens) {
+                return model->embed_as_linear(tokens);
+            };
+        }
+        if constexpr (requires { model->apply_lm_head(std::declval<mlx::core::array>()); }) {
+            ctx.apply_lm_head_fn = [model](const mlx::core::array& hidden) {
+                return model->apply_lm_head(hidden);
+            };
+        }
+        // MTP bindings (if model has MTP support).
+        if constexpr (requires { model->get_mtp_head(); }) {
+            ctx.get_mtp_head_fn = [model]() -> void* {
+                return static_cast<void*>(model->get_mtp_head());
+            };
+        }
+        if constexpr (requires { model->new_mtp_cache(std::declval<const GenerateParameters&>()); }) {
+            ctx.new_mtp_cache_fn = [model](const GenerateParameters& p) {
+                return model->new_mtp_cache(p);
+            };
+        }
         return ctx;
     }
 };

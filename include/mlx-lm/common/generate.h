@@ -173,6 +173,11 @@ struct GenerateCompletionInfo {
     double prompt_time = 0.0;        // seconds
     double generation_time = 0.0;    // seconds
 
+    // MTP speculative decoding metrics (populated when use_mtp is true).
+    int mtp_draft_tokens_proposed = 0;
+    int mtp_draft_tokens_accepted = 0;
+    int mtp_speculative_steps = 0;
+
     double prompt_tokens_per_second() const {
         return prompt_time > 0.0 ? static_cast<double>(prompt_token_count) / prompt_time : 0.0;
     }
@@ -180,6 +185,14 @@ struct GenerateCompletionInfo {
     double tokens_per_second() const {
         return generation_time > 0.0
             ? static_cast<double>(generation_token_count) / generation_time : 0.0;
+    }
+
+    // MTP acceptance rate: accepted / proposed draft tokens.
+    // Returns 0.0 when no MTP drafts were proposed.
+    double acceptance_rate() const {
+        return mtp_draft_tokens_proposed > 0
+            ? static_cast<double>(mtp_draft_tokens_accepted) / mtp_draft_tokens_proposed
+            : 0.0;
     }
 
     std::string summary() const;
@@ -255,6 +268,16 @@ public:
         std::optional<int> max_tokens = std::nullopt,
         int prefill_step_size = 512);
 
+    // Construct with an external (persistent, multi-turn) cache AND full
+    // parameters. Unlike the explicit-cache constructor above, this enables MTP
+    // speculative decoding when params.use_mtp is set and the model exposes an
+    // MTP head — so the chat/session path gets MTP without losing cache reuse.
+    TokenIterator(
+        ModelContext& context,
+        const LMInput& input,
+        std::vector<KVCache> cache,
+        const GenerateParameters& params);
+
     // Generate the next token. Returns nullopt when max_tokens is reached.
     // The caller is responsible for checking EOS conditions.
     std::optional<int> next();
@@ -327,6 +350,34 @@ private:
     GraphState graph_state_ = GraphState::Warmup;
     int warmup_steps_ = 0;
     static constexpr int kGraphWarmupSteps = 3; // Steps before attempting capture
+
+    // MTP speculative decoding state.
+    bool use_mtp_ = false;
+    int n_draft_tokens_ = 2;
+    std::vector<KVCache> mtp_caches_;  // Per-layer KV cache for MTP head
+    std::optional<mlx::core::array> mtp_trunk_hidden_;  // Trunk hidden state for MTP input
+    std::vector<int> draft_buffer_;    // Speculative draft tokens ready to emit
+    int draft_buffer_idx_ = 0;
+
+    // MTP counters for metrics tracking.
+    int mtp_draft_proposed_ = 0;
+    int mtp_draft_accepted_ = 0;
+    int mtp_speculative_steps_ = 0;
+
+    // Adaptive draft length: 8-bit accept-history ring buffer.
+    std::vector<uint8_t> accept_history_;
+    size_t accept_history_idx_ = 0;
+    static constexpr int kAcceptHistorySize = 64;
+
+    // MTP speculative step: generates draft tokens via MTP head,
+    // verifies against trunk model, returns accepted tokens.
+    std::vector<int> mtp_speculative_step();
+
+    // Record acceptance history for adaptive draft length.
+    void record_acceptance(int proposed, int accepted);
+
+    // Get the current draft token count (adaptive or fixed).
+    int current_draft_count() const;
 };
 
 // ---------------------------------------------------------------------------

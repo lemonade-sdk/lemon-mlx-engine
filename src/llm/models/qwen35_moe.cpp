@@ -8,11 +8,13 @@
 // - MoE sanitize splits fused gate_up_proj into gate_proj + up_proj
 
 #include <mlx-lm/llm/models/qwen35_moe.h>
+#include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace mx = mlx::core;
 
@@ -98,6 +100,48 @@ void from_json(const nlohmann::json& j, Qwen35MoEConfiguration& c) {
     if (!c.head_dim.has_value()) {
         c.head_dim = c.hidden_size / c.num_attention_heads;
     }
+}
+
+// --- Qwen3.5 VLM Configuration parsing ---
+
+void from_json(const nlohmann::json& j, Qwen35VLVisionConfiguration& c) {
+    const auto& cfg = j.contains("vision_config") ? j.at("vision_config") : j;
+    c.model_type = cfg.value("model_type", std::string("qwen3_5"));
+    c.depth = cfg.value("depth", 24);
+    c.hidden_size = cfg.value("hidden_size", 1024);
+    c.intermediate_size = cfg.value("intermediate_size", 4096);
+    c.out_hidden_size = cfg.value("out_hidden_size", 2560);
+    c.num_heads = cfg.value("num_heads", 16);
+    c.patch_size = cfg.value("patch_size", 16);
+    c.spatial_merge_size = cfg.value("spatial_merge_size", 2);
+    c.temporal_patch_size = cfg.value("temporal_patch_size", 2);
+    c.num_position_embeddings = cfg.value("num_position_embeddings", 2304);
+    c.in_channels = cfg.value("in_channels", 3);
+    c.hidden_act = cfg.value("hidden_act", std::string("gelu_pytorch_tanh"));
+    c.rms_norm_eps = cfg.value("rms_norm_eps", 1e-6f);
+    if (cfg.contains("deepstack_visual_indexes") && !cfg.at("deepstack_visual_indexes").is_null()) {
+        c.deepstack_visual_indexes = cfg.at("deepstack_visual_indexes").get<std::vector<int>>();
+    }
+    c.merger_intermediate_size = cfg.value("merger_intermediate_size", 0);
+    if (c.merger_intermediate_size == 0) {
+        c.merger_intermediate_size = c.hidden_size * c.spatial_merge_size * c.spatial_merge_size;
+    }
+}
+
+void from_json(const nlohmann::json& j, Qwen35VLBaseConfiguration& c) {
+    c.model_type = j.value("model_type", std::string("qwen3_5"));
+    c.vocab_size = j.value("vocab_size", 248320);
+    c.image_token_id = j.value("image_token_id", 248056);
+    c.video_token_id = j.value("video_token_id", 248057);
+    c.vision_start_token_id = j.value("vision_start_token_id", 248053);
+    c.vision_end_token_id = j.value("vision_end_token_id", 248054);
+    c.vision_token_id = j.value("vision_token_id", 248055);
+}
+
+void from_json(const nlohmann::json& j, Qwen35VLConfiguration& c) {
+    from_json(j, c.text_config);
+    from_json(j, c.vision_config);
+    from_json(j, c.base_config);
 }
 
 static mx::array linear_fwd(const mx::array& x, const mx::array& w,
@@ -370,8 +414,24 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         ssm_state = (*cache)[1].value();
     }
 
-    auto [out, new_state] = gated_delta_update(
-        q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
+    mx::array out = mx::array(0.0f);
+    mx::array new_state = mx::array(0.0f);
+    if (cache && cache->capture_spec()) {
+        // Speculative verify forward: also capture the per-token recurrent state
+        // stack (and the full conv input) so the linear-layer state can be rolled
+        // back to an accepted draft prefix without re-running the trunk.
+        int base_off = cache->offset();
+        auto [o, ns, seq] = gated_delta_update_seq(
+            q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
+        out = o;
+        new_state = ns;
+        cache->store_spec(seq, conv_input, base_off);
+    } else {
+        auto [o, ns] = gated_delta_update(
+            q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
+        out = o;
+        new_state = ns;
+    }
 
     if (cache) {
         (*cache)[1] = new_state;
@@ -562,7 +622,15 @@ Qwen35MoEModelInner::Qwen35MoEModelInner(const Qwen35MoEConfiguration& args)
 }
 
 mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<KVCache>* cache) {
-    auto h = mx::take(embed_tokens_weight_, inputs, 0);
+    // Defensive: ensure tokens are at least 2D [B, S].
+    // Some callers (e.g., MTP rerun in generate.cpp) may pass 1D [S] token IDs.
+    // Without this, mx::take produces 2D [S, H] instead of 3D [1, S, H],
+    // causing downstream layers to misinterpret hidden_size as sequence length.
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
 
     // Find the first full-attention index for attention mask
     int fa_idx = full_attention_interval_ - 1;
@@ -583,8 +651,85 @@ mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<K
     return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
 }
 
+// Overloaded operator() for VLM multimodal use: accepts pre-computed embeddings.
+mx::array Qwen35MoEModelInner::operator()(
+    const std::optional<mx::array>& inputs,
+    std::vector<KVCache>* cache,
+    const std::optional<mx::array>& input_embedding,
+    const AttentionMask& mask,
+    const std::optional<mx::array>& /*position_ids*/,
+    const std::optional<mx::array>& /*visual_mask*/,
+    const std::vector<mx::array>* /*deepstack_embeds*/)
+{
+    auto init_h = [&]() -> mx::array {
+        if (input_embedding.has_value()) return input_embedding.value();
+        if (inputs.has_value()) return mx::take(embed_tokens_weight_, inputs.value(), 0);
+        throw std::runtime_error("Either inputs or input_embedding must be provided");
+    };
+    mx::array h = init_h();
+
+    // Find the first full-attention index for attention mask
+    int fa_idx = full_attention_interval_ - 1;
+    if (fa_idx >= static_cast<int>(layers_.size())) fa_idx = 0;
+
+    auto attn_mask = mask;
+    if (attn_mask.is_none()) {
+        attn_mask = create_attention_mask(
+            h, cache && fa_idx < static_cast<int>(cache->size()) ? &(*cache)[fa_idx] : nullptr);
+    }
+
+    // SSM mask: always nullopt
+    std::optional<mx::array> ssm_mask;
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
+        auto layer_attn_mask = layers_[i].is_linear() ? AttentionMask{} : attn_mask;
+        h = layers_[i](h, layer_attn_mask, ssm_mask, lc);
+    }
+
+    return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
+}
+
+mx::array Qwen35MoEModelInner::embed_tokens(const mx::array& input_ids) const {
+    return mx::take(embed_tokens_weight_, input_ids, 0);
+}
+
 mx::array Qwen35MoEModelInner::embed_as_linear(const mx::array& x) const {
     return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+}
+
+mx::array Qwen35MoEModelInner::apply_lm_head(const mx::array& hidden) const {
+    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+}
+
+mx::array Qwen35MoEModelInner::apply_norm(const mx::array& hidden) const {
+    return mx::fast::rms_norm(hidden, norm_weight_, rms_norm_eps_);
+}
+
+mx::array Qwen35MoEModelInner::forward_prenorm(const mx::array& inputs, std::vector<KVCache>* cache) {
+    // Same as operator() but returns hidden BEFORE the final RMSNorm.
+    // The MTP head expects pre-norm hidden and applies its own normalization.
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
+
+    int fa_idx = full_attention_interval_ - 1;
+    if (fa_idx >= static_cast<int>(layers_.size())) fa_idx = 0;
+
+    auto fa_mask = create_attention_mask(
+        h, cache && fa_idx < static_cast<int>(cache->size()) ? &(*cache)[fa_idx] : nullptr);
+
+    std::optional<mx::array> ssm_mask;
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
+        auto attn_mask = layers_[i].is_linear() ? AttentionMask{} : fa_mask;
+        h = layers_[i](h, attn_mask, ssm_mask, lc);
+    }
+
+    return h;  // pre-norm
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35MoEModelInner::weight_map() {
@@ -604,17 +749,34 @@ Qwen35MoEModel::Qwen35MoEModel(const Qwen35MoEConfiguration& args)
     : config_(args), model_(args)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
-    if (!args.tie_word_embeddings) {
-        lm_head_weight_ = mx::zeros({args.vocab_size, args.hidden_size});
-    }
+    // Always allocate lm_head_weight_ so it is part of weight_map(). For TIED
+    // embeddings, sanitize() wires a packed quantized copy of the embedding into
+    // it, so the lm_head matmul runs through quantized_matmul (~4x less memory
+    // than the dequantized embedding table — the single largest per-token load).
+    // load_weights() clears it back to nullopt if the checkpoint provides no
+    // lm_head (legacy untied-fallback behavior).
+    lm_head_weight_ = mx::zeros({args.vocab_size, args.hidden_size});
 }
 
 PrepareResult Qwen35MoEModel::prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int ws) {
     return llm_default_prepare(*this, input, cache, ws);
 }
 
-LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State*) {
-    return LMOutput(forward_impl(input.tokens, cache));
+LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state) {
+    // Use forward_prenorm to get hidden BEFORE the final RMSNorm.
+    // The MTP head expects pre-norm hidden and applies its own normalization.
+    // The lm_head needs post-norm hidden, so we apply the norm only for logits.
+    auto hidden = model_.forward_prenorm(input.tokens, cache);
+    auto post_norm = model_.apply_norm(hidden);
+    if (state) {
+        return LMOutput(
+            lm_head_weight_.has_value() ? linear_fwd(post_norm, lm_head_weight_.value())
+                                         : model_.embed_as_linear(post_norm),
+            LMOutput::State(std::nullopt, hidden));  // Return PRE-norm hidden for MTP
+    }
+    return LMOutput(
+        lm_head_weight_.has_value() ? linear_fwd(post_norm, lm_head_weight_.value())
+                                     : model_.embed_as_linear(post_norm));
 }
 
 mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
@@ -638,11 +800,20 @@ std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& pa
 
 std::unordered_map<std::string, mx::array>
 Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
-    if (config_.tie_word_embeddings) weights.erase("lm_head.weight");
+    // Tied-embedding lm_head wiring is handled at the end of this function (after
+    // key remapping), where we duplicate the PACKED quantized embedding into
+    // lm_head.* so the lm_head matmul uses quantized_matmul instead of the
+    // dequantized embedding. Drop any stale checkpoint lm_head here.
+    if (config_.tie_word_embeddings) {
+        weights.erase("lm_head.weight");
+        weights.erase("lm_head.scales");
+        weights.erase("lm_head.biases");
+    }
 
-    // Remove mtp.* keys
+    // Stash mtp.* keys for MTPHead wiring.
     for (auto it = weights.begin(); it != weights.end(); ) {
         if (it->first.find("mtp.") != std::string::npos) {
+            mtp_weights_.emplace(it->first, it->second);
             it = weights.erase(it);
         } else {
             ++it;
@@ -764,6 +935,26 @@ Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
         }
     }
 
+    // Tied embeddings: duplicate the PACKED embedding into lm_head.* so that
+    // register_quantized_weights() registers lm_head for quantized_matmul (the
+    // embedding itself is still dequantized for the table lookup). This makes the
+    // lm_head matmul load the 4-bit weight (~4x less memory) instead of the
+    // dequantized fp16 embedding — the dominant per-token load for large vocabs.
+    // Only meaningful when the embedding is quantized (has .scales); otherwise
+    // the duplicated lm_head is just a (cheap) reference to the same float table.
+    if (config_.tie_word_embeddings && std::getenv("MTP_NO_QLMHEAD") == nullptr) {
+        auto ew = weights.find("model.embed_tokens.weight");
+        auto es = weights.find("model.embed_tokens.scales");
+        if (ew != weights.end() && es != weights.end()) {
+            weights.insert_or_assign("lm_head.weight", ew->second);
+            weights.insert_or_assign("lm_head.scales", es->second);
+            auto eb = weights.find("model.embed_tokens.biases");
+            if (eb != weights.end()) {
+                weights.insert_or_assign("lm_head.biases", eb->second);
+            }
+        }
+    }
+
     return weights;
 }
 
@@ -773,6 +964,216 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
         auto it = weights.find(name);
         if (it != weights.end()) *target = it->second;
     }
+    // If lm_head_weight_ was initialized (tie_word_embeddings=false) but the
+    // checkpoint didn't have lm_head.weight, the model actually uses tied
+    // embeddings. Clear the optional so call_impl falls back to embed_as_linear.
+    // Check if lm_head_weight_ is still all zeros (uninitialized placeholder).
+    if (lm_head_weight_.has_value()) {
+        auto it = weights.find("lm_head.weight");
+        if (it == weights.end()) {
+            // lm_head.weight not in checkpoint — model uses tied embeddings
+            lm_head_weight_ = std::nullopt;
+        }
+    }
+    // Wire MTPHead if we have MTP weights.
+    if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
+        build_mtp_head();
+    }
+}
+
+void Qwen35MoEModel::build_mtp_head() {
+    MTPHeadConfig cfg;
+
+    // Step 1: Apply config.json values for fields that are reliable:
+    // hidden_size, intermediate_size, rope_theta, rms_norm_eps.
+    // head_dim, num_attention_heads, num_key_value_heads are intentionally
+    // set to 0 in llm_factory.cpp because the MTP config.json has wrong
+    // values for these — they must be derived from actual weight shapes.
+    bool has_config = mtp_head_cfg_.has_value();
+    if (has_config) {
+        auto& src = mtp_head_cfg_.value();
+        if (src.hidden_size > 0) cfg.hidden_size = src.hidden_size;
+        if (src.intermediate_size > 0) cfg.intermediate_size = src.intermediate_size;
+        if (src.rope_theta > 0) cfg.rope_theta = src.rope_theta;
+        if (src.rms_norm_eps > 0) cfg.rms_norm_eps = src.rms_norm_eps;
+        cfg.partial_rotary_factor = src.partial_rotary_factor;
+        if (src.quant_bits > 0) cfg.quant_bits = src.quant_bits;
+        if (src.quant_group_size > 0) cfg.quant_group_size = src.quant_group_size;
+    }
+
+    // Step 2: Dequantize weights BEFORE reading shapes.
+    // Quantized weights are stored as packed uint32 arrays with shape [M, N*bits/32].
+    // We need the original dimensions for correct head_dim/num_attention_heads inference.
+    std::unordered_map<std::string, mx::array> dequantized_weights;
+    std::vector<std::string> quant_prefixes;
+
+    // Named suffix constants for clarity and maintainability.
+    constexpr std::string_view kScalesSuffix = ".scales";
+    constexpr std::string_view kBiasesSuffix = ".biases";
+    constexpr std::string_view kWeightSuffix = ".weight";
+    const size_t scales_len = kScalesSuffix.size();
+    const size_t biases_len = kBiasesSuffix.size();
+    const size_t weight_len = kWeightSuffix.size();
+
+    // Find quantized weight prefixes (those with .scales).
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.size() > scales_len &&
+            key.compare(key.size() - scales_len, scales_len, kScalesSuffix) == 0) {
+            std::string prefix = key.substr(0, key.size() - scales_len);
+            std::string weight_key = prefix + std::string(kWeightSuffix);
+            if (mtp_weights_.count(weight_key)) {
+                quant_prefixes.push_back(prefix);
+            }
+        }
+    }
+
+    std::cerr << "[MTP] Found " << quant_prefixes.size() << " quantized weight groups" << std::endl;
+
+    // Dequantize quantized weights.
+    for (const auto& prefix : quant_prefixes) {
+        std::string weight_key = prefix + std::string(kWeightSuffix);
+        std::string scales_key = prefix + std::string(kScalesSuffix);
+        std::string biases_key = prefix + std::string(kBiasesSuffix);
+
+        const auto& packed = mtp_weights_.at(weight_key);
+        const auto& scales = mtp_weights_.at(scales_key);
+        std::optional<mx::array> biases;
+        auto bit = mtp_weights_.find(biases_key);
+        if (bit != mtp_weights_.end()) {
+            biases = bit->second;
+        }
+
+        auto deq = mx::dequantize(packed, scales, biases, cfg.quant_group_size, cfg.quant_bits);
+        dequantized_weights.insert_or_assign(weight_key, std::move(deq));
+    }
+
+    // Copy non-quantized weights (skip scales/biases and already-dequantized).
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.size() > scales_len &&
+            (key.compare(key.size() - scales_len, scales_len, kScalesSuffix) == 0 ||
+             key.compare(key.size() - biases_len, biases_len, kBiasesSuffix) == 0)) {
+            continue;
+        }
+        bool is_quantized = false;
+        if (key.size() > weight_len &&
+            key.compare(key.size() - weight_len, weight_len, kWeightSuffix) == 0) {
+            std::string prefix = key.substr(0, key.size() - weight_len);
+            is_quantized = mtp_weights_.count(prefix + std::string(kScalesSuffix)) > 0;
+        }
+        if (!is_quantized) {
+            dequantized_weights.insert_or_assign(key, weight);
+        }
+    }
+
+    std::cerr << "[MTP] Dequantized " << dequantized_weights.size() << " weights total" << std::endl;
+
+    // --- Pass 1: Determine head_dim from q_norm/k_norm weight shapes (ground truth).
+    // q_norm and k_norm are RMSNorm layers applied per-head, so their weight
+    // size ALWAYS equals head_dim.  This is unambiguous regardless of
+    // quantisation format, unlike matmul weight factorisation which can have
+    // multiple valid (head_dim, num_heads) decompositions.
+    for (const auto& [key, weight] : dequantized_weights) {
+        if ((key.find("self_attn.q_norm.weight") != std::string::npos ||
+             key.find("self_attn.k_norm.weight") != std::string::npos) &&
+            weight.ndim() >= 1) {
+            cfg.head_dim = weight.shape(0);
+            std::cerr << "[MTP] Got head_dim=" << cfg.head_dim
+                      << " from " << key << " (norm-weight ground truth)"
+                      << std::endl;
+            break;
+        }
+    }
+
+    // --- Pass 2: Infer remaining dimensions from projection weights.
+    // o_proj: [hidden_size, num_attention_heads * head_dim]
+    // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
+    // k_proj: [num_kv_heads * head_dim, hidden_size]
+    //
+    // If head_dim was already determined from norms (Pass 1), we compute
+    // num_attention_heads / num_key_value_heads directly.  Only fall back to
+    // a candidate search when norms are absent.
+    std::vector<int> hd_candidates = {256, 128, 64, 96, 80, 160};
+
+    for (const auto& [key, weight] : dequantized_weights) {
+        if (key.find("self_attn.o_proj.weight") != std::string::npos) {
+            if (weight.ndim() >= 2) {
+                int o_proj_dim0 = weight.shape(0);
+                int attn_dim = weight.shape(1);
+                if (cfg.hidden_size == 0) cfg.hidden_size = o_proj_dim0;
+                if (cfg.head_dim > 0) {
+                    // head_dim already known — derive num_attention_heads directly.
+                    cfg.num_attention_heads = attn_dim / cfg.head_dim;
+                    std::cerr << "[MTP] head_dim=" << cfg.head_dim
+                              << " num_attention_heads=" << cfg.num_attention_heads
+                              << " (from o_proj attn_dim=" << attn_dim << ")"
+                              << std::endl;
+                } else {
+                    // Fallback: try standard head_dim values (largest first).
+                    for (int try_hd : hd_candidates) {
+                        if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
+                            cfg.head_dim = try_hd;
+                            cfg.num_attention_heads = attn_dim / try_hd;
+                            std::cerr << "[MTP] Selected head_dim=" << try_hd
+                                      << " via candidate search" << std::endl;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (key.find("self_attn.k_proj.weight") != std::string::npos) {
+            if (weight.ndim() >= 2 && cfg.head_dim > 0) {
+                cfg.num_key_value_heads = weight.shape(0) / cfg.head_dim;
+            }
+        } else if (key.find("self_attn.q_proj.weight") != std::string::npos) {
+            // Cross-check: q_proj[0] = num_heads * head_dim * 2
+            if (weight.ndim() >= 1 && cfg.head_dim > 0) {
+                int q_proj_dim = weight.shape(0);
+                int inferred_heads = q_proj_dim / (cfg.head_dim * 2);
+                if (inferred_heads > 0) {
+                    cfg.num_attention_heads = inferred_heads;
+                }
+            }
+        } else if (key.find("mlp.gate_proj.weight") != std::string::npos ||
+                   key.find("mlp.up_proj.weight") != std::string::npos) {
+            if (weight.ndim() >= 1) {
+                if (cfg.intermediate_size == 0) cfg.intermediate_size = weight.shape(0);
+                if (cfg.hidden_size == 0) cfg.hidden_size = weight.shape(1);
+            }
+        }
+    }
+
+    // Fallback: if weight inference didn't find values, use base model config.
+    bool used_fallback = false;
+    if (cfg.hidden_size == 0) { cfg.hidden_size = config_.hidden_size; used_fallback = true; }
+    if (cfg.intermediate_size == 0) { cfg.intermediate_size = config_.intermediate_size; used_fallback = true; }
+    if (cfg.num_attention_heads == 0) { cfg.num_attention_heads = config_.num_attention_heads; used_fallback = true; }
+    if (cfg.num_key_value_heads == 0) { cfg.num_key_value_heads = config_.num_key_value_heads; used_fallback = true; }
+    if (cfg.head_dim == 0) { cfg.head_dim = config_.resolved_head_dim(); used_fallback = true; }
+    if (cfg.rms_norm_eps == 0) cfg.rms_norm_eps = config_.rms_norm_eps;
+    if (cfg.rope_theta == 0) cfg.rope_theta = config_.rope_theta;
+
+    std::cerr << "[MTP] Inferred config: hidden_size=" << cfg.hidden_size
+              << " head_dim=" << cfg.head_dim
+              << " num_attention_heads=" << cfg.num_attention_heads
+              << " num_key_value_heads=" << cfg.num_key_value_heads
+              << " intermediate_size=" << cfg.intermediate_size
+              << " quant_bits=" << cfg.quant_bits
+              << " quant_group_size=" << cfg.quant_group_size
+              << (used_fallback ? " (used base model fallback)" : " (weight-derived)")
+              << std::endl;
+
+    // MTP head always uses dense SwiGLU MLP (gate_proj/up_proj/down_proj).
+    // Checkpoint does NOT contain MoE routing weights for the MTP head.
+    mtp_head_ = MTPHead(cfg);
+    mtp_head_->load_mtp_weights(mtp_weights_);
+}
+
+std::vector<KVCache> Qwen35MoEModel::new_mtp_cache(const GenerateParameters& params) const {
+    // MTP head has one decoder layer with standard attention.
+    std::vector<KVCache> caches;
+    caches.reserve(1);
+    caches.emplace_back(KVCacheSimple{});
+    return caches;
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35MoEModel::weight_map() {

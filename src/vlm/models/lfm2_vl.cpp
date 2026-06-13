@@ -1,6 +1,10 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // Port of LFM2VL.swift — LFM2 VL VLM (SigLip vision + LFM2 hybrid attention/conv language)
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <mlx-lm/vlm/models/lfm2_vl.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/attention_utils.h>

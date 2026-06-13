@@ -32,12 +32,9 @@ endif()
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
+    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    # Pin MLX to post-PR#7 commit (2026-05-20).
-    # Includes soloish90's 8-bit QMV fix (PR #6), the uint4 miscompile
-    # fix (PR #7 — 9e768e4) where global_load_b128 miscompiles on RDNA 3.5
-    # with hipcc 7.13 / LLVM 23, AND the clear_streams() ROCm backend patch.
-    GIT_TAG        94d325ce5fda85f3a3266623d220af4e3a873fb6
+    GIT_TAG        rocm-support
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
@@ -125,7 +122,12 @@ add_library(mlx-lm-common
     src/common/quantize_utils.cpp
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
+    src/llm/models/mtp_head.cpp
+    src/llm/models/mtp_moe.cpp
 )
+# NOTE: src/common/mtp_delta_kernel.cpp intentionally excluded from build.
+# Contains dead code (mtp_delta_fused / mtp_draft_forward) not wired into
+# generate.cpp. Left on disk for future ROCm optimization work.
 target_link_libraries(mlx-lm-common PUBLIC
     mlx-lm-core
     nlohmann_json::nlohmann_json
@@ -209,6 +211,7 @@ add_library(mlx-lm-vlm
     src/vlm/models/qwen25_vl.cpp
     src/vlm/models/gemma3.cpp
     src/vlm/models/qwen3_vl.cpp
+    src/vlm/models/qwen35_vl.cpp
     src/vlm/models/pixtral.cpp
     src/vlm/models/mistral3.cpp
     src/vlm/models/lfm2_vl.cpp

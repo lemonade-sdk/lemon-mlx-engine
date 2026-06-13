@@ -35,6 +35,8 @@ struct CliArgs {
     int kv_bits = 0;        // KV cache quantization bits (0=off, 4 or 8)
     int kv_group_size = 64; // KV cache quantization group size
     int ctx_size = 0;       // Context size for KV cache pre-allocation (0=auto)
+    bool use_mtp = false;
+    int n_draft_tokens = 1;
 };
 
 static CliArgs parse_args(int argc, char* argv[]) {
@@ -51,7 +53,9 @@ static CliArgs parse_args(int argc, char* argv[]) {
                   << "  --raw                   Skip chat template, raw encoding\n"
                   << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                   << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
-                  << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n";
+                  << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
+                  << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
+                  << "  --n-draft N             MTP draft tokens per step (default: 1)\n";
         std::exit(1);
     }
     args.model_path = argv[1];
@@ -79,6 +83,10 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.kv_group_size = std::stoi(argv[++i]);
         } else if (flag == "--ctx-size" && i + 1 < argc) {
             args.ctx_size = std::stoi(argv[++i]);
+        } else if (flag == "--use-mtp") {
+            args.use_mtp = true;
+        } else if (flag == "--n-draft" && i + 1 < argc) {
+            args.n_draft_tokens = std::stoi(argv[++i]);
         }
     }
     return args;
@@ -131,6 +139,12 @@ int main(int argc, char* argv[]) {
         if (args.kv_bits > 0) {
             params.kv_bits = args.kv_bits;
             params.kv_group_size = args.kv_group_size;
+        }
+        params.use_mtp = args.use_mtp;
+        params.n_draft_tokens = args.n_draft_tokens;
+        if (args.use_mtp) {
+            std::cerr << "MTP enabled (scaffolding): n_draft="
+                      << args.n_draft_tokens << "\n";
         }
 
         // Use ChatSession if chat template is available and not in raw mode.
