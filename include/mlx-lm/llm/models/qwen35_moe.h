@@ -3,6 +3,7 @@
 
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx-lm/common/language_model.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <mlx-lm/common/string_utils.h>
 #include <mlx-lm/common/switch_layers.h>
 #include <mlx-lm/common/types.h>
@@ -310,8 +311,15 @@ public:
         // For untied embeddings, use the separate lm_head weight if available.
         // For tied embeddings (or if lm_head_weight_ was cleared), delegate to
         // the inner model which uses embed_tokens_weight_.
+        //
+        // Use the registry-aware linear_forward (NOT a raw matmul): with 4-bit
+        // checkpoints the lm_head is registered for quantized_matmul and kept in
+        // packed form, so a raw matmul would see a [vocab, hidden*bits/32] weight
+        // and fail. linear_forward dispatches to quantized_matmul when the weight
+        // is registered and falls back to a plain matmul otherwise — matching how
+        // the normal forward computes logits. (MTP's apply_lm_head_fn path.)
         if (lm_head_weight_.has_value()) {
-            return mlx::core::matmul(hidden, mlx::core::transpose(lm_head_weight_.value()));
+            return linear_forward(hidden, lm_head_weight_.value());
         }
         return model_.apply_lm_head(hidden);
     }
