@@ -32,15 +32,9 @@ endif()
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
+    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    # Pin MLX to the rocm-support tip with the RDNA QMV decode optimizations.
-    # On top of the post-PR#10 base (45f6ee18) — which has the 8-bit QMV fix
-    # (PR #6), the uint4 global_load_b128 miscompile fix on RDNA 3.5 / hipcc 7.13
-    # (PR #7), clear_streams(), and the affine_dequantize #pragma unroll fix
-    # (PR #10) — this adds the ROCm QMV persistent grid-stride + streaming
-    # (non-temporal) weight loads + RDNA 4 tile_n tuning (b0b905e): ~+3% decode
-    # on gfx1151, output unchanged.
-    GIT_TAG        b0b905efc88bf8578ce75994d40983ac1e503888
+    GIT_TAG        rocm-support
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
