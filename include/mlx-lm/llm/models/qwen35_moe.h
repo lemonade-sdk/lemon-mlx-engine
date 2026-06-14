@@ -151,6 +151,15 @@ class Qwen35MoEGatedDeltaNet {
     std::optional<mlx::core::array> q_norm_w_;     // full(head_k_dim, inv_scale^2)
     std::optional<mlx::core::array> k_norm_w_;     // full(head_k_dim, inv_scale)
 
+    // The four in_proj projections (qkv, z, b, a) all map hidden_size -> their
+    // own output width with identical input width / quantization params, so
+    // their quantized weights can be concatenated along the output axis into one
+    // and evaluated by a single quantized_matmul (then sliced). Built lazily on
+    // first call once the per-weight quant metadata is registered.
+    std::optional<mlx::core::array> in_proj_fused_weight_;
+    bool in_proj_fused_ready_{false};
+    void ensure_in_proj_fused();
+
 public:
     explicit Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& args);
     mlx::core::array operator()(const mlx::core::array& inputs,

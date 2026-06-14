@@ -270,6 +270,46 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
       out_proj_weight_(mx::zeros({args.hidden_size, value_dim_}))
 {}
 
+// Build the fused in_proj weight once: concatenate the qkv/z/b/a quantized
+// weights (and their scales/biases) along the output axis and register the
+// result so linear_fwd routes it through a single quantized_matmul. They share
+// input width (hidden_size) and quantization params, so output rows are
+// independent and concatenation is exact. No-op (leaves fused weight unset, so
+// the caller falls back to four matmuls) if any weight is not quantized or the
+// quant params differ.
+void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
+    if (in_proj_fused_ready_) return;
+    in_proj_fused_ready_ = true; // attempt exactly once
+
+    auto& reg = QuantizedWeightRegistry::instance();
+    const QuantizationInfo* qi[4] = {
+        reg.find(&in_proj_qkv_weight_), reg.find(&in_proj_z_weight_),
+        reg.find(&in_proj_b_weight_),   reg.find(&in_proj_a_weight_)};
+    for (auto* q : qi)
+        if (!q) return; // not all quantized — keep the four-matmul fallback
+    for (int i = 1; i < 4; ++i)
+        if (qi[i]->group_size != qi[0]->group_size || qi[i]->bits != qi[0]->bits)
+            return;
+    bool have_biases = qi[0]->biases && qi[1]->biases && qi[2]->biases && qi[3]->biases;
+
+    auto w = mx::concatenate({in_proj_qkv_weight_, in_proj_z_weight_,
+                              in_proj_b_weight_, in_proj_a_weight_}, 0);
+    auto s = mx::concatenate({qi[0]->scales, qi[1]->scales,
+                              qi[2]->scales, qi[3]->scales}, 0);
+    std::optional<mx::array> bs;
+    if (have_biases)
+        bs = mx::concatenate({*qi[0]->biases, *qi[1]->biases,
+                              *qi[2]->biases, *qi[3]->biases}, 0);
+    // Materialize as constants so they are not recomputed each step.
+    mx::eval(w);
+    mx::eval(s);
+    if (bs) mx::eval(*bs);
+
+    in_proj_fused_weight_ = std::move(w);
+    reg.register_weight(&in_proj_fused_weight_.value(), std::move(s), std::move(bs),
+                        qi[0]->group_size, qi[0]->bits);
+}
+
 mx::array Qwen35MoEGatedDeltaNet::operator()(
     const mx::array& inputs,
     const std::optional<mx::array>& mask,
@@ -277,11 +317,28 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
 {
     int B = inputs.shape(0), S = inputs.shape(1);
 
-    // 4 separate projections (unlike Qwen3Next which uses 2 combined)
-    auto qkv = linear_fwd(inputs, in_proj_qkv_weight_);
-    auto z = mx::reshape(linear_fwd(inputs, in_proj_z_weight_), {B, S, num_v_heads_, head_v_dim_});
-    auto b_val = linear_fwd(inputs, in_proj_b_weight_);
-    auto a_val = linear_fwd(inputs, in_proj_a_weight_);
+    // One fused in_proj matmul (qkv|z|b|a concatenated) then slice, falling back
+    // to four separate matmuls if the fused weight could not be built.
+    ensure_in_proj_fused();
+    mx::array qkv(0.0f), z(0.0f), b_val(0.0f), a_val(0.0f);
+    if (in_proj_fused_weight_.has_value()) {
+        auto fused = linear_fwd(inputs, *in_proj_fused_weight_);
+        int o0 = key_dim_ * 2 + value_dim_;       // qkv width
+        int o1 = value_dim_;                      // z width
+        int o2 = num_v_heads_;                    // b width
+        qkv   = mx::slice(fused, {0, 0, 0},          {B, S, o0});
+        z     = mx::reshape(mx::slice(fused, {0, 0, o0}, {B, S, o0 + o1}),
+                            {B, S, num_v_heads_, head_v_dim_});
+        b_val = mx::slice(fused, {0, 0, o0 + o1},     {B, S, o0 + o1 + o2});
+        a_val = mx::slice(fused, {0, 0, o0 + o1 + o2},
+                          {B, S, o0 + o1 + 2 * o2});
+    } else {
+        // 4 separate projections (unlike Qwen3Next which uses 2 combined)
+        qkv = linear_fwd(inputs, in_proj_qkv_weight_);
+        z = mx::reshape(linear_fwd(inputs, in_proj_z_weight_), {B, S, num_v_heads_, head_v_dim_});
+        b_val = linear_fwd(inputs, in_proj_b_weight_);
+        a_val = linear_fwd(inputs, in_proj_a_weight_);
+    }
 
     // Conv1d processing
     auto dtype = inputs.dtype();
@@ -500,21 +557,32 @@ Qwen35MoESparseMoeBlock::Qwen35MoESparseMoeBlock(const Qwen35MoEConfiguration& a
 {}
 
 mx::array Qwen35MoESparseMoeBlock::operator()(const mx::array& x) {
-    auto gates = mx::softmax(linear_fwd(x, gate_weight_), -1);
+    // Router logits over all experts (no softmax yet — see below).
+    auto router_logits = linear_fwd(x, gate_weight_);
 
     int k = top_k_;
-    int kth = gates.shape(-1) - k;
-    auto inds = mx::argpartition(gates, kth, -1);
+    int kth = router_logits.shape(-1) - k;
+    // argpartition on the logits selects the same top-k as on the softmax
+    // probabilities (softmax is monotonic), so we can avoid the full-256 softmax.
+    auto inds = mx::argpartition(router_logits, kth, -1);
     inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
-    auto scores = mx::take_along_axis(gates, inds, -1);
 
+    mx::array scores(0.0f);
     if (norm_topk_prob_) {
-        static auto compiled_normalize_scores = mx::compile(
-            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
-                return {mx::divide(inputs[0], mx::sum(inputs[0], -1, true))};
-            },
-            /*shapeless=*/true);
-        scores = compiled_normalize_scores({scores})[0];
+        // The renormalized softmax over all experts, restricted to the top-k, is
+        // exactly the softmax over the top-k logits:
+        //   softmax_N(l)_i / sum_{j in topk} softmax_N(l)_j
+        //     = exp(l_i) / sum_{j in topk} exp(l_j) = softmax_k(l_topk)_i.
+        // So gather the k=8 selected logits and softmax over just those — this
+        // replaces a 256-wide softmax + a separate divide/sum renormalize with a
+        // single 8-wide softmax.
+        auto top_logits = mx::take_along_axis(router_logits, inds, -1);
+        scores = mx::softmax(top_logits, -1);
+    } else {
+        // Raw (un-renormalized) softmax weights: softmax over all experts first,
+        // then gather the selected ones.
+        auto gates = mx::softmax(router_logits, -1);
+        scores = mx::take_along_axis(gates, inds, -1);
     }
 
     auto y = switch_mlp_(x, inds);
