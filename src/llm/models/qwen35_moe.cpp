@@ -149,6 +149,57 @@ static mx::array linear_fwd(const mx::array& x, const mx::array& w,
     return linear_forward(x, w, bias.has_value() ? &bias.value() : nullptr);
 }
 
+// Fuse several quantized projections that share input width into one packed
+// weight, concatenated along the output axis and registered so linear_fwd
+// routes it through a single quantized_matmul (the caller then slices the
+// output). Output rows are independent, so this is exact. Returns true and sets
+// `dst` once; returns false (leaving dst empty -> caller uses the unfused
+// fallback) if any source is not quantized or quant params differ. Does not
+// handle a separate per-projection (linear) bias — caller must only fuse
+// bias-free projections.
+static bool fuse_quant_projections(
+    const std::vector<const mx::array*>& srcs,
+    std::optional<mx::array>& dst)
+{
+    if (dst.has_value()) return true;
+    auto& reg = QuantizedWeightRegistry::instance();
+    std::vector<const QuantizationInfo*> qis;
+    qis.reserve(srcs.size());
+    for (auto* w : srcs) {
+        auto* q = reg.find(w);
+        if (!q) return false;
+        qis.push_back(q);
+    }
+    for (size_t i = 1; i < qis.size(); ++i)
+        if (qis[i]->group_size != qis[0]->group_size || qis[i]->bits != qis[0]->bits)
+            return false;
+    bool have_biases = true;
+    for (auto* q : qis)
+        if (!q->biases) have_biases = false;
+
+    std::vector<mx::array> ws, ss, bs;
+    ws.reserve(srcs.size());
+    ss.reserve(srcs.size());
+    for (size_t i = 0; i < srcs.size(); ++i) {
+        ws.push_back(*srcs[i]);
+        ss.push_back(qis[i]->scales);
+        if (have_biases) bs.push_back(*qis[i]->biases);
+    }
+    auto w = mx::concatenate(ws, 0);
+    auto s = mx::concatenate(ss, 0);
+    std::optional<mx::array> b;
+    if (have_biases) b = mx::concatenate(bs, 0);
+    // Materialize as constants so they are not recomputed each step.
+    mx::eval(w);
+    mx::eval(s);
+    if (b) mx::eval(*b);
+
+    dst = std::move(w);
+    reg.register_weight(&dst.value(), std::move(s), std::move(b),
+                        qis[0]->group_size, qis[0]->bits);
+    return true;
+}
+
 // --- Qwen35MoEAttention ---
 // Swift: Qwen35Attention -- standard attention with sigmoid gate on q_proj output
 
@@ -176,21 +227,44 @@ Qwen35MoEAttention::Qwen35MoEAttention(const Qwen35MoEConfiguration& args)
     }
 }
 
+void Qwen35MoEAttention::ensure_qkv_proj_fused() {
+    if (qkv_proj_fused_ready_) return;
+    qkv_proj_fused_ready_ = true; // attempt exactly once
+    // The fused path adds the quantization biases but not separate linear
+    // biases; only fuse when the projections are bias-free (this model).
+    if (q_proj_bias_ || k_proj_bias_ || v_proj_bias_) return;
+    fuse_quant_projections({&q_proj_weight_, &k_proj_weight_, &v_proj_weight_},
+                           qkv_proj_fused_weight_);
+}
+
 mx::array Qwen35MoEAttention::operator()(const mx::array& x,
                                            const AttentionMask& mask,
                                            KVCache* cache) {
     int B = x.shape(0), L = x.shape(1);
 
-    auto q_proj_out = linear_fwd(x, q_proj_weight_, q_proj_bias_);
+    // One fused q|k|v matmul (then slice), falling back to three separate
+    // projections if the fused weight could not be built.
+    ensure_qkv_proj_fused();
+    mx::array q_proj_out(0.0f), keys(0.0f), values(0.0f);
+    if (qkv_proj_fused_weight_.has_value()) {
+        auto fused = linear_fwd(x, *qkv_proj_fused_weight_);
+        int qw = num_heads_ * 2 * head_dim_;     // q_proj output (queries + gate)
+        int kw = num_kv_heads_ * head_dim_;      // k_proj output
+        int vw = num_kv_heads_ * head_dim_;      // v_proj output
+        q_proj_out = mx::slice(fused, {0, 0, 0},        {B, L, qw});
+        keys       = mx::slice(fused, {0, 0, qw},       {B, L, qw + kw});
+        values     = mx::slice(fused, {0, 0, qw + kw},  {B, L, qw + kw + vw});
+    } else {
+        q_proj_out = linear_fwd(x, q_proj_weight_, q_proj_bias_);
+        keys = linear_fwd(x, k_proj_weight_, k_proj_bias_);
+        values = linear_fwd(x, v_proj_weight_, v_proj_bias_);
+    }
     // Reshape to [B, L, num_heads, 2*head_dim] then split into queries + gate
     q_proj_out = mx::reshape(q_proj_out, {B, L, num_heads_, -1});
     int hd = head_dim_;
     auto queries = mx::slice(q_proj_out, {0, 0, 0, 0}, {B, L, num_heads_, hd});
     auto gate = mx::slice(q_proj_out, {0, 0, 0, hd}, {B, L, num_heads_, 2 * hd});
     gate = mx::reshape(gate, {B, L, -1});
-
-    auto keys = linear_fwd(x, k_proj_weight_, k_proj_bias_);
-    auto values = linear_fwd(x, v_proj_weight_, v_proj_bias_);
 
     // RMSNorm on queries and keys with learned weights
     queries = mx::transpose(
@@ -280,34 +354,9 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
 void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
     if (in_proj_fused_ready_) return;
     in_proj_fused_ready_ = true; // attempt exactly once
-
-    auto& reg = QuantizedWeightRegistry::instance();
-    const QuantizationInfo* qi[4] = {
-        reg.find(&in_proj_qkv_weight_), reg.find(&in_proj_z_weight_),
-        reg.find(&in_proj_b_weight_),   reg.find(&in_proj_a_weight_)};
-    for (auto* q : qi)
-        if (!q) return; // not all quantized — keep the four-matmul fallback
-    for (int i = 1; i < 4; ++i)
-        if (qi[i]->group_size != qi[0]->group_size || qi[i]->bits != qi[0]->bits)
-            return;
-    bool have_biases = qi[0]->biases && qi[1]->biases && qi[2]->biases && qi[3]->biases;
-
-    auto w = mx::concatenate({in_proj_qkv_weight_, in_proj_z_weight_,
-                              in_proj_b_weight_, in_proj_a_weight_}, 0);
-    auto s = mx::concatenate({qi[0]->scales, qi[1]->scales,
-                              qi[2]->scales, qi[3]->scales}, 0);
-    std::optional<mx::array> bs;
-    if (have_biases)
-        bs = mx::concatenate({*qi[0]->biases, *qi[1]->biases,
-                              *qi[2]->biases, *qi[3]->biases}, 0);
-    // Materialize as constants so they are not recomputed each step.
-    mx::eval(w);
-    mx::eval(s);
-    if (bs) mx::eval(*bs);
-
-    in_proj_fused_weight_ = std::move(w);
-    reg.register_weight(&in_proj_fused_weight_.value(), std::move(s), std::move(bs),
-                        qi[0]->group_size, qi[0]->bits);
+    fuse_quant_projections({&in_proj_qkv_weight_, &in_proj_z_weight_,
+                            &in_proj_b_weight_, &in_proj_a_weight_},
+                           in_proj_fused_weight_);
 }
 
 mx::array Qwen35MoEGatedDeltaNet::operator()(
@@ -530,7 +579,24 @@ Qwen35MoEMLP::Qwen35MoEMLP(int dimensions, int hidden_dimensions)
       up_proj_weight_(mx::zeros({hidden_dimensions, dimensions}))
 {}
 
+void Qwen35MoEMLP::ensure_gate_up_fused() {
+    if (gate_up_fused_ready_) return;
+    gate_up_fused_ready_ = true; // attempt exactly once
+    fuse_quant_projections({&gate_proj_weight_, &up_proj_weight_},
+                           gate_up_fused_weight_);
+}
+
 mx::array Qwen35MoEMLP::operator()(const mx::array& x) {
+    // One fused gate|up matmul (then slice for SwiGLU), falling back to two
+    // separate projections if the fused weight could not be built.
+    ensure_gate_up_fused();
+    if (gate_up_fused_weight_.has_value()) {
+        auto fused = linear_fwd(x, *gate_up_fused_weight_);
+        int gw = gate_proj_weight_.shape(0); // intermediate (output) width
+        auto g = mx::slice(fused, {0, 0, 0},  {fused.shape(0), fused.shape(1), gw});
+        auto u = mx::slice(fused, {0, 0, gw}, {fused.shape(0), fused.shape(1), 2 * gw});
+        return linear_fwd(swiglu(g, u), down_proj_weight_);
+    }
     auto g = linear_fwd(x, gate_proj_weight_);
     return linear_fwd(swiglu(g, linear_fwd(x, up_proj_weight_)), down_proj_weight_);
 }

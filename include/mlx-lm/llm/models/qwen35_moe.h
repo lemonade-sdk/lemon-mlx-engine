@@ -114,6 +114,13 @@ class Qwen35MoEAttention {
     float rope_theta_;
     int rope_dims_;
 
+    // q/k/v projections share input width and (for this model) have no bias, so
+    // their quantized weights are concatenated into one and evaluated by a
+    // single quantized_matmul (then sliced). Built lazily on first call.
+    std::optional<mlx::core::array> qkv_proj_fused_weight_;
+    bool qkv_proj_fused_ready_{false};
+    void ensure_qkv_proj_fused();
+
 public:
     explicit Qwen35MoEAttention(const Qwen35MoEConfiguration& args);
     mlx::core::array operator()(const mlx::core::array& x,
@@ -171,6 +178,13 @@ public:
 // Dense MLP (reuses gate/up/down pattern)
 class Qwen35MoEMLP {
     mlx::core::array gate_proj_weight_, down_proj_weight_, up_proj_weight_;
+
+    // gate_proj and up_proj share input width, so their quantized weights are
+    // concatenated into one and evaluated by a single quantized_matmul (then
+    // sliced for the SwiGLU). Built lazily on first call.
+    std::optional<mlx::core::array> gate_up_fused_weight_;
+    bool gate_up_fused_ready_{false};
+    void ensure_gate_up_fused();
 
 public:
     Qwen35MoEMLP(int dimensions, int hidden_dimensions);
