@@ -31,6 +31,16 @@ class SwitchLinear {
     int output_dims_;
     int num_experts_;
 
+    // Cache for the default lhs_indices (an identity arange over x's batch
+    // dims). gather_qmm would otherwise regenerate this arange on every forward
+    // pass via indices_or_default(); during decode the batch shape is constant,
+    // so we compute it once per shape and reuse the already-evaluated array,
+    // eliminating one arange kernel launch per expert projection per token.
+    std::optional<mlx::core::array> lhs_indices_cache_;
+    mlx::core::Shape lhs_indices_cache_shape_;
+
+    const mlx::core::array& default_lhs_indices(const mlx::core::array& x);
+
 public:
     SwitchLinear(int input_dims, int output_dims, int num_experts, bool bias = false);
 

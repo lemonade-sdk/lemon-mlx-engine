@@ -57,6 +57,24 @@ SwitchLinear::SwitchLinear(int input_dims, int output_dims, int num_experts, boo
     }
 }
 
+// Build (and cache) the default lhs_indices that gather_qmm/gather_mm would
+// otherwise create internally on every call: an identity arange over x's batch
+// dimensions (x.shape minus the trailing two matmul dims). This matches MLX's
+// indices_or_default() exactly, so results are bit-identical — we just avoid
+// relaunching the arange kernel each decode step when the shape is unchanged.
+const mx::array& SwitchLinear::default_lhs_indices(const mx::array& x) {
+    mx::Shape batch_shape(x.shape().begin(), x.shape().end() - 2);
+    if (!lhs_indices_cache_.has_value() ||
+        lhs_indices_cache_shape_ != batch_shape) {
+        int64_t total = 1;
+        for (auto d : batch_shape) total *= d;
+        lhs_indices_cache_ = mx::reshape(
+            mx::arange(static_cast<int>(total), mx::uint32), batch_shape);
+        lhs_indices_cache_shape_ = batch_shape;
+    }
+    return lhs_indices_cache_.value();
+}
+
 mx::array SwitchLinear::operator()(
     const mx::array& x,
     const mx::array& indices,
@@ -68,7 +86,7 @@ mx::array SwitchLinear::operator()(
     if (qi) {
         result = mx::gather_qmm(
             x, weight_, qi->scales, qi->biases,
-            /*lhs_indices=*/std::nullopt,
+            /*lhs_indices=*/std::optional<mx::array>(default_lhs_indices(x)),
             /*rhs_indices=*/std::optional<mx::array>(indices),
             /*transpose=*/true,
             /*group_size=*/qi->group_size,
@@ -77,7 +95,11 @@ mx::array SwitchLinear::operator()(
             /*sorted_indices=*/sorted_indices);
     } else {
         auto weight_t = mx::swapaxes(weight_, -1, -2);
-        result = mx::gather_mm(x, weight_t, std::nullopt, indices, sorted_indices);
+        result = mx::gather_mm(
+            x, weight_t,
+            /*lhs_indices=*/std::optional<mx::array>(default_lhs_indices(x)),
+            /*rhs_indices=*/std::optional<mx::array>(indices),
+            sorted_indices);
     }
 
     if (bias_.has_value()) {
