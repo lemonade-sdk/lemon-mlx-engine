@@ -306,10 +306,15 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
 
     // T=1 decode fast path
     if (S == 1 && cache && (*cache)[0].has_value() && conv_input.shape(1) == conv_kernel_size_) {
-        // Fused conv1d + silu
-        auto w = mx::reshape(
-            mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
-            {1, conv_kernel_size_, conv_dim_});
+        // Fused conv1d + silu. The reshaped/transposed conv weight is invariant
+        // across decode steps — build it once and reuse (was rebuilt every step,
+        // i.e. a transpose+2 reshapes + an allocation per layer per token).
+        if (!conv1d_w_dec_.has_value()) {
+            conv1d_w_dec_ = mx::reshape(
+                mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
+                {1, conv_kernel_size_, conv_dim_});
+        }
+        const mx::array& w = *conv1d_w_dec_;
         static auto compiled_conv_silu = mx::compile(
             [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
                 auto dot = mx::sum(mx::multiply(inputs[0], inputs[1]), 1, true);
@@ -326,12 +331,16 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, 1, conv_dim_}),
                                   {B, 1, num_v_heads_, head_v_dim_});
 
-        // Q/K norms
-        float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
-        auto q_norm_w = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
-        auto k_norm_w = mx::full({head_k_dim_}, inv_scale, dtype);
-        q_out = mx::fast::rms_norm(q_out, q_norm_w, 1e-6f);
-        k_out = mx::fast::rms_norm(k_out, k_norm_w, 1e-6f);
+        // Q/K norms. The norm weights are constant vectors (every element equal)
+        // that only depend on head_k_dim_ — build once, reuse every step instead
+        // of re-filling + allocating two tensors per layer per token.
+        if (!q_norm_w_.has_value()) {
+            float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
+            q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
+            k_norm_w_ = mx::full({head_k_dim_}, inv_scale, dtype);
+        }
+        q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
+        k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
 
         // Fused GDN decode step
         auto ssm_state = (*cache)[1].has_value() ? (*cache)[1].value()

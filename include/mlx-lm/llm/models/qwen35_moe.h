@@ -144,6 +144,13 @@ class Qwen35MoEGatedDeltaNet {
     Qwen3NextRMSNormGated norm_;
     mlx::core::array out_proj_weight_;
 
+    // Decode-path invariants, built once on first T=1 step and reused every
+    // token. Previously rebuilt per step across all 30 gated-delta layers,
+    // costing a fill/transpose/reshape kernel launch AND an allocation each.
+    std::optional<mlx::core::array> conv1d_w_dec_; // reshaped+transposed conv weight
+    std::optional<mlx::core::array> q_norm_w_;     // full(head_k_dim, inv_scale^2)
+    std::optional<mlx::core::array> k_norm_w_;     // full(head_k_dim, inv_scale)
+
 public:
     explicit Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& args);
     mlx::core::array operator()(const mlx::core::array& inputs,
