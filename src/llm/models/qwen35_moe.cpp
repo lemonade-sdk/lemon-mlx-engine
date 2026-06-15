@@ -448,9 +448,28 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
         k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
 
-        // Fused GDN decode step
+        // GDN decode step. Default: the fused custom HIP kernel via
+        // gated_delta_update — for T=1/no-mask it dispatches to
+        // gated_delta_kernel, doing the whole recurrence in ONE kernel instead
+        // of the gemv_batched (which reads the ~1MB state tensor at ~3% BW) +
+        // elementwise chain. Measured +26% decode (39.3 -> 49.5 tps) with
+        // bit-identical greedy output. This is the same path qwen35.cpp (dense)
+        // already uses; qwen35_moe just never wired it into its decode fast path.
+        // Set MLX_GDN_NO_FUSED=1 to fall back to the inline mx::compile recurrence.
+        // gated_delta_update itself falls back to the ops path when the fused
+        // kernel can't apply (Dk%32!=0 or a mask is present), so it is always safe.
         auto ssm_state = (*cache)[1].has_value() ? (*cache)[1].value()
                            : mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
+
+        static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        if (use_fused_gdn) {
+            auto [o, ns] = gated_delta_update(
+                q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state,
+                std::nullopt);
+            (*cache)[1] = ns;
+            auto normalized = norm_(o, z);
+            return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
+        }
 
         int rep = num_v_heads_ / num_k_heads_;
         static auto compiled_decode_step = mx::compile(
