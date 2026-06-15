@@ -49,6 +49,12 @@ public:
         return (it != registry_.end()) ? &it->second : nullptr;
     }
 
+    // Drop a weight's quant metadata (frees its scales/biases). Used after
+    // fusing two projections into one so the originals can be released.
+    void unregister(const mlx::core::array* weight_ptr) {
+        registry_.erase(weight_ptr);
+    }
+
     void clear() { registry_.clear(); }
     size_t size() const { return registry_.size(); }
 
