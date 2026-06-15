@@ -6,6 +6,7 @@
 #include <mlx/mlx.h>
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <iomanip>
 #include <numeric>
 #include <sstream>
@@ -355,6 +356,79 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     StreamGuard sg(generation_stream());
 
     auto batched = add_batch_dim(previous);
+
+#if defined(MLX_BUILD_ROCM)
+    // --- HIP graph ceiling benchmark (opt-in via MLX_DECODE_GRAPH_BENCH) ---
+    // After a few real tokens (KV populated, shapes steady), capture ONE decode
+    // step and time replays vs an eager step to measure the achievable speedup.
+    // This is a measurement probe (it does not produce coherent output beyond
+    // this point), so it prints and exits.
+    {
+        static const bool g_bench = std::getenv("MLX_DECODE_GRAPH_BENCH") != nullptr;
+        static int g_bench_step = 0;
+        if (g_bench && ++g_bench_step == 8) {
+            namespace gpu = mlx::core;
+            auto* cache_ptr = cache_.empty() ? nullptr : &cache_;
+            auto* state_ptr = state_.has_value() ? &state_.value() : nullptr;
+
+            // Eager reference step (normal allocator, NOT the arena — the arena
+            // is a bump allocator that never reclaims until reset, so its peak is
+            // the sum of every temporary in a forward; keep only the captured
+            // step in it).
+            std::cerr << "[graph-bench] eager ref step..." << std::endl;
+            auto e0 = std::chrono::steady_clock::now();
+            { auto r = context_.call_fn(batched, cache_ptr, state_ptr); mx::eval(r.logits); }
+            auto e1 = std::chrono::steady_clock::now();
+            double eager_ms = std::chrono::duration<double, std::milli>(e1 - e0).count();
+
+            // The DecodeArena (one big shared buffer) deadlocks HIP graph
+            // replay on RDNA4 — capture with the normal allocator instead
+            // (CommandEncoder holds capture-time buffers alive so addresses stay
+            // valid for replay). Arena is opt-in for comparison only.
+            bool use_arena = std::getenv("MLX_DECODE_GRAPH_ARENA") != nullptr;
+            if (use_arena) {
+                std::cerr << "[graph-bench] arena_begin (1 GB)..." << std::endl;
+                if (!gpu::gpu_arena_begin(size_t(1) << 30)) {
+                    std::cerr << "[graph-bench] arena_begin FAILED" << std::endl;
+                    std::_Exit(1);
+                }
+            } else {
+                std::cerr << "[graph-bench] capturing with normal allocator (no arena)" << std::endl;
+            }
+            // Pin the pre-capture cache state arrays so they are NOT freed when
+            // the captured step reassigns them — the graph reads their buffers
+            // by address on replay; freeing them would make replay fault.
+            std::vector<KVCache> bench_pinned_cache = cache_;
+
+            // Capture one step (records all forward + cache-update kernels).
+            std::cerr << "[graph-bench] capturing step..." << std::endl;
+            gpu::gpu_graph_begin_capture();
+            auto rc = context_.call_fn(batched, cache_ptr, state_ptr);
+            mx::eval(rc.logits);
+            bool ok = gpu::gpu_graph_end_capture();
+            std::cerr << "[graph-bench] capture ok=" << ok;
+            if (use_arena)
+                std::cerr << " arena_used=" << (gpu::gpu_arena_used() / 1.0e6) << " MB";
+            std::cerr << std::endl;
+            if (ok) {
+                gpu::gpu_graph_replay(); // warm
+                const int M = 50;
+                auto t0 = std::chrono::steady_clock::now();
+                for (int i = 0; i < M; i++) gpu::gpu_graph_replay();
+                auto t1 = std::chrono::steady_clock::now();
+                double rep_ms = std::chrono::duration<double, std::milli>(t1 - t0).count() / M;
+                std::cerr << "[graph-bench] eager step  = " << eager_ms << " ms ("
+                          << (1000.0 / eager_ms) << " tok/s)\n"
+                          << "[graph-bench] graph replay = " << rep_ms << " ms ("
+                          << (1000.0 / rep_ms) << " tok/s)  speedup "
+                          << (eager_ms / rep_ms) << "x" << std::endl;
+            }
+            gpu::gpu_graph_reset();
+            if (use_arena) gpu::gpu_arena_end();
+            std::_Exit(ok ? 0 : 1);
+        }
+    }
+#endif
 
     // --- HIP Graph capture state machine (ROCm only) ---
     // After warmup tokens, capture the decode step as a HIP graph for
