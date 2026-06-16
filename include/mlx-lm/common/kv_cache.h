@@ -82,6 +82,15 @@ public:
     // Partial-rollback API for MTP speculative decoding.
     size_t get_position() const { return static_cast<size_t>(offset_); }
     void set_position(size_t pos);
+
+    // Graph-replay decode: write new_keys/new_values into the static buffer at a
+    // DEVICE position (`pos`, a [1] int32 array) along axis 2, donating in place
+    // so the buffer address stays stable across HIP-graph replays. Returns the
+    // full fixed-CAP buffers. Does not touch offset_ (the loop drives position).
+    std::pair<mlx::core::array, mlx::core::array>
+    update_at_pos(const mlx::core::array& new_keys,
+                  const mlx::core::array& new_values,
+                  const mlx::core::array& pos);
 };
 
 // Rotating (fixed-size) KV cache with overwriting.
@@ -362,6 +371,22 @@ public:
     std::pair<mlx::core::array, mlx::core::array>
     update(const mlx::core::array& keys, const mlx::core::array& values) {
         return std::visit([&](auto& c) { return c.update(keys, values); }, impl_);
+    }
+
+    // Device-position in-place write for graph-replay decode (KVCacheSimple only;
+    // other cache kinds fall back to the normal host-offset update).
+    std::pair<mlx::core::array, mlx::core::array>
+    update_at_pos(const mlx::core::array& keys, const mlx::core::array& values,
+                  const mlx::core::array& pos) {
+        return std::visit(
+            [&](auto& c) -> std::pair<mlx::core::array, mlx::core::array> {
+                using T = std::decay_t<decltype(c)>;
+                if constexpr (std::is_same_v<T, KVCacheSimple>)
+                    return c.update_at_pos(keys, values, pos);
+                else
+                    return c.update(keys, values);
+            },
+            impl_);
     }
 
     bool is_trimmable() const {

@@ -12,6 +12,7 @@
 #include <mlx-lm/llm/models/qwen35_moe.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
+#include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <algorithm>
@@ -282,7 +283,9 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
     int offset = cache ? cache->offset() : 0;
     static const bool g_devpos = std::getenv("MLX_DECODE_DEVICE_POS") != nullptr;
     if (g_devpos) {
-        auto pos = mx::array({offset}, {1}, mx::int32);
+        mx::array pos = mlx_lm::graph_external_pos()
+            ? mlx_lm::graph_decode_pos()
+            : mx::array({offset}, {1}, mx::int32);
         queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, pos);
         keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, pos);
     } else {
@@ -292,7 +295,28 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
 
     // KV cache update + SDPA.
     mx::array output(0.0f);
-    if (g_devpos && L == 1 && cache) {
+    static const bool g_inplace_kv = std::getenv("MLX_GRAPH_INPLACE_KV") != nullptr;
+    if (g_devpos && g_inplace_kv && L == 1 && cache && cache->state().size() == 2) {
+        // In-graph device-position decode: write the current token into the
+        // fixed-CAP buffer at slot `pos` (in place, stable address), then attend
+        // over the whole buffer with a length mask. One captured graph advances
+        // through positions by bumping `pos` between replays — no concat, no
+        // external append.
+        mx::array pos = mlx_lm::graph_external_pos()
+            ? mlx_lm::graph_decode_pos()
+            : mx::array({cache->offset()}, {1}, mx::int32);
+        auto kv = cache->update_at_pos(keys, values, pos);
+        const auto& full_k = kv.first;
+        const auto& full_v = kv.second;
+        int CAP = full_k.shape(2);
+        auto cols = mx::arange(0, CAP, mx::int32);
+        auto addmask = mx::astype(
+            mx::reshape(mx::where(mx::less_equal(cols, pos), mx::array(0.0f),
+                                  mx::array(-std::numeric_limits<float>::infinity())),
+                        {1, 1, 1, CAP}),
+            x.dtype());
+        output = sdpa(queries, full_k, full_v, scale_, AttentionMask::from_array(addmask));
+    } else if (g_devpos && L == 1 && cache) {
         // Write-free graph-decode forward: read the fixed-CAP KV buffer, concat
         // the current token, attend with a device-position mask. No in-place
         // write (self-aliases under capture). Append is eager; the graph harness
@@ -326,7 +350,9 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
         auto k_all = mx::concatenate({past_k, keys}, 2);    // [B,H,CAP+1,D]
         auto v_all = mx::concatenate({past_v, values}, 2);
         auto cols = mx::arange(0, CAP + 1, mx::int32);
-        auto pos = mx::array({cache->offset()}, {1}, mx::int32);  // N past tokens
+        mx::array pos = mlx_lm::graph_external_pos()
+            ? mlx_lm::graph_decode_pos()
+            : mx::array({cache->offset()}, {1}, mx::int32);  // N past tokens
         // valid = past index in [0,N)  OR  the appended current token (last slot)
         auto valid = mx::logical_or(mx::less(cols, pos),
                                     mx::equal(cols, mx::array(CAP, mx::int32)));
