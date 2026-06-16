@@ -7,6 +7,7 @@
 // - All layers use MoE (when num_experts > 0), not alternating with dense MLP
 // - MoE sanitize splits fused gate_up_proj into gate_proj + up_proj
 
+#include <cstdlib>
 #include <mlx-lm/llm/models/qwen35_moe.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
@@ -963,10 +964,14 @@ std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& pa
     // with no grow-and-copy (faster, stable addresses for HIP graph capture).
     // --ctx-size pins an explicit capacity; otherwise reserve room for
     // max_tokens of generation on top of the prompt (sized on the first update).
-    int cap = params.ctx_size > 0 ? params.ctx_size : 256;
-    int reserve = params.ctx_size > 0
+    // MLX_KV_NO_STATIC reverts to the legacy grow-by-doubling path (A/B + safety).
+    static const bool no_static = std::getenv("MLX_KV_NO_STATIC") != nullptr;
+    int cap = (!no_static && params.ctx_size > 0) ? params.ctx_size : 256;
+    int reserve = no_static
         ? 0
-        : (params.max_tokens.has_value() ? params.max_tokens.value() : 2048);
+        : (params.ctx_size > 0
+            ? 0
+            : (params.max_tokens.has_value() ? params.max_tokens.value() : 2048));
     for (const auto& layer : model_.get_layers()) {
         if (layer.is_linear()) {
             caches.emplace_back(MambaCache{});
