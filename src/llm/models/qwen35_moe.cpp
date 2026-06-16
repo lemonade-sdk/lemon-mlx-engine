@@ -8,6 +8,7 @@
 // - MoE sanitize splits fused gate_up_proj into gate_proj + up_proj
 
 #include <cstdlib>
+#include <limits>
 #include <mlx-lm/llm/models/qwen35_moe.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
@@ -322,15 +323,36 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
         keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
     }
 
-    // KV cache update
-    if (cache) {
-        auto [k, v] = cache->update(keys, values);
-        keys = k;
-        values = v;
+    // KV cache update + SDPA.
+    mx::array output(0.0f);
+    if (g_devpos && L == 1 && cache) {
+        // Graph-decode path: write the new token into the static KV in place,
+        // then read the FULL fixed-CAP buffer and attend with a DEVICE-position
+        // additive mask (0 for j<=pos, -inf beyond). Constant shapes across
+        // decode steps (capturable), and numerically identical to reading
+        // [0:offset] since masked positions contribute exp(-inf)=0. pos is the
+        // just-written token's index (offset-1).
+        cache->update(keys, values);
+        auto st = cache->state();          // {full keys, full values} = [B,H,CAP,D]
+        const auto& fk = st[0];
+        const auto& fv = st[1];
+        int CAP = fk.shape(2);
+        auto cols = mx::arange(0, CAP, mx::int32);
+        auto pos = mx::array({cache->offset() - 1}, {1}, mx::int32);
+        auto addmask = mx::astype(
+            mx::reshape(mx::where(mx::less_equal(cols, pos), mx::array(0.0f),
+                                  mx::array(-std::numeric_limits<float>::infinity())),
+                        {1, 1, 1, CAP}),
+            x.dtype());
+        output = sdpa(queries, fk, fv, scale_, AttentionMask::from_array(addmask));
+    } else {
+        if (cache) {
+            auto [k, v] = cache->update(keys, values);
+            keys = k;
+            values = v;
+        }
+        output = sdpa(queries, keys, values, scale_, mask);
     }
-
-    // SDPA
-    auto output = sdpa(queries, keys, values, scale_, mask);
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
     // Swift: oProj(sigmoidMultiply(output, gate))
