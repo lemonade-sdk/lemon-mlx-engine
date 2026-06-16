@@ -2,6 +2,7 @@
 
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx/mlx.h>
+#include <algorithm>
 
 namespace mlx_lm {
 
@@ -39,7 +40,11 @@ KVCacheSimple::update_impl(
         int B = new_keys.shape(0);
         int H = new_keys.shape(1);
         int D = new_keys.shape(3);
-        int alloc_len = std::max(n_new, initial_capacity_);
+        // Static one-shot allocation: size to cover the prompt (n_new) plus the
+        // expected generation (reserve_) so every subsequent decode step writes
+        // in place at offset_ and the grow-and-copy path below never runs — a
+        // fixed buffer at a stable address (no doubling copies, graph-ready).
+        int alloc_len = std::max({n_new, initial_capacity_, n_new + reserve_});
 
         keys_ = mx::zeros({B, H, alloc_len, D}, new_keys.dtype());
         values_ = mx::zeros({B, H, alloc_len, D}, new_values.dtype());

@@ -41,6 +41,11 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
 
     int offset_ = 0;
     int initial_capacity_ = 256;
+    // Extra headroom reserved on the FIRST allocation, on top of the initial
+    // write (the prompt). Sizing the buffer once to prompt+reserve makes decode
+    // write in place at offset_ with no grow-and-copy and a stable address
+    // (also the prerequisite for HIP graph capture). 0 = legacy grow-by-doubling.
+    int reserve_ = 0;
     std::optional<mlx::core::array> keys_;
     std::optional<mlx::core::array> values_;
 
@@ -56,6 +61,11 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
 public:
     KVCacheSimple() = default;
     explicit KVCacheSimple(int initial_capacity) : initial_capacity_(initial_capacity) {}
+    KVCacheSimple(int initial_capacity, int reserve)
+        : initial_capacity_(initial_capacity), reserve_(reserve) {}
+    // Reserve generation headroom so the one-shot first allocation covers the
+    // whole run (prompt + reserve), avoiding any later grow-and-copy.
+    void set_reserve(int reserve) { reserve_ = reserve; }
 
     // Access stored state for KV sharing. Returns {keys, values} if populated.
     std::vector<mlx::core::array> state() const {

@@ -959,11 +959,19 @@ mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCa
 std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& params) {
     std::vector<KVCache> caches;
     caches.reserve(config_.num_hidden_layers);
+    // Static KV preallocation: size the buffer once so decode writes in place
+    // with no grow-and-copy (faster, stable addresses for HIP graph capture).
+    // --ctx-size pins an explicit capacity; otherwise reserve room for
+    // max_tokens of generation on top of the prompt (sized on the first update).
+    int cap = params.ctx_size > 0 ? params.ctx_size : 256;
+    int reserve = params.ctx_size > 0
+        ? 0
+        : (params.max_tokens.has_value() ? params.max_tokens.value() : 2048);
     for (const auto& layer : model_.get_layers()) {
         if (layer.is_linear()) {
             caches.emplace_back(MambaCache{});
         } else {
-            caches.emplace_back(KVCacheSimple{});
+            caches.emplace_back(KVCacheSimple{cap, reserve});
         }
     }
     return caches;
