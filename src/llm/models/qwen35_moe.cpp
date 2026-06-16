@@ -1008,6 +1008,16 @@ Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
         if (new_key.find("language_model.") == 0) {
             new_key = new_key.substr(std::string("language_model.").size());
         }
+        // Official Qwen3.6 checkpoints nest the text model the other way:
+        //   "model.language_model.X" -> "model.X"
+        // Handle that form too so the official (and our convert tool's) keys map
+        // onto the engine's "model.X" weight_map.
+        {
+            const std::string mlm = "model.language_model.";
+            if (new_key.find(mlm) == 0) {
+                new_key = "model." + new_key.substr(mlm.size());
+            }
+        }
         remapped.insert_or_assign(new_key, std::move(value));
     }
     weights = std::move(remapped);
