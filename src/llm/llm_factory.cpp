@@ -78,6 +78,24 @@ using LLMLoaderFn = std::function<ModelContext(
     std::unordered_map<std::string, mlx::core::array> weights,
     const BaseConfiguration& base_config)>;
 
+// Force every weight resident in device memory NOW. MLX loads weights lazily
+// (mmap-backed, materialized to VRAM on first use during a forward pass). That
+// is fine for a unified-memory APU, but on a discrete GPU — especially over a
+// non-coherent link (TB5 eGPU) — interleaving per-weight H2D copies with compute
+// stalls the first forward. Eagerly evaluating all weights separates load from
+// compute and guarantees the whole model is in VRAM before inference.
+static void materialize_weights(
+    std::unordered_map<std::string, mlx::core::array>& weights)
+{
+    std::vector<mlx::core::array> all;
+    all.reserve(weights.size());
+    for (auto& kv : weights) all.push_back(kv.second);
+    if (!all.empty()) {
+        mlx::core::eval(all);
+        mlx::core::synchronize();
+    }
+}
+
 template <typename Config, typename Model>
 static ModelContext load_typed_model(
     const std::string& config_json,
@@ -96,6 +114,7 @@ static ModelContext load_typed_model(
     auto wmap = model->weight_map();
     register_quantized_weights(weights, base_config, wmap);
 
+    materialize_weights(weights);
     model->load_weights(weights);
 
     return ModelContext::from_model_owned(model);
@@ -536,6 +555,7 @@ ModelContext load_mtp_delta_model(
     auto wmap = model->weight_map();
     register_quantized_weights(weights, base_config, wmap);
 
+    materialize_weights(weights);
     model->load_weights(weights);
 
     ModelContext ctx = ModelContext::from_model_owned(model);
