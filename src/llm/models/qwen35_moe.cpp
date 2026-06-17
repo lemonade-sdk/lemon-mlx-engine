@@ -1041,12 +1041,13 @@ mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCa
 std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& params) {
     std::vector<KVCache> caches;
     caches.reserve(config_.num_hidden_layers);
-    // Static KV preallocation: size the buffer once so decode writes in place
-    // with no grow-and-copy (faster, stable addresses for HIP graph capture).
-    // --ctx-size pins an explicit capacity; otherwise reserve room for
-    // max_tokens of generation on top of the prompt (sized on the first update).
-    // MLX_KV_NO_STATIC reverts to the legacy grow-by-doubling path (A/B + safety).
-    static const bool no_static = std::getenv("MLX_KV_NO_STATIC") != nullptr;
+    // Static KV preallocation sizes the buffer once (stable address for HIP graph
+    // capture) but does a full-buffer slice_update copy on the first decode step;
+    // on gfx1201 a large copy wedges the command queue. Default to the grow-by-
+    // doubling path, which makes small incremental copies and runs clean.
+    // MLX_KV_STATIC opts back into the preallocated buffer (e.g. for graph capture
+    // once the large-copy path is fixed). --ctx-size still pins an explicit cap.
+    static const bool no_static = std::getenv("MLX_KV_STATIC") == nullptr;
     int cap = (!no_static && params.ctx_size > 0) ? params.ctx_size : 256;
     int reserve = no_static
         ? 0

@@ -192,12 +192,19 @@ int main(int argc, char* argv[]) {
         // it always leaves headroom. The HIP-graph decode arena is separately a
         // fixed size and is unaffected.
         {
-            size_t budget = mx::get_memory_limit();   // ~total VRAM minus driver reserve
-            size_t active = mx::get_active_memory();   // resident model
-            size_t working_reserve = static_cast<size_t>(4) << 30; // 4 GB headroom
-            size_t cache_cap = (budget > active + working_reserve)
-                ? (budget - active - working_reserve)
-                : 0;
+            // The model loads once and the KV cache aligns statically once; almost
+            // nothing is allocated per token after that. So the buffer-REUSE pool
+            // (the "cache" — NOT the KV cache) only needs to cover one forward's
+            // transient scratch, not gigabytes. A large pool just crowds VRAM and
+            // pushes peak usage to the physical ceiling, where the driver's TTM
+            // eviction fires mid-forward and wedges the queue on a discrete GPU.
+            // Keep the pool small and leave the rest of VRAM free for KV cache +
+            // prefill activations + driver headroom.
+            size_t budget = mx::get_memory_limit();
+            size_t active = mx::get_active_memory();
+            size_t free_after_model = (budget > active) ? (budget - active) : 0;
+            size_t cache_cap =
+                std::min<size_t>(static_cast<size_t>(2) << 30, free_after_model / 4);
             mx::set_cache_limit(cache_cap);
         }
 
