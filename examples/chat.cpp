@@ -69,6 +69,7 @@ struct CliArgs {
     float top_p = 0.9f;
     float repetition_penalty = 0.0f;
     size_t memory_limit_mb = 0;
+    size_t cache_limit_mb = 0;
     bool no_think = false;
     bool raw_mode = false;  // Skip chat template, use raw encoding
     int kv_bits = 0;        // KV cache quantization bits (0=off, 4 or 8)
@@ -117,6 +118,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.repetition_penalty = std::stof(argv[++i]);
         } else if (flag == "--memory-limit" && i + 1 < argc) {
             args.memory_limit_mb = std::stoul(argv[++i]);
+        } else if (flag == "--cache-limit" && i + 1 < argc) {
+            args.cache_limit_mb = std::stoul(argv[++i]);
         } else if (flag == "--no-think") {
             args.no_think = true;
         } else if (flag == "--raw") {
@@ -152,6 +155,12 @@ int main(int argc, char* argv[]) {
         mx::set_wired_limit(args.memory_limit_mb * 1024ULL * 1024);
         std::cerr << "GPU wired memory limit: " << args.memory_limit_mb << " MB" << std::endl;
     }
+    if (args.cache_limit_mb > 0) {
+        // Cap the buffer-reuse pool (max_pool_size_). Keeps the cache from
+        // ballooning during load on a large dedicated GPU.
+        mx::set_cache_limit(args.cache_limit_mb * 1024ULL * 1024);
+        std::cerr << "GPU cache limit: " << args.cache_limit_mb << " MB" << std::endl;
+    }
 
     try {
         std::cout << "Loading model: " << args.model_path << std::endl;
@@ -170,6 +179,22 @@ int main(int argc, char* argv[]) {
             mlx_lm::LMInput::Text warmup_text(dummy_tokens);
             auto warmup_out = ctx.call_fn(warmup_text, &warmup_cache, nullptr);
             mx::eval(warmup_out.logits);
+        }
+
+        // Bound the buffer cache so it can't balloon and fill VRAM, while KEEPING
+        // a pool for fast reuse (clearing it outright would force cold allocations
+        // during generation). Auto-fit: keep the resident model plus a working
+        // reserve for KV/activation growth, and cap the cache at the remainder so
+        // it always leaves headroom. The HIP-graph decode arena is separately a
+        // fixed size and is unaffected.
+        {
+            size_t budget = mx::get_memory_limit();   // ~total VRAM minus driver reserve
+            size_t active = mx::get_active_memory();   // resident model
+            size_t working_reserve = static_cast<size_t>(4) << 30; // 4 GB headroom
+            size_t cache_cap = (budget > active + working_reserve)
+                ? (budget - active - working_reserve)
+                : 0;
+            mx::set_cache_limit(cache_cap);
         }
 
         std::cerr << "Model loaded. Memory: active="

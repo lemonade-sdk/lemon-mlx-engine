@@ -44,8 +44,24 @@ mx::Stream& generation_stream() {
     // "There is no Stream(gpu, N) in current thread"). Each thread
     // needs its own stream. This matches the fix applied in mlx-lm
     // (thread-local generation stream) and mlx-vlm.
+    //
+    // On ROCm, reuse the default stream of the selected device instead of
+    // creating a new one. A fresh stream is a fresh GPU HW command queue, and
+    // on a discrete GPU over a non-coherent link (TB5 eGPU) the first dispatch
+    // on a brand-new queue intermittently stalls — whereas the default stream's
+    // queue is already warm from model load/warmup. Set MLX_GEN_OWN_STREAM=1 to
+    // restore the dedicated-stream behavior.
+#ifdef __APPLE__
     static thread_local mx::Stream s = mx::new_stream(mx::default_device());
     return s;
+#else
+    if (std::getenv("MLX_GEN_OWN_STREAM")) {
+        static thread_local mx::Stream s = mx::new_stream(mx::default_device());
+        return s;
+    }
+    static thread_local mx::Stream s = mx::default_stream(mx::default_device());
+    return s;
+#endif
 }
 
 // RAII guard to set/restore the default stream for a scope.
@@ -405,8 +421,16 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
             // Capture one step (records all forward + cache-update kernels).
             std::cerr << "[graph-bench] capturing step..." << std::endl;
             gpu::gpu_graph_begin_capture();
+            auto _cap_t0 = std::chrono::steady_clock::now();
             auto rc = context_.call_fn(batched, cache_ptr, state_ptr);
+            auto _cap_t1 = std::chrono::steady_clock::now();
             mx::eval(rc.logits);
+            auto _cap_t2 = std::chrono::steady_clock::now();
+            std::cerr << "[graph-bench] in-capture call_fn="
+                      << std::chrono::duration<double,std::milli>(_cap_t1-_cap_t0).count()
+                      << "ms eval(logits)="
+                      << std::chrono::duration<double,std::milli>(_cap_t2-_cap_t1).count()
+                      << "ms" << std::endl;
             bool ok = gpu::gpu_graph_end_capture();
             std::cerr << "[graph-bench] capture ok=" << ok;
             if (use_arena)
