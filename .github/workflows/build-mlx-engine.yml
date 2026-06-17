@@ -472,6 +472,20 @@ jobs:
         mlx-binaries/server --port $PORT $MTP_FLAG $NO_THINK_FLAG > server.log 2>&1 &
         SERVER_PID=$!
 
+        # Tear the server down on any exit. Never `wait` on it: the server may
+        # ignore SIGTERM, and an unbounded wait hangs the job until the runner's
+        # job timeout fires (20-30 min), wedging the single self-hosted runner.
+        stop_server() {
+          [ -n "${SERVER_PID:-}" ] || return 0
+          kill "$SERVER_PID" 2>/dev/null || true
+          for _ in $(seq 1 10); do
+            kill -0 "$SERVER_PID" 2>/dev/null || return 0
+            sleep 1
+          done
+          kill -9 "$SERVER_PID" 2>/dev/null || true
+        }
+        trap stop_server EXIT
+
         # Poll for server readiness
         echo "Waiting for server to become ready (timeout: ${READY_TIMEOUT}s)..."
         READY=false
@@ -498,14 +512,13 @@ jobs:
           echo "Models endpoint PASSED"
         else
           echo "Models endpoint FAILED: $models_response"
-          kill $SERVER_PID 2>/dev/null || true
-          wait $SERVER_PID 2>/dev/null || true
+          stop_server
           exit 1
         fi
 
         # Best-effort model warm-up (discard result)
         echo "Sending warm-up request..."
-        curl -s -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+        curl -s --max-time 120 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
           -d "{
             \"model\": \"${{ matrix.model }}\",
@@ -524,7 +537,7 @@ jobs:
           ATTEMPT=$((ATTEMPT + 1))
           echo "=== Inference test attempt $ATTEMPT/$MAX_RETRIES ==="
 
-          response=$(curl -s --max-time 900 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+          response=$(curl -s --max-time 180 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
             -H "Content-Type: application/json" \
             -d "{
               \"model\": \"${{ matrix.model }}\",
@@ -564,8 +577,7 @@ jobs:
           echo "INFERENCE TEST FAILED -- expected answer '4' after $MAX_RETRIES attempts"
           echo "=== Server Log (last 50 lines) ==="
           tail -50 server.log 2>/dev/null || true
-          kill $SERVER_PID 2>/dev/null || true
-          wait $SERVER_PID 2>/dev/null || true
+          stop_server
           exit 1
         fi
 
@@ -645,8 +657,7 @@ jobs:
         "
         echo "=== End Benchmarks ==="
 
-        kill $SERVER_PID 2>/dev/null || true
-        wait $SERVER_PID 2>/dev/null || true
+        stop_server
 
     - name: Upload benchmark results
       if: always()
