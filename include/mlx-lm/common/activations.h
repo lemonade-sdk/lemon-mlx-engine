@@ -55,6 +55,26 @@ inline mlx::core::array relu_squared(const mlx::core::array& x) {
     return compiled({x})[0];
 }
 
+// Compiled GELU with tanh approximation (gelu_pytorch_tanh).
+// Matches Python: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+// Used by Qwen3.5 vision encoder.
+inline mlx::core::array gelu_tanh(const mlx::core::array& x) {
+    static auto compiled = mlx::core::compile(
+        [](const std::vector<mlx::core::array>& inputs) -> std::vector<mlx::core::array> {
+            auto x3 = mlx::core::multiply(inputs[0], mlx::core::multiply(inputs[0], inputs[0]));
+            auto coeff = mlx::core::array(0.7978845608028654f); // sqrt(2/pi)
+            auto cubic_term = mlx::core::array(0.044715f);
+            // sqrt(2/pi) * (x + 0.044715 * x^3)
+            auto scaled = mlx::core::multiply(coeff, mlx::core::add(inputs[0], mlx::core::multiply(cubic_term, x3)));
+            // 0.5 * x * (1 + tanh(scaled))
+            auto tanh_val = mlx::core::tanh(scaled);
+            return {mlx::core::multiply(mlx::core::multiply(mlx::core::array(0.5f), inputs[0]),
+                                        mlx::core::add(mlx::core::array(1.0f), tanh_val))};
+        },
+        /*shapeless=*/true);
+    return compiled({x})[0];
+}
+
 // Compiled residual clipping for float16 safety: x + cast(y, x.dtype)
 // Matches Python's @partial(mx.compile, shapeless=True) on clip_residual (Gemma3).
 inline mlx::core::array clip_residual(const mlx::core::array& x, const mlx::core::array& y) {

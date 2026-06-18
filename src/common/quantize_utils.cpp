@@ -2,6 +2,8 @@
 
 #include <mlx-lm/common/quantize_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <cstdlib>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -14,7 +16,13 @@ void register_quantized_weights(
     const BaseConfiguration& config,
     const std::unordered_map<std::string, mx::array*>& weight_map)
 {
-    if (!config.per_layer_quantization.has_value()) return;
+    static const bool dbg = std::getenv("MLX_DEBUG_QUANT") != nullptr;
+    if (!config.per_layer_quantization.has_value()) {
+        if (dbg) std::cerr << "[quant-dbg] per_layer_quantization NOT SET -> "
+                              "NOTHING registered (model will run dense on packed "
+                              "weights = garbage)\n";
+        return;
+    }
 
     auto& plq = config.per_layer_quantization.value();
     if (!plq.default_quantization.has_value()) return;
@@ -84,6 +92,14 @@ void register_quantized_weights(
         if (biases_it != weights.end()) {
             weights.erase(biases_it);
         }
+    }
+    if (dbg) {
+        int registered = 0, missed = 0, embed = 0;
+        // recompute for reporting (cheap): count prefixes still resolvable
+        std::cerr << "[quant-dbg] processed " << prefixes.size()
+                  << " quantized prefixes; registry size now "
+                  << QuantizedWeightRegistry::instance().size() << "\n";
+        (void)registered; (void)missed; (void)embed;
     }
 }
 

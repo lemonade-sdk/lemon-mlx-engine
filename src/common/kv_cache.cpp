@@ -2,6 +2,7 @@
 
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx/mlx.h>
+#include <algorithm>
 
 namespace mlx_lm {
 
@@ -39,7 +40,8 @@ KVCacheSimple::update_impl(
         int B = new_keys.shape(0);
         int H = new_keys.shape(1);
         int D = new_keys.shape(3);
-        int alloc_len = std::max(n_new, initial_capacity_);
+        // One-shot allocation sized to prompt + generation reserve.
+        int alloc_len = std::max({n_new, initial_capacity_, n_new + reserve_});
 
         keys_ = mx::zeros({B, H, alloc_len, D}, new_keys.dtype());
         values_ = mx::zeros({B, H, alloc_len, D}, new_values.dtype());
@@ -116,6 +118,26 @@ int KVCacheSimple::trim_impl(int n) {
     return to_trim;
 }
 
+// Roll back to a previously saved offset by trimming rows added after it.
+void KVCacheSimple::set_position(size_t pos) {
+    int target = static_cast<int>(pos);
+    if (target >= offset_) {
+        return;  // Nothing to roll back.
+    }
+    int delta = offset_ - target;
+    trim_impl(delta);
+}
+
+std::pair<mlx::core::array, mlx::core::array>
+KVCacheSimple::update_at_pos(const mlx::core::array& new_keys,
+                             const mlx::core::array& new_values,
+                             const mlx::core::array& pos) {
+    keys_ = mx::slice_update(keys_.value(), new_keys, pos, {2});
+    values_ = mx::slice_update(values_.value(), new_values, pos, {2});
+    offset_ += new_keys.shape(2);
+    return {keys_.value(), values_.value()};
+}
+
 // --- RotatingKVCache ---
 
 std::pair<mlx::core::array, mlx::core::array>
@@ -165,6 +187,17 @@ RotatingKVCache::update_impl(
 
     offset_ += n_new;
     return {keys_.value(), values_.value()};
+}
+
+// Roll back logical offset only; physical ring buffer is unchanged.
+void RotatingKVCache::set_position(size_t pos) {
+    int target = static_cast<int>(pos);
+    if (target >= offset_) return;  // Nothing to roll back.
+    offset_ = target;
+    // Re-sync idx_ to the physical buffer length.
+    if (keys_.has_value()) {
+        idx_ = keys_.value().shape(2);
+    }
 }
 
 // --- QuantizedKVCache ---
@@ -224,6 +257,85 @@ QuantizedKVCache::update_impl(
     offset_ += new_keys.shape(2);
     return {dequantize_kv(keys_.value(), group_size_, bits_),
             dequantize_kv(values_.value(), group_size_, bits_)};
+}
+
+// Roll back to a saved offset by slicing the QTuples along axis 2.
+void QuantizedKVCache::set_position(size_t pos) {
+    int target = static_cast<int>(pos);
+
+    // Resetting to position 0 always clears the cache, even if offset_ is 0.
+    if (target == 0) {
+        keys_ = std::nullopt;
+        values_ = std::nullopt;
+        offset_ = 0;
+        return;
+    }
+
+    if (target >= offset_) {
+        return;  // Nothing to roll back
+    }
+
+    if (!keys_.has_value()) {
+        offset_ = target;
+        return;
+    }
+
+    // Keep exactly 'target' elements (tokens 0..target-1).
+    int total = keys_->weight.shape(2);
+    int keep = target;
+
+    if (keep < 0) {
+        keep = 0;
+    }
+    if (keep > total) {
+        keep = total;
+    }
+
+    if (keys_->weight.ndim() != 4 || keys_->scales.ndim() != 4 ||
+        keys_->biases.ndim() != 4) {
+        throw std::runtime_error(
+            "QuantizedKVCache::set_position requires 4D tensors");
+    }
+    if (values_->weight.ndim() != 4 || values_->scales.ndim() != 4 ||
+        values_->biases.ndim() != 4) {
+        throw std::runtime_error(
+            "QuantizedKVCache::set_position requires 4D tensors");
+    }
+
+    if (keep == 0) {
+        keys_ = std::nullopt;
+        values_ = std::nullopt;
+    } else {
+        int B = keys_->weight.shape(0);
+        int H = keys_->weight.shape(1);
+        int packed_D = keys_->weight.shape(3);
+        int scales_D = keys_->scales.shape(3);
+
+        keys_ = QTuple{
+            mx::slice(keys_->weight, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, packed_D}),
+            mx::slice(keys_->scales, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D}),
+            mx::slice(keys_->biases, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D})
+        };
+
+        B = values_->weight.shape(0);
+        H = values_->weight.shape(1);
+        packed_D = values_->weight.shape(3);
+        scales_D = values_->scales.shape(3);
+
+        values_ = QTuple{
+            mx::slice(values_->weight, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, packed_D}),
+            mx::slice(values_->scales, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D}),
+            mx::slice(values_->biases, mx::Shape{0, 0, 0, 0},
+                      {B, H, keep, scales_D})
+        };
+    }
+
+    offset_ = target;
 }
 
 QuantizedKVCache QuantizedKVCache::from_simple(

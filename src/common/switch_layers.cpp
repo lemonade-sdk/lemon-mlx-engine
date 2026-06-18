@@ -5,6 +5,7 @@
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 
 namespace mx = mlx::core;
@@ -57,6 +58,24 @@ SwitchLinear::SwitchLinear(int input_dims, int output_dims, int num_experts, boo
     }
 }
 
+// Build (and cache) the default lhs_indices that gather_qmm/gather_mm would
+// otherwise create internally on every call: an identity arange over x's batch
+// dimensions (x.shape minus the trailing two matmul dims). This matches MLX's
+// indices_or_default() exactly, so results are bit-identical — we just avoid
+// relaunching the arange kernel each decode step when the shape is unchanged.
+const mx::array& SwitchLinear::default_lhs_indices(const mx::array& x) {
+    mx::Shape batch_shape(x.shape().begin(), x.shape().end() - 2);
+    if (!lhs_indices_cache_.has_value() ||
+        lhs_indices_cache_shape_ != batch_shape) {
+        int64_t total = 1;
+        for (auto d : batch_shape) total *= d;
+        lhs_indices_cache_ = mx::reshape(
+            mx::arange(static_cast<int>(total), mx::uint32), batch_shape);
+        lhs_indices_cache_shape_ = batch_shape;
+    }
+    return lhs_indices_cache_.value();
+}
+
 mx::array SwitchLinear::operator()(
     const mx::array& x,
     const mx::array& indices,
@@ -68,7 +87,7 @@ mx::array SwitchLinear::operator()(
     if (qi) {
         result = mx::gather_qmm(
             x, weight_, qi->scales, qi->biases,
-            /*lhs_indices=*/std::nullopt,
+            /*lhs_indices=*/std::optional<mx::array>(default_lhs_indices(x)),
             /*rhs_indices=*/std::optional<mx::array>(indices),
             /*transpose=*/true,
             /*group_size=*/qi->group_size,
@@ -77,7 +96,11 @@ mx::array SwitchLinear::operator()(
             /*sorted_indices=*/sorted_indices);
     } else {
         auto weight_t = mx::swapaxes(weight_, -1, -2);
-        result = mx::gather_mm(x, weight_t, std::nullopt, indices, sorted_indices);
+        result = mx::gather_mm(
+            x, weight_t,
+            /*lhs_indices=*/std::optional<mx::array>(default_lhs_indices(x)),
+            /*rhs_indices=*/std::optional<mx::array>(indices),
+            sorted_indices);
     }
 
     if (bias_.has_value()) {
@@ -95,16 +118,77 @@ std::unordered_map<std::string, mx::array*> SwitchLinear::weight_map() {
     return map;
 }
 
+void SwitchLinear::adopt_fused_weight(
+    mx::array w, mx::array scales, std::optional<mx::array> biases,
+    int group_size, int bits)
+{
+    weight_ = std::move(w);
+    QuantizedWeightRegistry::instance().register_weight(
+        &weight_, std::move(scales), std::move(biases), group_size, bits);
+}
+
+void SwitchLinear::release_weight()
+{
+    QuantizedWeightRegistry::instance().unregister(&weight_);
+    weight_ = mx::array(0.0f);  // drop the big buffer
+}
+
 // --- SwitchGLU ---
 
 SwitchGLU::SwitchGLU(int input_dims, int hidden_dims, int num_experts, bool bias)
     : gate_proj_(input_dims, hidden_dims, num_experts, bias),
       up_proj_(input_dims, hidden_dims, num_experts, bias),
       down_proj_(hidden_dims, input_dims, num_experts, bias),
+      gate_up_proj_(input_dims, 2 * hidden_dims, num_experts, bias),
       input_dims_(input_dims),
       hidden_dims_(hidden_dims),
       num_experts_(num_experts)
 {}
+
+bool SwitchGLU::ensure_gate_up_fused() {
+    if (gate_up_tried_) return gate_up_ready_;
+    gate_up_tried_ = true;  // attempt exactly once
+    // A/B escape hatch: MLX_NO_EXPERT_FUSION=1 keeps the two-call path.
+    static const bool disabled = std::getenv("MLX_NO_EXPERT_FUSION") != nullptr;
+    if (disabled) return false;
+
+    auto& reg = QuantizedWeightRegistry::instance();
+    auto* qg = reg.find(&gate_proj_.weight());
+    auto* qu = reg.find(&up_proj_.weight());
+    // Only fuse when both are registered-quantized with matching layout.
+    // Bit-width agnostic: 4/5/6/8-bit all packed the same way, concat along the
+    // output axis just stacks rows.
+    if (!qg || !qu) return false;
+    if (qg->group_size != qu->group_size || qg->bits != qu->bits) return false;
+    // Linear (non-quant) biases are not supported on the fused path; the MoE
+    // experts in these models are bias-free apart from the quant biases.
+    if (gate_proj_.weight_map().count("bias") ||
+        up_proj_.weight_map().count("bias"))
+        return false;
+    bool have_biases = qg->biases.has_value() && qu->biases.has_value();
+    if (qg->biases.has_value() != qu->biases.has_value()) return false;
+
+    // Expert weights are [E, N, K_packed]; scales/biases [E, N, K/group].
+    // Concatenate gate then up along axis 1 (the output/N dim) so the fused
+    // output rows are [gate(0:N) | up(N:2N)].
+    auto w = mx::concatenate({gate_proj_.weight(), up_proj_.weight()}, 1);
+    auto s = mx::concatenate({qg->scales, qu->scales}, 1);
+    std::optional<mx::array> b;
+    if (have_biases)
+        b = mx::concatenate({qg->biases.value(), qu->biases.value()}, 1);
+    mx::eval(w);
+    mx::eval(s);
+    if (b) mx::eval(*b);
+
+    gate_up_proj_.adopt_fused_weight(std::move(w), std::move(s), std::move(b),
+                                     qg->group_size, qg->bits);
+    // w/s/b are materialized (eval'd above) and no longer depend on the gate/up
+    // buffers, so release the originals — keeps VRAM neutral (fused == gate+up).
+    gate_proj_.release_weight();
+    up_proj_.release_weight();
+    gate_up_ready_ = true;
+    return true;
+}
 
 mx::array SwitchGLU::operator()(
     const mx::array& x,
@@ -126,8 +210,18 @@ mx::array SwitchGLU::operator()(
         inverse_order = io;
     }
 
-    auto x_up = up_proj_(work_x, idx, do_sort);
-    auto x_gate = gate_proj_(work_x, idx, do_sort);
+    mx::array x_gate(0.0f), x_up(0.0f);
+    if (ensure_gate_up_fused()) {
+        // One fused gather_qmm computes gate and up together ([.., 2*hidden]);
+        // split back into the two halves. Same math, fewer/bigger launches.
+        auto gu = gate_up_proj_(work_x, idx, do_sort);
+        auto parts = mx::split(gu, 2, -1);
+        x_gate = parts[0];
+        x_up = parts[1];
+    } else {
+        x_up = up_proj_(work_x, idx, do_sort);
+        x_gate = gate_proj_(work_x, idx, do_sort);
+    }
 
     work_x = down_proj_(swiglu(x_gate, x_up), idx, do_sort);
 

@@ -32,12 +32,9 @@ endif()
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
+    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    # Pin MLX to post-PR#7 commit (2026-05-20).
-    # Includes soloish90's 8-bit QMV fix (PR #6), the uint4 miscompile
-    # fix (PR #7 — 9e768e4) where global_load_b128 miscompiles on RDNA 3.5
-    # with hipcc 7.13 / LLVM 23, AND the clear_streams() ROCm backend patch.
-    GIT_TAG        94d325ce5fda85f3a3266623d220af4e3a873fb6
+    GIT_TAG        rocm-support
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
@@ -113,6 +110,7 @@ add_library(mlx-lm-common
     src/common/kv_cache.cpp
     src/common/attention_utils.cpp
     src/common/generate.cpp
+    src/common/graph_decode.cpp
     src/common/base_config.cpp
     src/common/hub_api.cpp
     src/common/safetensors.cpp
@@ -125,7 +123,12 @@ add_library(mlx-lm-common
     src/common/quantize_utils.cpp
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
+    src/llm/models/mtp_head.cpp
+    src/llm/models/mtp_moe.cpp
 )
+# NOTE: src/common/mtp_delta_kernel.cpp intentionally excluded from build.
+# Contains dead code (mtp_delta_fused / mtp_draft_forward) not wired into
+# generate.cpp. Left on disk for future ROCm optimization work.
 target_link_libraries(mlx-lm-common PUBLIC
     mlx-lm-core
     nlohmann_json::nlohmann_json
@@ -209,6 +212,7 @@ add_library(mlx-lm-vlm
     src/vlm/models/qwen25_vl.cpp
     src/vlm/models/gemma3.cpp
     src/vlm/models/qwen3_vl.cpp
+    src/vlm/models/qwen35_vl.cpp
     src/vlm/models/pixtral.cpp
     src/vlm/models/mistral3.cpp
     src/vlm/models/lfm2_vl.cpp
@@ -227,8 +231,56 @@ if(MLX_LM_BUILD_EXAMPLES)
     add_executable(diagnose examples/diagnose.cpp)
     target_link_libraries(diagnose PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
 
+    # convert: quantize a bf16 Qwen3.6-A3B (+ inline MTP head) to a combined MLX
+    # model with per-component mixed precision. Uses the engine's own MLX build.
+    add_executable(convert examples/convert.cpp)
+    target_link_libraries(convert PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
+
     add_executable(test_gdn examples/test_gdn.cpp)
     target_link_libraries(test_gdn PRIVATE mlx)
+
+    add_executable(test_device_kv examples/test_device_kv.cpp)
+    target_link_libraries(test_device_kv PRIVATE mlx)
+
+    add_executable(test_device_rope examples/test_device_rope.cpp)
+    target_link_libraries(test_device_rope PRIVATE mlx)
+
+    add_executable(test_qbits examples/test_qbits.cpp)
+    target_link_libraries(test_qbits PRIVATE mlx)
+
+    add_executable(test_dynslice examples/test_dynslice.cpp)
+    target_link_libraries(test_dynslice PRIVATE mlx)
+
+    add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)
+    target_link_libraries(test_sdpa_ref PRIVATE mlx)
+
+    # graph_probe exercises the ROCm-only HIP graph capture/replay symbols
+    # (mlx::core::gpu_graph_*/gpu_arena_*), which only exist in the ROCm backend.
+    # Building it on CPU/macOS fails to link, so gate it on the ROCm backend.
+    if(MLX_BUILD_ROCM)
+        add_executable(test_graph_const examples/test_graph_const.cpp)
+        target_link_libraries(test_graph_const PRIVATE mlx)
+        target_compile_definitions(test_graph_const PRIVATE MLX_BUILD_ROCM)
+
+        add_executable(test_graph_counter examples/test_graph_counter.cpp)
+        target_link_libraries(test_graph_counter PRIVATE mlx)
+        target_compile_definitions(test_graph_counter PRIVATE MLX_BUILD_ROCM)
+
+        add_executable(test_graph_kv_advance examples/test_graph_kv_advance.cpp)
+        target_link_libraries(test_graph_kv_advance PRIVATE mlx)
+        target_compile_definitions(test_graph_kv_advance PRIVATE MLX_BUILD_ROCM)
+
+        add_executable(graph_probe examples/graph_probe.cpp)
+        target_link_libraries(graph_probe PRIVATE mlx)
+
+        add_executable(test_graph_inc examples/test_graph_inc.cpp)
+        target_link_libraries(test_graph_inc PRIVATE mlx)
+        target_compile_definitions(test_graph_inc PRIVATE MLX_BUILD_ROCM)
+
+        add_executable(test_graph_attn examples/test_graph_attn.cpp)
+        target_link_libraries(test_graph_attn PRIVATE mlx)
+        target_compile_definitions(test_graph_attn PRIVATE MLX_BUILD_ROCM)
+    endif()
 
     add_executable(server
         examples/server.cpp

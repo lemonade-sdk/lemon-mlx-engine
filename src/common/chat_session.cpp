@@ -189,12 +189,11 @@ void ChatSession::generate_impl(
         // and all the optimizations from the shared generate path.
         LMInput lm_input(token_array);
 
+        // Use the external-cache + params constructor so the session keeps its
+        // persistent multi-turn KV cache AND enables MTP speculative decoding
+        // when generate_params_.use_mtp is set and the model has an MTP head.
         TokenIterator iter(
-            ctx, lm_input, std::move(kv_cache_),
-            AnySampler::from_params(generate_params_),
-            AnyProcessor::from_params(generate_params_),
-            generate_params_.max_tokens,
-            generate_params_.prefill_step_size);
+            ctx, lm_input, std::move(kv_cache_), generate_params_);
 
         // Set up streaming detokenizer
         NaiveStreamingDetokenizer detokenizer;

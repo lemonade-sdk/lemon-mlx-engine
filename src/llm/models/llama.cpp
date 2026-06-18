@@ -1,6 +1,10 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // Port of https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/models/llama.py
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <mlx-lm/llm/models/llama.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/attention_utils.h>

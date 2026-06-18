@@ -208,6 +208,9 @@ struct Server::Impl {
         if (chat_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = chat_req.repetition_penalty;
         }
+        if (chat_req.use_mtp) {
+            params.use_mtp = chat_req.use_mtp;
+        }
 
         if (chat_req.stream) {
             handle_chat_stream(res, model, chat_req, params);
@@ -255,6 +258,9 @@ struct Server::Impl {
         params.max_tokens = comp_req.max_tokens;
         if (comp_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = comp_req.repetition_penalty;
+        }
+        if (comp_req.use_mtp) {
+            params.use_mtp = comp_req.use_mtp;
         }
 
         handle_completion_blocking(res, model, comp_req, params);
@@ -304,6 +310,8 @@ struct Server::Impl {
                         generated_count++;
                         return GenerateDisposition::more;
                     });
+
+                std::cerr << "[TPS] " << info.summary() << std::endl;
 
                 openai::ChatCompletionResponse response;
                 response.id = request_id;
@@ -387,7 +395,7 @@ struct Server::Impl {
                         }
 
                         // Generate tokens and stream as SSE.
-                        generate_text(
+                        auto info = generate_text(
                             ctx, lm_input, params, eos_set,
                             [&](const std::string& text, int /*token*/) {
                                 openai::ChatCompletionChunk chunk;
@@ -403,6 +411,8 @@ struct Server::Impl {
                                 send_sse(sink, nlohmann::json(chunk).dump());
                                 return GenerateDisposition::more;
                             });
+
+                        std::cerr << "[TPS] " << info.summary() << std::endl;
 
                         // Send final chunk with finish_reason.
                         {
@@ -467,6 +477,8 @@ struct Server::Impl {
                         generated_count++;
                         return GenerateDisposition::more;
                     });
+
+                std::cerr << "[TPS] " << info.summary() << std::endl;
 
                 openai::CompletionResponse response;
                 response.id = request_id;

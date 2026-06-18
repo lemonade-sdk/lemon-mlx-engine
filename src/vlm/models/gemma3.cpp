@@ -1,6 +1,10 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // Port of Gemma3.swift — Gemma3 VLM (SigLip vision + Gemma3 language)
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <mlx-lm/vlm/models/gemma3.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <cmath>

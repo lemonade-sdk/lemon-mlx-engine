@@ -4,6 +4,7 @@
 
 #include <mlx/mlx.h>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace mlx_lm {
@@ -33,10 +34,37 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_ops(
     const mlx::core::array& v, const mlx::core::array& g,
     const mlx::core::array& beta,
     const std::optional<mlx::core::array>& state = std::nullopt,
-    const std::optional<mlx::core::array>& mask = std::nullopt);
+    const std::optional<mlx::core::array>& mask = std::nullopt,
+    // When true, the fused decode kernel writes the new SSM state in place.
+    bool inplace_state = false);
 
 // Full gated delta update: computes beta, g, initializes state, calls gated_delta_ops.
 std::pair<mlx::core::array, mlx::core::array> gated_delta_update(
+    const mlx::core::array& q, const mlx::core::array& k,
+    const mlx::core::array& v, const mlx::core::array& a,
+    const mlx::core::array& b, const mlx::core::array& a_log,
+    const mlx::core::array& dt_bias,
+    const std::optional<mlx::core::array>& state = std::nullopt,
+    const std::optional<mlx::core::array>& mask = std::nullopt,
+    bool inplace_state = false);
+
+// In-place write of `src` into `dst`'s device buffer (same total size required).
+mlx::core::array inplace_write(const mlx::core::array& dst,
+                              const mlx::core::array& src);
+
+// Speculative-decoding variant of gated_delta_ops: also returns the per-token
+// SSM state stack `state_seq` [B, T, Hv, Dv, Dk] (state after each token).
+// Returns (output [B, T, Hv, Dv], final_state [B, Hv, Dv, Dk], state_seq).
+std::tuple<mlx::core::array, mlx::core::array, mlx::core::array> gated_delta_ops_seq(
+    const mlx::core::array& q, const mlx::core::array& k,
+    const mlx::core::array& v, const mlx::core::array& g,
+    const mlx::core::array& beta,
+    const std::optional<mlx::core::array>& state = std::nullopt,
+    const std::optional<mlx::core::array>& mask = std::nullopt);
+
+// Like gated_delta_update, but also returns the per-token state stack (see
+// gated_delta_ops_seq). Used by speculative decoding verification.
+std::tuple<mlx::core::array, mlx::core::array, mlx::core::array> gated_delta_update_seq(
     const mlx::core::array& q, const mlx::core::array& k,
     const mlx::core::array& v, const mlx::core::array& a,
     const mlx::core::array& b, const mlx::core::array& a_log,

@@ -60,8 +60,31 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
                                  " (auto-download disabled)");
     }
 
+    // Check model_type to determine loading path.
+    // MTP delta models (qwen3_5_mtp) contain only the MTP head weights and
+    // must be merged with the base model's text backbone before loading.
+    bool is_mtp_delta = false;
+    {
+        auto config_path = fs::path(model_dir) / "config.json";
+        if (fs::exists(config_path)) {
+            try {
+                std::ifstream cf(config_path);
+                nlohmann::json cj;
+                cf >> cj;
+                std::string mt = cj.value("model_type", "");
+                is_mtp_delta = (mt == "qwen3_5_mtp");
+            } catch (...) {}
+        }
+    }
+
     // Load the model.
-    auto ctx = load_llm(model_id);
+    ModelContext ctx;
+    if (is_mtp_delta) {
+        std::cerr << "[ModelManager] MTP delta model detected, loading with base model merge\n";
+        ctx = load_mtp_delta_model(model_id);
+    } else {
+        ctx = load_llm(model_id);
+    }
 
     // Apply no-think if configured.
     if (no_think_ && ctx.template_extra_context) {

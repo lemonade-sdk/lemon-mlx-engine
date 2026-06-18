@@ -78,6 +78,24 @@ Type your message at the `>` prompt. Type `quit` or `exit` to leave.
 | `--kv-bits N` | 0 (off) | KV cache quantization bits (4 or 8) |
 | `--kv-group-size N` | 64 | KV cache quantization group size |
 | `--ctx-size N` | 0 (auto) | Pre-allocate KV cache for N tokens |
+| `--device N` | 0 | Select GPU by index (AMD multi-GPU systems) |
+| `--list-devices` | — | List available GPUs and exit |
+
+### Selecting a GPU (AMD / multi-GPU)
+
+On systems with more than one GPU, list the available devices and pick one by
+index:
+
+```bash
+./chat --list-devices
+./chat mlx-community/Qwen3-8B-4bit --device 1
+```
+
+On AMD ROCm the engine runs on both integrated RDNA 3.5 APUs (gfx1151) and
+discrete RDNA 4 GPUs (gfx1201, e.g. Radeon AI PRO R9700), including over an
+eGPU link. When mixing a discrete RDNA 4 GPU with an integrated APU, make sure
+`HSA_OVERRIDE_GFX_VERSION` is **unset** so kernels compile for each GPU's real
+architecture (`chat` clears it automatically).
 
 ## API Server
 

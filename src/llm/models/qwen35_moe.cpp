@@ -7,12 +7,17 @@
 // - All layers use MoE (when num_experts > 0), not alternating with dense MLP
 // - MoE sanitize splits fused gate_up_proj into gate_proj + up_proj
 
+#include <cstdlib>
+#include <limits>
 #include <mlx-lm/llm/models/qwen35_moe.h>
+#include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
+#include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace mx = mlx::core;
 
@@ -100,9 +105,102 @@ void from_json(const nlohmann::json& j, Qwen35MoEConfiguration& c) {
     }
 }
 
+// --- Qwen3.5 VLM Configuration parsing ---
+
+void from_json(const nlohmann::json& j, Qwen35VLVisionConfiguration& c) {
+    const auto& cfg = j.contains("vision_config") ? j.at("vision_config") : j;
+    c.model_type = cfg.value("model_type", std::string("qwen3_5"));
+    c.depth = cfg.value("depth", 24);
+    c.hidden_size = cfg.value("hidden_size", 1024);
+    c.intermediate_size = cfg.value("intermediate_size", 4096);
+    c.out_hidden_size = cfg.value("out_hidden_size", 2560);
+    c.num_heads = cfg.value("num_heads", 16);
+    c.patch_size = cfg.value("patch_size", 16);
+    c.spatial_merge_size = cfg.value("spatial_merge_size", 2);
+    c.temporal_patch_size = cfg.value("temporal_patch_size", 2);
+    c.num_position_embeddings = cfg.value("num_position_embeddings", 2304);
+    c.in_channels = cfg.value("in_channels", 3);
+    c.hidden_act = cfg.value("hidden_act", std::string("gelu_pytorch_tanh"));
+    c.rms_norm_eps = cfg.value("rms_norm_eps", 1e-6f);
+    if (cfg.contains("deepstack_visual_indexes") && !cfg.at("deepstack_visual_indexes").is_null()) {
+        c.deepstack_visual_indexes = cfg.at("deepstack_visual_indexes").get<std::vector<int>>();
+    }
+    c.merger_intermediate_size = cfg.value("merger_intermediate_size", 0);
+    if (c.merger_intermediate_size == 0) {
+        c.merger_intermediate_size = c.hidden_size * c.spatial_merge_size * c.spatial_merge_size;
+    }
+}
+
+void from_json(const nlohmann::json& j, Qwen35VLBaseConfiguration& c) {
+    c.model_type = j.value("model_type", std::string("qwen3_5"));
+    c.vocab_size = j.value("vocab_size", 248320);
+    c.image_token_id = j.value("image_token_id", 248056);
+    c.video_token_id = j.value("video_token_id", 248057);
+    c.vision_start_token_id = j.value("vision_start_token_id", 248053);
+    c.vision_end_token_id = j.value("vision_end_token_id", 248054);
+    c.vision_token_id = j.value("vision_token_id", 248055);
+}
+
+void from_json(const nlohmann::json& j, Qwen35VLConfiguration& c) {
+    from_json(j, c.text_config);
+    from_json(j, c.vision_config);
+    from_json(j, c.base_config);
+}
+
 static mx::array linear_fwd(const mx::array& x, const mx::array& w,
                               const std::optional<mx::array>& bias = std::nullopt) {
     return linear_forward(x, w, bias.has_value() ? &bias.value() : nullptr);
+}
+
+// Fuse several quantized projections that share input width into one packed
+// weight, concatenated along the output axis and registered so linear_fwd
+// routes it through a single quantized_matmul (the caller then slices the
+// output). Output rows are independent, so this is exact. Returns true and sets
+// `dst` once; returns false (leaving dst empty -> caller uses the unfused
+// fallback) if any source is not quantized or quant params differ. Does not
+// handle a separate per-projection (linear) bias — caller must only fuse
+// bias-free projections.
+static bool fuse_quant_projections(
+    const std::vector<const mx::array*>& srcs,
+    std::optional<mx::array>& dst)
+{
+    if (dst.has_value()) return true;
+    auto& reg = QuantizedWeightRegistry::instance();
+    std::vector<const QuantizationInfo*> qis;
+    qis.reserve(srcs.size());
+    for (auto* w : srcs) {
+        auto* q = reg.find(w);
+        if (!q) return false;
+        qis.push_back(q);
+    }
+    for (size_t i = 1; i < qis.size(); ++i)
+        if (qis[i]->group_size != qis[0]->group_size || qis[i]->bits != qis[0]->bits)
+            return false;
+    bool have_biases = true;
+    for (auto* q : qis)
+        if (!q->biases) have_biases = false;
+
+    std::vector<mx::array> ws, ss, bs;
+    ws.reserve(srcs.size());
+    ss.reserve(srcs.size());
+    for (size_t i = 0; i < srcs.size(); ++i) {
+        ws.push_back(*srcs[i]);
+        ss.push_back(qis[i]->scales);
+        if (have_biases) bs.push_back(*qis[i]->biases);
+    }
+    auto w = mx::concatenate(ws, 0);
+    auto s = mx::concatenate(ss, 0);
+    std::optional<mx::array> b;
+    if (have_biases) b = mx::concatenate(bs, 0);
+    // Materialize as constants so they are not recomputed each step.
+    mx::eval(w);
+    mx::eval(s);
+    if (b) mx::eval(*b);
+
+    dst = std::move(w);
+    reg.register_weight(&dst.value(), std::move(s), std::move(b),
+                        qis[0]->group_size, qis[0]->bits);
+    return true;
 }
 
 // --- Qwen35MoEAttention ---
@@ -132,21 +230,44 @@ Qwen35MoEAttention::Qwen35MoEAttention(const Qwen35MoEConfiguration& args)
     }
 }
 
+void Qwen35MoEAttention::ensure_qkv_proj_fused() {
+    if (qkv_proj_fused_ready_) return;
+    qkv_proj_fused_ready_ = true; // attempt exactly once
+    // The fused path adds the quantization biases but not separate linear
+    // biases; only fuse when the projections are bias-free (this model).
+    if (q_proj_bias_ || k_proj_bias_ || v_proj_bias_) return;
+    fuse_quant_projections({&q_proj_weight_, &k_proj_weight_, &v_proj_weight_},
+                           qkv_proj_fused_weight_);
+}
+
 mx::array Qwen35MoEAttention::operator()(const mx::array& x,
                                            const AttentionMask& mask,
                                            KVCache* cache) {
     int B = x.shape(0), L = x.shape(1);
 
-    auto q_proj_out = linear_fwd(x, q_proj_weight_, q_proj_bias_);
+    // One fused q|k|v matmul (then slice), falling back to three separate
+    // projections if the fused weight could not be built.
+    ensure_qkv_proj_fused();
+    mx::array q_proj_out(0.0f), keys(0.0f), values(0.0f);
+    if (qkv_proj_fused_weight_.has_value()) {
+        auto fused = linear_fwd(x, *qkv_proj_fused_weight_);
+        int qw = num_heads_ * 2 * head_dim_;     // q_proj output (queries + gate)
+        int kw = num_kv_heads_ * head_dim_;      // k_proj output
+        int vw = num_kv_heads_ * head_dim_;      // v_proj output
+        q_proj_out = mx::slice(fused, {0, 0, 0},        {B, L, qw});
+        keys       = mx::slice(fused, {0, 0, qw},       {B, L, qw + kw});
+        values     = mx::slice(fused, {0, 0, qw + kw},  {B, L, qw + kw + vw});
+    } else {
+        q_proj_out = linear_fwd(x, q_proj_weight_, q_proj_bias_);
+        keys = linear_fwd(x, k_proj_weight_, k_proj_bias_);
+        values = linear_fwd(x, v_proj_weight_, v_proj_bias_);
+    }
     // Reshape to [B, L, num_heads, 2*head_dim] then split into queries + gate
     q_proj_out = mx::reshape(q_proj_out, {B, L, num_heads_, -1});
     int hd = head_dim_;
     auto queries = mx::slice(q_proj_out, {0, 0, 0, 0}, {B, L, num_heads_, hd});
     auto gate = mx::slice(q_proj_out, {0, 0, 0, hd}, {B, L, num_heads_, 2 * hd});
     gate = mx::reshape(gate, {B, L, -1});
-
-    auto keys = linear_fwd(x, k_proj_weight_, k_proj_bias_);
-    auto values = linear_fwd(x, v_proj_weight_, v_proj_bias_);
 
     // RMSNorm on queries and keys with learned weights
     queries = mx::transpose(
@@ -157,20 +278,94 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
         {0, 2, 1, 3});
     values = mx::transpose(mx::reshape(values, {B, L, num_kv_heads_, -1}), {0, 2, 1, 3});
 
-    // RoPE with partial rotary factor
+    // RoPE with partial rotary factor; device-position RoPE in graph-decode mode.
     int offset = cache ? cache->offset() : 0;
-    queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
-    keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
-
-    // KV cache update
-    if (cache) {
-        auto [k, v] = cache->update(keys, values);
-        keys = k;
-        values = v;
+    static const bool g_devpos_env = std::getenv("MLX_DECODE_DEVICE_POS") != nullptr;
+    // Graph-decode mode is decode-only (single token).
+    bool gmode = (mlx_lm::graph_external_pos() || g_devpos_env) && L == 1;
+    if (gmode) {
+        mx::array pos = mlx_lm::graph_external_pos()
+            ? mlx_lm::graph_decode_pos()
+            : mx::array({offset}, {1}, mx::int32);
+        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, pos);
+        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, pos);
+    } else {
+        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
+        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
     }
 
-    // SDPA
-    auto output = sdpa(queries, keys, values, scale_, mask);
+    // KV cache update + SDPA.
+    mx::array output(0.0f);
+    if (gmode && L == 1 && cache && cache->state().size() == 2) {
+        // In-graph device-position decode: write token at slot `pos`, attend over
+        // the whole buffer with a length mask.
+        mx::array pos = mlx_lm::graph_external_pos()
+            ? mlx_lm::graph_decode_pos()
+            : mx::array({cache->offset()}, {1}, mx::int32);
+        auto kv = cache->update_at_pos(keys, values, pos);
+        const auto& full_k = kv.first;
+        const auto& full_v = kv.second;
+        int CAP = full_k.shape(2);
+        auto cols = mx::arange(0, CAP, mx::int32);
+        auto addmask = mx::astype(
+            mx::reshape(mx::where(mx::less_equal(cols, pos), mx::array(0.0f),
+                                  mx::array(-std::numeric_limits<float>::infinity())),
+                        {1, 1, 1, CAP}),
+            x.dtype());
+        output = sdpa(queries, full_k, full_v, scale_, AttentionMask::from_array(addmask));
+    } else if (gmode && L == 1 && cache) {
+        // Write-free graph-decode forward: concat the current token, attend with
+        // a device-position mask.
+        auto st = cache->state();
+        if (st.size() < 2) {
+            cache->update(keys, values);
+            auto st2 = cache->state();
+            const auto& fk = st2[0];
+            const auto& fv = st2[1];
+            int CAP2 = fk.shape(2);
+            auto cols2 = mx::arange(0, CAP2, mx::int32);
+            auto pos2 = mx::array({cache->offset() - 1}, {1}, mx::int32);
+            auto m2 = mx::astype(
+                mx::reshape(mx::where(mx::less_equal(cols2, pos2), mx::array(0.0f),
+                                      mx::array(-std::numeric_limits<float>::infinity())),
+                            {1, 1, 1, CAP2}),
+                x.dtype());
+            output = sdpa(queries, fk, fv, scale_, AttentionMask::from_array(m2));
+            output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
+            static auto compiled_gate0 = mx::compile(
+                [](const std::vector<mx::array>& in) -> std::vector<mx::array> {
+                    return {mx::multiply(in[0], mx::sigmoid(in[1]))}; },
+                /*shapeless=*/true);
+            return linear_fwd(compiled_gate0({output, gate})[0], o_proj_weight_,
+                              o_proj_bias_);
+        }
+        const auto& past_k = st[0];
+        const auto& past_v = st[1];
+        int CAP = past_k.shape(2);
+        auto k_all = mx::concatenate({past_k, keys}, 2);    // [B,H,CAP+1,D]
+        auto v_all = mx::concatenate({past_v, values}, 2);
+        auto cols = mx::arange(0, CAP + 1, mx::int32);
+        mx::array pos = mlx_lm::graph_external_pos()
+            ? mlx_lm::graph_decode_pos()
+            : mx::array({cache->offset()}, {1}, mx::int32);  // N past tokens
+        // valid = past index in [0,N)  OR  the appended current token (last slot)
+        auto valid = mx::logical_or(mx::less(cols, pos),
+                                    mx::equal(cols, mx::array(CAP, mx::int32)));
+        auto addmask = mx::astype(
+            mx::reshape(mx::where(valid, mx::array(0.0f),
+                                  mx::array(-std::numeric_limits<float>::infinity())),
+                        {1, 1, 1, CAP + 1}),
+            x.dtype());
+        output = sdpa(queries, k_all, v_all, scale_, AttentionMask::from_array(addmask));
+        if (!std::getenv("MLX_GRAPH_NO_APPEND")) cache->update(keys, values);
+    } else {
+        if (cache) {
+            auto [k, v] = cache->update(keys, values);
+            keys = k;
+            values = v;
+        }
+        output = sdpa(queries, keys, values, scale_, mask);
+    }
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
     // Swift: oProj(sigmoidMultiply(output, gate))
@@ -226,6 +421,21 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
       out_proj_weight_(mx::zeros({args.hidden_size, value_dim_}))
 {}
 
+// Build the fused in_proj weight once: concatenate the qkv/z/b/a quantized
+// weights (and their scales/biases) along the output axis and register the
+// result so linear_fwd routes it through a single quantized_matmul. They share
+// input width (hidden_size) and quantization params, so output rows are
+// independent and concatenation is exact. No-op (leaves fused weight unset, so
+// the caller falls back to four matmuls) if any weight is not quantized or the
+// quant params differ.
+void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
+    if (in_proj_fused_ready_) return;
+    in_proj_fused_ready_ = true; // attempt exactly once
+    fuse_quant_projections({&in_proj_qkv_weight_, &in_proj_z_weight_,
+                            &in_proj_b_weight_, &in_proj_a_weight_},
+                           in_proj_fused_weight_);
+}
+
 mx::array Qwen35MoEGatedDeltaNet::operator()(
     const mx::array& inputs,
     const std::optional<mx::array>& mask,
@@ -233,11 +443,28 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
 {
     int B = inputs.shape(0), S = inputs.shape(1);
 
-    // 4 separate projections (unlike Qwen3Next which uses 2 combined)
-    auto qkv = linear_fwd(inputs, in_proj_qkv_weight_);
-    auto z = mx::reshape(linear_fwd(inputs, in_proj_z_weight_), {B, S, num_v_heads_, head_v_dim_});
-    auto b_val = linear_fwd(inputs, in_proj_b_weight_);
-    auto a_val = linear_fwd(inputs, in_proj_a_weight_);
+    // One fused in_proj matmul (qkv|z|b|a concatenated) then slice, falling back
+    // to four separate matmuls if the fused weight could not be built.
+    ensure_in_proj_fused();
+    mx::array qkv(0.0f), z(0.0f), b_val(0.0f), a_val(0.0f);
+    if (in_proj_fused_weight_.has_value()) {
+        auto fused = linear_fwd(inputs, *in_proj_fused_weight_);
+        int o0 = key_dim_ * 2 + value_dim_;       // qkv width
+        int o1 = value_dim_;                      // z width
+        int o2 = num_v_heads_;                    // b width
+        qkv   = mx::slice(fused, {0, 0, 0},          {B, S, o0});
+        z     = mx::reshape(mx::slice(fused, {0, 0, o0}, {B, S, o0 + o1}),
+                            {B, S, num_v_heads_, head_v_dim_});
+        b_val = mx::slice(fused, {0, 0, o0 + o1},     {B, S, o0 + o1 + o2});
+        a_val = mx::slice(fused, {0, 0, o0 + o1 + o2},
+                          {B, S, o0 + o1 + 2 * o2});
+    } else {
+        // 4 separate projections (unlike Qwen3Next which uses 2 combined)
+        qkv = linear_fwd(inputs, in_proj_qkv_weight_);
+        z = mx::reshape(linear_fwd(inputs, in_proj_z_weight_), {B, S, num_v_heads_, head_v_dim_});
+        b_val = linear_fwd(inputs, in_proj_b_weight_);
+        a_val = linear_fwd(inputs, in_proj_a_weight_);
+    }
 
     // Conv1d processing
     auto dtype = inputs.dtype();
@@ -257,15 +484,27 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // Save conv state for next step
     if (cache) {
         int start = conv_input.shape(1) - (conv_kernel_size_ - 1);
-        (*cache)[0] = mx::slice(conv_input, {0, start, 0}, {B, conv_input.shape(1), conv_dim_});
+        auto new_conv = mx::slice(conv_input, {0, start, 0}, {B, conv_input.shape(1), conv_dim_});
+        static const bool no_inplace_conv = std::getenv("MLX_GRAPH_NO_INPLACE") != nullptr;
+        if (mlx_lm::graph_capturing() && !no_inplace_conv && (*cache)[0].has_value() &&
+            (*cache)[0].value().shape() == new_conv.shape()) {
+            // Graph capture: write the rolling conv window into the persistent
+            // conv buffer in place.
+            (*cache)[0] = inplace_write((*cache)[0].value(), new_conv);
+        } else {
+            (*cache)[0] = new_conv;
+        }
     }
 
     // T=1 decode fast path
     if (S == 1 && cache && (*cache)[0].has_value() && conv_input.shape(1) == conv_kernel_size_) {
-        // Fused conv1d + silu
-        auto w = mx::reshape(
-            mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
-            {1, conv_kernel_size_, conv_dim_});
+        // Fused conv1d + silu; build the reshaped conv weight once and reuse.
+        if (!conv1d_w_dec_.has_value()) {
+            conv1d_w_dec_ = mx::reshape(
+                mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
+                {1, conv_kernel_size_, conv_dim_});
+        }
+        const mx::array& w = *conv1d_w_dec_;
         static auto compiled_conv_silu = mx::compile(
             [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
                 auto dot = mx::sum(mx::multiply(inputs[0], inputs[1]), 1, true);
@@ -282,16 +521,32 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, 1, conv_dim_}),
                                   {B, 1, num_v_heads_, head_v_dim_});
 
-        // Q/K norms
-        float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
-        auto q_norm_w = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
-        auto k_norm_w = mx::full({head_k_dim_}, inv_scale, dtype);
-        q_out = mx::fast::rms_norm(q_out, q_norm_w, 1e-6f);
-        k_out = mx::fast::rms_norm(k_out, k_norm_w, 1e-6f);
+        // Q/K norms; the norm weights are constant — build once, reuse.
+        if (!q_norm_w_.has_value()) {
+            float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
+            q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
+            k_norm_w_ = mx::full({head_k_dim_}, inv_scale, dtype);
+        }
+        q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
+        k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
 
-        // Fused GDN decode step
+        // GDN decode step via the fused HIP kernel (gated_delta_update).
+        // MLX_GDN_NO_FUSED=1 falls back to the inline mx::compile recurrence.
         auto ssm_state = (*cache)[1].has_value() ? (*cache)[1].value()
                            : mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
+
+        static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        if (use_fused_gdn) {
+            // Graph capture: write the new SSM state in place into the persistent buffer.
+            static const bool no_inplace = std::getenv("MLX_GRAPH_NO_INPLACE") != nullptr;
+            bool inplace_state = mlx_lm::graph_capturing() && !no_inplace && (*cache)[1].has_value();
+            auto [o, ns] = gated_delta_update(
+                q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state,
+                std::nullopt, inplace_state);
+            (*cache)[1] = ns;
+            auto normalized = norm_(o, z);
+            return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
+        }
 
         int rep = num_v_heads_ / num_k_heads_;
         static auto compiled_decode_step = mx::compile(
@@ -326,13 +581,15 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                         mx::reshape(kt, {B_, Hk_, 1, Dk_}), {B_, Hk_, rep_, Dk_}), {B_, Hv_, Dk_});
                 }
 
-                // GDN recurrence
+                // GDN recurrence (state·vector contractions over Dk as matmul).
                 auto decay = mx::expand_dims(mx::expand_dims(gt, -1), -1);
                 auto s = mx::multiply(state, decay);
-                auto kv_mem = mx::sum(mx::multiply(s, mx::expand_dims(kt, -2)), -1);
+                auto kv_mem = mx::squeeze(
+                    mx::matmul(s, mx::expand_dims(kt, -1)), -1);
                 auto delta = mx::multiply(mx::subtract(vt, kv_mem), mx::expand_dims(bt, -1));
                 s = mx::add(s, mx::multiply(mx::expand_dims(kt, -2), mx::expand_dims(delta, -1)));
-                auto y = mx::sum(mx::multiply(s, mx::expand_dims(qt, -2)), -1);
+                auto y = mx::squeeze(
+                    mx::matmul(s, mx::expand_dims(qt, -1)), -1);
 
                 return {mx::expand_dims(y, 1), s};
             },
@@ -370,8 +627,22 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         ssm_state = (*cache)[1].value();
     }
 
-    auto [out, new_state] = gated_delta_update(
-        q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
+    mx::array out = mx::array(0.0f);
+    mx::array new_state = mx::array(0.0f);
+    if (cache && cache->capture_spec()) {
+        // Speculative verify forward: capture the per-token state stack and conv input.
+        int base_off = cache->offset();
+        auto [o, ns, seq] = gated_delta_update_seq(
+            q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
+        out = o;
+        new_state = ns;
+        cache->store_spec(seq, conv_input, base_off);
+    } else {
+        auto [o, ns] = gated_delta_update(
+            q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
+        out = o;
+        new_state = ns;
+    }
 
     if (cache) {
         (*cache)[1] = new_state;
@@ -404,7 +675,24 @@ Qwen35MoEMLP::Qwen35MoEMLP(int dimensions, int hidden_dimensions)
       up_proj_weight_(mx::zeros({hidden_dimensions, dimensions}))
 {}
 
+void Qwen35MoEMLP::ensure_gate_up_fused() {
+    if (gate_up_fused_ready_) return;
+    gate_up_fused_ready_ = true; // attempt exactly once
+    fuse_quant_projections({&gate_proj_weight_, &up_proj_weight_},
+                           gate_up_fused_weight_);
+}
+
 mx::array Qwen35MoEMLP::operator()(const mx::array& x) {
+    // One fused gate|up matmul (then slice for SwiGLU), falling back to two
+    // separate projections if the fused weight could not be built.
+    ensure_gate_up_fused();
+    if (gate_up_fused_weight_.has_value()) {
+        auto fused = linear_fwd(x, *gate_up_fused_weight_);
+        int gw = gate_proj_weight_.shape(0); // intermediate (output) width
+        auto g = mx::slice(fused, {0, 0, 0},  {fused.shape(0), fused.shape(1), gw});
+        auto u = mx::slice(fused, {0, 0, gw}, {fused.shape(0), fused.shape(1), 2 * gw});
+        return linear_fwd(swiglu(g, u), down_proj_weight_);
+    }
     auto g = linear_fwd(x, gate_proj_weight_);
     return linear_fwd(swiglu(g, linear_fwd(x, up_proj_weight_)), down_proj_weight_);
 }
@@ -431,21 +719,32 @@ Qwen35MoESparseMoeBlock::Qwen35MoESparseMoeBlock(const Qwen35MoEConfiguration& a
 {}
 
 mx::array Qwen35MoESparseMoeBlock::operator()(const mx::array& x) {
-    auto gates = mx::softmax(linear_fwd(x, gate_weight_), -1);
+    // Router logits over all experts (no softmax yet — see below).
+    auto router_logits = linear_fwd(x, gate_weight_);
 
     int k = top_k_;
-    int kth = gates.shape(-1) - k;
-    auto inds = mx::argpartition(gates, kth, -1);
+    int kth = router_logits.shape(-1) - k;
+    // argpartition on the logits selects the same top-k as on the softmax
+    // probabilities (softmax is monotonic), so we can avoid the full-256 softmax.
+    auto inds = mx::argpartition(router_logits, kth, -1);
     inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
-    auto scores = mx::take_along_axis(gates, inds, -1);
 
+    mx::array scores(0.0f);
     if (norm_topk_prob_) {
-        static auto compiled_normalize_scores = mx::compile(
-            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
-                return {mx::divide(inputs[0], mx::sum(inputs[0], -1, true))};
-            },
-            /*shapeless=*/true);
-        scores = compiled_normalize_scores({scores})[0];
+        // The renormalized softmax over all experts, restricted to the top-k, is
+        // exactly the softmax over the top-k logits:
+        //   softmax_N(l)_i / sum_{j in topk} softmax_N(l)_j
+        //     = exp(l_i) / sum_{j in topk} exp(l_j) = softmax_k(l_topk)_i.
+        // So gather the k=8 selected logits and softmax over just those — this
+        // replaces a 256-wide softmax + a separate divide/sum renormalize with a
+        // single 8-wide softmax.
+        auto top_logits = mx::take_along_axis(router_logits, inds, -1);
+        scores = mx::softmax(top_logits, -1);
+    } else {
+        // Raw (un-renormalized) softmax weights: softmax over all experts first,
+        // then gather the selected ones.
+        auto gates = mx::softmax(router_logits, -1);
+        scores = mx::take_along_axis(gates, inds, -1);
     }
 
     auto y = switch_mlp_(x, inds);
@@ -562,7 +861,15 @@ Qwen35MoEModelInner::Qwen35MoEModelInner(const Qwen35MoEConfiguration& args)
 }
 
 mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<KVCache>* cache) {
-    auto h = mx::take(embed_tokens_weight_, inputs, 0);
+    // Defensive: ensure tokens are at least 2D [B, S].
+    // Some callers (e.g., MTP rerun in generate.cpp) may pass 1D [S] token IDs.
+    // Without this, mx::take produces 2D [S, H] instead of 3D [1, S, H],
+    // causing downstream layers to misinterpret hidden_size as sequence length.
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
 
     // Find the first full-attention index for attention mask
     int fa_idx = full_attention_interval_ - 1;
@@ -583,8 +890,85 @@ mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<K
     return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
 }
 
+// Overloaded operator() for VLM multimodal use: accepts pre-computed embeddings.
+mx::array Qwen35MoEModelInner::operator()(
+    const std::optional<mx::array>& inputs,
+    std::vector<KVCache>* cache,
+    const std::optional<mx::array>& input_embedding,
+    const AttentionMask& mask,
+    const std::optional<mx::array>& /*position_ids*/,
+    const std::optional<mx::array>& /*visual_mask*/,
+    const std::vector<mx::array>* /*deepstack_embeds*/)
+{
+    auto init_h = [&]() -> mx::array {
+        if (input_embedding.has_value()) return input_embedding.value();
+        if (inputs.has_value()) return mx::take(embed_tokens_weight_, inputs.value(), 0);
+        throw std::runtime_error("Either inputs or input_embedding must be provided");
+    };
+    mx::array h = init_h();
+
+    // Find the first full-attention index for attention mask
+    int fa_idx = full_attention_interval_ - 1;
+    if (fa_idx >= static_cast<int>(layers_.size())) fa_idx = 0;
+
+    auto attn_mask = mask;
+    if (attn_mask.is_none()) {
+        attn_mask = create_attention_mask(
+            h, cache && fa_idx < static_cast<int>(cache->size()) ? &(*cache)[fa_idx] : nullptr);
+    }
+
+    // SSM mask: always nullopt
+    std::optional<mx::array> ssm_mask;
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
+        auto layer_attn_mask = layers_[i].is_linear() ? AttentionMask{} : attn_mask;
+        h = layers_[i](h, layer_attn_mask, ssm_mask, lc);
+    }
+
+    return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
+}
+
+mx::array Qwen35MoEModelInner::embed_tokens(const mx::array& input_ids) const {
+    return mx::take(embed_tokens_weight_, input_ids, 0);
+}
+
 mx::array Qwen35MoEModelInner::embed_as_linear(const mx::array& x) const {
     return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+}
+
+mx::array Qwen35MoEModelInner::apply_lm_head(const mx::array& hidden) const {
+    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+}
+
+mx::array Qwen35MoEModelInner::apply_norm(const mx::array& hidden) const {
+    return mx::fast::rms_norm(hidden, norm_weight_, rms_norm_eps_);
+}
+
+mx::array Qwen35MoEModelInner::forward_prenorm(const mx::array& inputs, std::vector<KVCache>* cache) {
+    // Same as operator() but returns hidden BEFORE the final RMSNorm.
+    // The MTP head expects pre-norm hidden and applies its own normalization.
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
+
+    int fa_idx = full_attention_interval_ - 1;
+    if (fa_idx >= static_cast<int>(layers_.size())) fa_idx = 0;
+
+    auto fa_mask = create_attention_mask(
+        h, cache && fa_idx < static_cast<int>(cache->size()) ? &(*cache)[fa_idx] : nullptr);
+
+    std::optional<mx::array> ssm_mask;
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
+        auto attn_mask = layers_[i].is_linear() ? AttentionMask{} : fa_mask;
+        h = layers_[i](h, attn_mask, ssm_mask, lc);
+    }
+
+    return h;  // pre-norm
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35MoEModelInner::weight_map() {
@@ -604,17 +988,34 @@ Qwen35MoEModel::Qwen35MoEModel(const Qwen35MoEConfiguration& args)
     : config_(args), model_(args)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
-    if (!args.tie_word_embeddings) {
-        lm_head_weight_ = mx::zeros({args.vocab_size, args.hidden_size});
-    }
+    // Always allocate lm_head_weight_ so it is part of weight_map(). For TIED
+    // embeddings, sanitize() wires a packed quantized copy of the embedding into
+    // it, so the lm_head matmul runs through quantized_matmul (~4x less memory
+    // than the dequantized embedding table — the single largest per-token load).
+    // load_weights() clears it back to nullopt if the checkpoint provides no
+    // lm_head (legacy untied-fallback behavior).
+    lm_head_weight_ = mx::zeros({args.vocab_size, args.hidden_size});
 }
 
 PrepareResult Qwen35MoEModel::prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int ws) {
     return llm_default_prepare(*this, input, cache, ws);
 }
 
-LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State*) {
-    return LMOutput(forward_impl(input.tokens, cache));
+LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state) {
+    // Use forward_prenorm to get hidden BEFORE the final RMSNorm.
+    // The MTP head expects pre-norm hidden and applies its own normalization.
+    // The lm_head needs post-norm hidden, so we apply the norm only for logits.
+    auto hidden = model_.forward_prenorm(input.tokens, cache);
+    auto post_norm = model_.apply_norm(hidden);
+    if (state) {
+        return LMOutput(
+            lm_head_weight_.has_value() ? linear_fwd(post_norm, lm_head_weight_.value())
+                                         : model_.embed_as_linear(post_norm),
+            LMOutput::State(std::nullopt, hidden));  // Return PRE-norm hidden for MTP
+    }
+    return LMOutput(
+        lm_head_weight_.has_value() ? linear_fwd(post_norm, lm_head_weight_.value())
+                                     : model_.embed_as_linear(post_norm));
 }
 
 mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
@@ -626,11 +1027,21 @@ mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCa
 std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& params) {
     std::vector<KVCache> caches;
     caches.reserve(config_.num_hidden_layers);
+    // Use a static, fixed-address KV buffer for graph decode or MLX_KV_STATIC;
+    // otherwise grow-by-doubling.
+    bool want_static =
+        std::getenv("MLX_KV_STATIC") != nullptr || mlx_lm::graph_decode_enabled();
+    int cap = (want_static && params.ctx_size > 0) ? params.ctx_size : 256;
+    int reserve = !want_static
+        ? 0
+        : (params.ctx_size > 0
+            ? 0
+            : (params.max_tokens.has_value() ? params.max_tokens.value() : 2048));
     for (const auto& layer : model_.get_layers()) {
         if (layer.is_linear()) {
             caches.emplace_back(MambaCache{});
         } else {
-            caches.emplace_back(KVCacheSimple{});
+            caches.emplace_back(KVCacheSimple{cap, reserve});
         }
     }
     return caches;
@@ -638,11 +1049,20 @@ std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& pa
 
 std::unordered_map<std::string, mx::array>
 Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
-    if (config_.tie_word_embeddings) weights.erase("lm_head.weight");
+    // Tied-embedding lm_head wiring is handled at the end of this function (after
+    // key remapping), where we duplicate the PACKED quantized embedding into
+    // lm_head.* so the lm_head matmul uses quantized_matmul instead of the
+    // dequantized embedding. Drop any stale checkpoint lm_head here.
+    if (config_.tie_word_embeddings) {
+        weights.erase("lm_head.weight");
+        weights.erase("lm_head.scales");
+        weights.erase("lm_head.biases");
+    }
 
-    // Remove mtp.* keys
+    // Stash mtp.* keys for MTPHead wiring.
     for (auto it = weights.begin(); it != weights.end(); ) {
         if (it->first.find("mtp.") != std::string::npos) {
+            mtp_weights_.emplace(it->first, it->second);
             it = weights.erase(it);
         } else {
             ++it;
@@ -665,6 +1085,16 @@ Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
         //   "language_model.lm_head.X" -> "lm_head.X"
         if (new_key.find("language_model.") == 0) {
             new_key = new_key.substr(std::string("language_model.").size());
+        }
+        // Official Qwen3.6 checkpoints nest the text model the other way:
+        //   "model.language_model.X" -> "model.X"
+        // Handle that form too so the official (and our convert tool's) keys map
+        // onto the engine's "model.X" weight_map.
+        {
+            const std::string mlm = "model.language_model.";
+            if (new_key.find(mlm) == 0) {
+                new_key = "model." + new_key.substr(mlm.size());
+            }
         }
         remapped.insert_or_assign(new_key, std::move(value));
     }
@@ -764,6 +1194,26 @@ Qwen35MoEModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights
         }
     }
 
+    // Tied embeddings: duplicate the PACKED embedding into lm_head.* so that
+    // register_quantized_weights() registers lm_head for quantized_matmul (the
+    // embedding itself is still dequantized for the table lookup). This makes the
+    // lm_head matmul load the 4-bit weight (~4x less memory) instead of the
+    // dequantized fp16 embedding — the dominant per-token load for large vocabs.
+    // Only meaningful when the embedding is quantized (has .scales); otherwise
+    // the duplicated lm_head is just a (cheap) reference to the same float table.
+    if (config_.tie_word_embeddings && std::getenv("MTP_NO_QLMHEAD") == nullptr) {
+        auto ew = weights.find("model.embed_tokens.weight");
+        auto es = weights.find("model.embed_tokens.scales");
+        if (ew != weights.end() && es != weights.end()) {
+            weights.insert_or_assign("lm_head.weight", ew->second);
+            weights.insert_or_assign("lm_head.scales", es->second);
+            auto eb = weights.find("model.embed_tokens.biases");
+            if (eb != weights.end()) {
+                weights.insert_or_assign("lm_head.biases", eb->second);
+            }
+        }
+    }
+
     return weights;
 }
 
@@ -773,6 +1223,234 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
         auto it = weights.find(name);
         if (it != weights.end()) *target = it->second;
     }
+    // If lm_head_weight_ was initialized (tie_word_embeddings=false) but the
+    // checkpoint didn't have lm_head.weight, the model actually uses tied
+    // embeddings. Clear the optional so call_impl falls back to embed_as_linear.
+    // Check if lm_head_weight_ is still all zeros (uninitialized placeholder).
+    if (lm_head_weight_.has_value()) {
+        auto it = weights.find("lm_head.weight");
+        if (it == weights.end()) {
+            // lm_head.weight not in checkpoint — model uses tied embeddings
+            lm_head_weight_ = std::nullopt;
+        }
+    }
+    // Wire MTPHead if we have MTP weights.
+    if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
+        build_mtp_head();
+    }
+}
+
+void Qwen35MoEModel::build_mtp_head() {
+    MTPHeadConfig cfg;
+
+    // Step 1: Apply config.json values for fields that are reliable:
+    // hidden_size, intermediate_size, rope_theta, rms_norm_eps.
+    // head_dim, num_attention_heads, num_key_value_heads are intentionally
+    // set to 0 in llm_factory.cpp because the MTP config.json has wrong
+    // values for these — they must be derived from actual weight shapes.
+    bool has_config = mtp_head_cfg_.has_value();
+    if (has_config) {
+        auto& src = mtp_head_cfg_.value();
+        if (src.hidden_size > 0) cfg.hidden_size = src.hidden_size;
+        if (src.intermediate_size > 0) cfg.intermediate_size = src.intermediate_size;
+        if (src.rope_theta > 0) cfg.rope_theta = src.rope_theta;
+        if (src.rms_norm_eps > 0) cfg.rms_norm_eps = src.rms_norm_eps;
+        cfg.partial_rotary_factor = src.partial_rotary_factor;
+        if (src.quant_bits > 0) cfg.quant_bits = src.quant_bits;
+        if (src.quant_group_size > 0) cfg.quant_group_size = src.quant_group_size;
+    }
+
+    // Step 2: Dequantize weights BEFORE reading shapes.
+    // Quantized weights are stored as packed uint32 arrays with shape [M, N*bits/32].
+    // We need the original dimensions for correct head_dim/num_attention_heads inference.
+    std::unordered_map<std::string, mx::array> dequantized_weights;
+    std::vector<std::string> quant_prefixes;
+
+    // Named suffix constants for clarity and maintainability.
+    constexpr std::string_view kScalesSuffix = ".scales";
+    constexpr std::string_view kBiasesSuffix = ".biases";
+    constexpr std::string_view kWeightSuffix = ".weight";
+    const size_t scales_len = kScalesSuffix.size();
+    const size_t biases_len = kBiasesSuffix.size();
+    const size_t weight_len = kWeightSuffix.size();
+
+    // Find quantized weight prefixes (those with .scales).
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.size() > scales_len &&
+            key.compare(key.size() - scales_len, scales_len, kScalesSuffix) == 0) {
+            std::string prefix = key.substr(0, key.size() - scales_len);
+            std::string weight_key = prefix + std::string(kWeightSuffix);
+            if (mtp_weights_.count(weight_key)) {
+                quant_prefixes.push_back(prefix);
+            }
+        }
+    }
+
+    std::cerr << "[MTP] Found " << quant_prefixes.size() << " quantized weight groups" << std::endl;
+
+    // Dequantize quantized weights.
+    for (const auto& prefix : quant_prefixes) {
+        std::string weight_key = prefix + std::string(kWeightSuffix);
+        std::string scales_key = prefix + std::string(kScalesSuffix);
+        std::string biases_key = prefix + std::string(kBiasesSuffix);
+
+        const auto& packed = mtp_weights_.at(weight_key);
+        const auto& scales = mtp_weights_.at(scales_key);
+        std::optional<mx::array> biases;
+        auto bit = mtp_weights_.find(biases_key);
+        if (bit != mtp_weights_.end()) {
+            biases = bit->second;
+        }
+
+        auto deq = mx::dequantize(packed, scales, biases, cfg.quant_group_size, cfg.quant_bits);
+        dequantized_weights.insert_or_assign(weight_key, std::move(deq));
+    }
+
+    // Copy non-quantized weights (skip scales/biases and already-dequantized).
+    for (const auto& [key, weight] : mtp_weights_) {
+        if (key.size() > scales_len &&
+            (key.compare(key.size() - scales_len, scales_len, kScalesSuffix) == 0 ||
+             key.compare(key.size() - biases_len, biases_len, kBiasesSuffix) == 0)) {
+            continue;
+        }
+        bool is_quantized = false;
+        if (key.size() > weight_len &&
+            key.compare(key.size() - weight_len, weight_len, kWeightSuffix) == 0) {
+            std::string prefix = key.substr(0, key.size() - weight_len);
+            is_quantized = mtp_weights_.count(prefix + std::string(kScalesSuffix)) > 0;
+        }
+        if (!is_quantized) {
+            dequantized_weights.insert_or_assign(key, weight);
+        }
+    }
+
+    std::cerr << "[MTP] Dequantized " << dequantized_weights.size() << " weights total" << std::endl;
+
+    // --- Pass 1: Determine head_dim from q_norm/k_norm weight shapes (ground truth).
+    // q_norm and k_norm are RMSNorm layers applied per-head, so their weight
+    // size ALWAYS equals head_dim.  This is unambiguous regardless of
+    // quantisation format, unlike matmul weight factorisation which can have
+    // multiple valid (head_dim, num_heads) decompositions.
+    for (const auto& [key, weight] : dequantized_weights) {
+        if ((key.find("self_attn.q_norm.weight") != std::string::npos ||
+             key.find("self_attn.k_norm.weight") != std::string::npos) &&
+            weight.ndim() >= 1) {
+            cfg.head_dim = weight.shape(0);
+            std::cerr << "[MTP] Got head_dim=" << cfg.head_dim
+                      << " from " << key << " (norm-weight ground truth)"
+                      << std::endl;
+            break;
+        }
+    }
+
+    // --- Pass 2: Infer remaining dimensions from projection weights.
+    // o_proj: [hidden_size, num_attention_heads * head_dim]
+    // q_proj: [num_attention_heads * head_dim * 2, hidden_size] (*2 for gate)
+    // k_proj: [num_kv_heads * head_dim, hidden_size]
+    //
+    // If head_dim was already determined from norms (Pass 1), we compute
+    // num_attention_heads / num_key_value_heads directly.  Only fall back to
+    // a candidate search when norms are absent.
+    std::vector<int> hd_candidates = {256, 128, 64, 96, 80, 160};
+
+    for (const auto& [key, weight] : dequantized_weights) {
+        if (key.find("self_attn.o_proj.weight") != std::string::npos) {
+            if (weight.ndim() >= 2) {
+                int o_proj_dim0 = weight.shape(0);
+                int attn_dim = weight.shape(1);
+                if (cfg.hidden_size == 0) cfg.hidden_size = o_proj_dim0;
+                if (cfg.head_dim > 0) {
+                    // head_dim already known — derive num_attention_heads directly.
+                    cfg.num_attention_heads = attn_dim / cfg.head_dim;
+                    std::cerr << "[MTP] head_dim=" << cfg.head_dim
+                              << " num_attention_heads=" << cfg.num_attention_heads
+                              << " (from o_proj attn_dim=" << attn_dim << ")"
+                              << std::endl;
+                } else {
+                    // Fallback: try standard head_dim values (largest first).
+                    for (int try_hd : hd_candidates) {
+                        if (cfg.hidden_size % try_hd == 0 && attn_dim % try_hd == 0) {
+                            cfg.head_dim = try_hd;
+                            cfg.num_attention_heads = attn_dim / try_hd;
+                            std::cerr << "[MTP] Selected head_dim=" << try_hd
+                                      << " via candidate search" << std::endl;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (key.find("self_attn.k_proj.weight") != std::string::npos) {
+            if (weight.ndim() >= 2 && cfg.head_dim > 0) {
+                cfg.num_key_value_heads = weight.shape(0) / cfg.head_dim;
+            }
+        } else if (key.find("self_attn.q_proj.weight") != std::string::npos) {
+            // Cross-check: q_proj[0] = num_heads * head_dim * 2
+            if (weight.ndim() >= 1 && cfg.head_dim > 0) {
+                int q_proj_dim = weight.shape(0);
+                int inferred_heads = q_proj_dim / (cfg.head_dim * 2);
+                if (inferred_heads > 0) {
+                    cfg.num_attention_heads = inferred_heads;
+                }
+            }
+        } else if ((key.find("mlp.gate_proj.weight") != std::string::npos ||
+                    key.find("mlp.up_proj.weight") != std::string::npos) &&
+                   key.find("switch_mlp") == std::string::npos &&
+                   key.find("shared_expert") == std::string::npos) {
+            // Dense MLP only: the MoE keys (switch_mlp.gate_proj.weight,
+            // shared_expert.gate_proj.weight) also contain "mlp.gate_proj.weight"
+            // but are 3D [E,inter,hidden] / have a different layout, which would
+            // set intermediate_size/hidden_size to garbage.
+            if (weight.ndim() >= 1) {
+                if (cfg.intermediate_size == 0) cfg.intermediate_size = weight.shape(0);
+                if (cfg.hidden_size == 0) cfg.hidden_size = weight.shape(1);
+            }
+        }
+    }
+
+    // Fallback: if weight inference didn't find values, use base model config.
+    bool used_fallback = false;
+    if (cfg.hidden_size == 0) { cfg.hidden_size = config_.hidden_size; used_fallback = true; }
+    if (cfg.intermediate_size == 0) { cfg.intermediate_size = config_.intermediate_size; used_fallback = true; }
+    if (cfg.num_attention_heads == 0) { cfg.num_attention_heads = config_.num_attention_heads; used_fallback = true; }
+    if (cfg.num_key_value_heads == 0) { cfg.num_key_value_heads = config_.num_key_value_heads; used_fallback = true; }
+    if (cfg.head_dim == 0) { cfg.head_dim = config_.resolved_head_dim(); used_fallback = true; }
+    if (cfg.rms_norm_eps == 0) cfg.rms_norm_eps = config_.rms_norm_eps;
+    if (cfg.rope_theta == 0) cfg.rope_theta = config_.rope_theta;
+
+    std::cerr << "[MTP] Inferred config: hidden_size=" << cfg.hidden_size
+              << " head_dim=" << cfg.head_dim
+              << " num_attention_heads=" << cfg.num_attention_heads
+              << " num_key_value_heads=" << cfg.num_key_value_heads
+              << " intermediate_size=" << cfg.intermediate_size
+              << " quant_bits=" << cfg.quant_bits
+              << " quant_group_size=" << cfg.quant_group_size
+              << (used_fallback ? " (used base model fallback)" : " (weight-derived)")
+              << std::endl;
+
+    // This checkpoint's MTP head is a FULL MoE layer (mlp.gate router,
+    // mlp.switch_mlp.{gate,up,down}_proj over num_experts, shared_expert*). Build
+    // it as MoE so those weights actually load; building it dense drops every
+    // switch_mlp/gate/shared_expert key, leaving the head's MLP at zero and the
+    // drafts garbage (MTP acceptance stuck at 0).
+    cfg.num_experts = config_.num_experts;
+    cfg.num_experts_per_tok = config_.num_experts_per_tok;
+    cfg.moe_intermediate_size = config_.moe_intermediate_size;
+    cfg.shared_expert_intermediate_size = config_.shared_expert_intermediate_size;
+
+    if (cfg.is_moe()) {
+        mtp_head_ = MTPHead::create_moe(cfg);
+    } else {
+        mtp_head_ = MTPHead(cfg);
+    }
+    mtp_head_->load_mtp_weights(mtp_weights_);
+}
+
+std::vector<KVCache> Qwen35MoEModel::new_mtp_cache(const GenerateParameters& params) const {
+    // MTP head has one decoder layer with standard attention.
+    std::vector<KVCache> caches;
+    caches.reserve(1);
+    caches.emplace_back(KVCacheSimple{});
+    return caches;
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35MoEModel::weight_map() {

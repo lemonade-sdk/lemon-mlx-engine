@@ -10,6 +10,10 @@ on:
         description: 'AMD GPU targets (comma-separated)'
         required: false
         default: 'gfx1151'
+      hip_device:
+        description: 'Override HIP device index for the inference test (blank = auto-map from gfx target)'
+        required: false
+        default: ''
       release_tag:
         description: 'Release tag to test (e.g., b1001) or "latest" for the most recent release'
         required: false
@@ -156,6 +160,30 @@ jobs:
     - name: Set up library path
       run: |
         echo "LD_LIBRARY_PATH=$(pwd)/mlx-binaries:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+    - name: Select GPU device (pin inference test to the matrix gfx target)
+      run: |
+        # The stx-halo runner has two AMD GPUs: the gfx1151 APU (HIP device 0,
+        # Radeon 8060S, unified memory) and a gfx1201 R9700 (HIP device 1,
+        # discrete eGPU). Without an explicit pin the server can initialize on the
+        # wrong card — and with a global HSA_OVERRIDE_GFX_VERSION the R9700 would
+        # masquerade as gfx1151 and run the wrong ISA (garbage output). Pin
+        # HIP_VISIBLE_DEVICES to the device matching this matrix entry's gfx
+        # target so the test always runs on the intended card. The
+        # workflow_dispatch 'hip_device' input overrides the mapping.
+        target="${{ matrix.gfx_target }}"
+        override="${{ github.event.inputs.hip_device }}"
+        case "$target" in
+          gfx1151) dev=0 ;;   # Strix Halo APU (Radeon 8060S)
+          gfx1201) dev=1 ;;   # R9700 discrete eGPU
+          *)       dev=0 ;;
+        esac
+        if [ -n "$override" ]; then dev="$override"; fi
+        echo "HIP_VISIBLE_DEVICES=$dev" >> "$GITHUB_ENV"
+        echo "Pinned gfx target '$target' -> HIP_VISIBLE_DEVICES=$dev"
+        # Best-effort log of the visible GPUs for diagnosis.
+        chmod +x mlx-binaries/chat 2>/dev/null || true
+        mlx-binaries/chat --list-devices 2>/dev/null || true
 
     - name: Test server health endpoint
       run: |

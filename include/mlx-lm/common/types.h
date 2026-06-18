@@ -27,7 +27,7 @@ struct LMInput {
         mlx::core::array tokens;
         std::optional<mlx::core::array> mask;
 
-        Text() = default;
+        Text() : tokens(mlx::core::array({}, mlx::core::int32)), mask(std::nullopt) {}
         Text(mlx::core::array tokens, std::optional<mlx::core::array> mask = std::nullopt)
             : tokens(std::move(tokens)), mask(std::move(mask)) {}
     };
@@ -54,7 +54,7 @@ struct LMInput {
     std::optional<ProcessedImage> image;
     std::optional<ProcessedVideo> video;
 
-    LMInput() = default;
+    LMInput() : text(), image(std::nullopt), video(std::nullopt) {}
 
     LMInput(mlx::core::array tokens, std::optional<mlx::core::array> mask = std::nullopt)
         : text(std::move(tokens), std::move(mask)) {}
@@ -70,9 +70,13 @@ struct LMOutput {
 
     struct State {
         std::optional<mlx::core::array> cross_attention_states;
+        std::optional<mlx::core::array> hidden_intermediates;  // [B, T, H] for MTP drafting
 
-        State(std::optional<mlx::core::array> cross_attention_states = std::nullopt)
-            : cross_attention_states(std::move(cross_attention_states)) {}
+        State() = default;
+        State(std::optional<mlx::core::array> cross_attention_states,
+              std::optional<mlx::core::array> hidden_intermediates)
+            : cross_attention_states(std::move(cross_attention_states)),
+              hidden_intermediates(std::move(hidden_intermediates)) {}
     };
 
     mlx::core::array logits;

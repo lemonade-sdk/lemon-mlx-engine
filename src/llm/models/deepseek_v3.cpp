@@ -1,6 +1,10 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // Port of DeepseekV3.swift
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <mlx-lm/llm/models/deepseek_v3.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
