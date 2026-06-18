@@ -41,10 +41,7 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
 
     int offset_ = 0;
     int initial_capacity_ = 256;
-    // Extra headroom reserved on the FIRST allocation, on top of the initial
-    // write (the prompt). Sizing the buffer once to prompt+reserve makes decode
-    // write in place at offset_ with no grow-and-copy and a stable address
-    // (also the prerequisite for HIP graph capture). 0 = legacy grow-by-doubling.
+    // Generation headroom reserved on the first allocation. 0 = grow-by-doubling.
     int reserve_ = 0;
     std::optional<mlx::core::array> keys_;
     std::optional<mlx::core::array> values_;
@@ -63,8 +60,7 @@ public:
     explicit KVCacheSimple(int initial_capacity) : initial_capacity_(initial_capacity) {}
     KVCacheSimple(int initial_capacity, int reserve)
         : initial_capacity_(initial_capacity), reserve_(reserve) {}
-    // Reserve generation headroom so the one-shot first allocation covers the
-    // whole run (prompt + reserve), avoiding any later grow-and-copy.
+    // Reserve generation headroom for the one-shot first allocation.
     void set_reserve(int reserve) { reserve_ = reserve; }
 
     // Access stored state for KV sharing. Returns {keys, values} if populated.
@@ -84,9 +80,8 @@ public:
     void set_position(size_t pos);
 
     // Graph-replay decode: write new_keys/new_values into the static buffer at a
-    // DEVICE position (`pos`, a [1] int32 array) along axis 2, donating in place
-    // so the buffer address stays stable across HIP-graph replays. Returns the
-    // full fixed-CAP buffers. Does not touch offset_ (the loop drives position).
+    // device position (`pos`, a [1] int32 array) along axis 2, in place. Returns
+    // the full fixed-cap buffers; does not touch offset_.
     std::pair<mlx::core::array, mlx::core::array>
     update_at_pos(const mlx::core::array& new_keys,
                   const mlx::core::array& new_values,
@@ -124,17 +119,13 @@ public:
         return result;
     }
 
-    // Partial-rollback API: get_position returns current offset.
-    // set_position rolls back the logical offset only (physical ring unchanged).
-    // This is safe for speculative decoding since the ring buffer retains
-    // all data; only the write position changes.
+    // Partial-rollback API: set_position rolls back the logical offset only
+    // (physical ring unchanged).
     size_t get_position() const { return static_cast<size_t>(offset_); }
     void set_position(size_t pos);
 };
 
-// Quantized KV cache — stores keys/values in quantized form to reduce memory.
-// Matches Swift's QuantizedKVCache. On update, quantizes incoming KV and
-// returns dequantized data so it's transparent to models.
+// Quantized KV cache — stores keys/values quantized; update returns dequantized.
 class QuantizedKVCache : public KVCacheBase<QuantizedKVCache> {
     friend class KVCacheBase<QuantizedKVCache>;
 
@@ -210,8 +201,6 @@ public:
     std::vector<mlx::core::array> state() const { return {}; }
 
     // Snapshot/restore for MTP speculative decoding.
-    // Save current state before trunk verification. If drafts are rejected,
-    // restore and re-run on accepted tokens to keep Mamba and KV caches in sync.
     Snapshot snapshot() const {
         Snapshot s;
         s.states[0] = states_[0];
@@ -226,19 +215,13 @@ public:
         offset_ = s.offset;
     }
 
-    // Partial-rollback API: MambaCache does not support token-level rollback
-    // via set_position (recurrent state cannot be trimmed). Use snapshot/restore
-    // or the spec-capture API below for speculative decoding.
+    // Partial-rollback API: MambaCache cannot roll back via set_position; use
+    // snapshot/restore or the spec-capture API below.
     size_t get_position() const { return static_cast<size_t>(offset_); }
     void set_position(size_t /*pos*/) { /* no-op: recurrent state cannot be rolled back */ }
 
-    // --- Speculative-decoding intermediates ("gated-delta intermediates") ---
-    //
-    // To roll the recurrent state back to an accepted prefix WITHOUT re-running
-    // the trunk, the gated-delta layer records, during a multi-token verify
-    // forward, the SSM state after EACH token plus the full conv input. We then
-    // pick the state as-of the accepted prefix. Capture is opt-in (set per step
-    // by the speculative loop) so the large prompt prefill never pays for it.
+    // Speculative-decoding intermediates: records per-token SSM state + conv
+    // input during a verify forward for prefix rollback. Opt-in per step.
     void set_capture_spec(bool v) { capture_spec_ = v; if (!v) clear_spec(); }
     bool capture_spec() const { return capture_spec_; }
     bool has_spec() const { return spec_ssm_states_.has_value(); }
@@ -261,10 +244,7 @@ public:
     }
 
     // Roll the recurrent + conv state back to the first `keep` tokens of the
-    // captured verify chunk (keep >= 1). Sets ssm_state to the state after token
-    // keep-1, conv_state to the (kernel-1)-token window ending at token keep-1,
-    // and offset to base_offset + keep. No-op if no intermediates were captured.
-    // The conv window size (kernel-1) is derived from the captured shapes.
+    // captured verify chunk (keep >= 1). No-op if nothing was captured.
     void rollback_spec(int keep) {
         if (!spec_ssm_states_.has_value() || !spec_conv_input_.has_value()) return;
         namespace mx = mlx::core;
@@ -334,9 +314,7 @@ public:
     const MambaCache* as_mamba() const { return &mamba_; }
 };
 
-// Type-erased KV cache so we can store heterogeneous caches in a vector.
-// Wraps any CRTP cache type with a small set of operations, using
-// std::variant internally instead of virtual dispatch.
+// Type-erased KV cache (std::variant) for storing heterogeneous caches.
 class KVCache {
 public:
     using CacheVariant = std::variant<KVCacheSimple, RotatingKVCache, MambaCache, CompoundCache, QuantizedKVCache>;
@@ -373,8 +351,7 @@ public:
         return std::visit([&](auto& c) { return c.update(keys, values); }, impl_);
     }
 
-    // Device-position in-place write for graph-replay decode (KVCacheSimple only;
-    // other cache kinds fall back to the normal host-offset update).
+    // Device-position in-place write for graph-replay decode (KVCacheSimple only).
     std::pair<mlx::core::array, mlx::core::array>
     update_at_pos(const mlx::core::array& keys, const mlx::core::array& values,
                   const mlx::core::array& pos) {
@@ -398,11 +375,6 @@ public:
     }
 
     // Partial-rollback dispatch for MTP speculative decoding.
-    // - KVCacheSimple / QuantizedKVCache / RotatingKVCache: return / apply the offset.
-    // - MambaCache: out of scope for this scaffolding cut --
-    //   recurrent rollback requires the gated-delta intermediates kernel.
-    //   get_position returns current offset, set_position is a no-op.
-    // - CompoundCache: delegates to sub-caches.
     size_t get_position() const {
         return std::visit([](const auto& c) -> size_t {
             using T = std::decay_t<decltype(c)>;
@@ -441,8 +413,6 @@ private:
 };
 
 // Dynamically convert KVCacheSimple entries to QuantizedKVCache.
-// Called per-token after `quantized_kv_start` tokens have been generated.
-// Matches Swift's maybeQuantizeKVCache().
 void maybe_quantize_kv_cache(
     std::vector<KVCache>& cache,
     std::optional<int> kv_bits,

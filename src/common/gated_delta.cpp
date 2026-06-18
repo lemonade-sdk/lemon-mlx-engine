@@ -12,12 +12,9 @@ namespace mlx_lm {
 
 // ---------------------------------------------------------------------------
 // Fused HIP kernel for gated delta recurrence.
-// Ports the Metal kernel from GatedDelta.swift to HIP/ROCm.
 // Grid: (32, Dv, B*Hv), ThreadGroup: (32, 4, 1)
-// Each wave32 thread handles Dk/32 state elements, uses warp shuffle for reduction.
 // ---------------------------------------------------------------------------
 static const char* gdn_hip_source = R"(
-    // Thread indexing (HIP equivalent of Metal thread_position_in_grid)
     auto n = blockIdx.z * blockDim.z + threadIdx.z;
     auto b_idx = n / Hv;
     auto hv_idx = n % Hv;
@@ -97,12 +94,8 @@ static const char* gdn_hip_source = R"(
     }
 )";
 
-// Speculative-decoding variant of the GDN recurrence kernel. Identical to
-// gdn_hip_source but ALSO writes the recurrent state after EACH timestep into
-// `state_seq` [B, T, Hv, Dv, Dk]. Used so a multi-token verification forward can
-// be rolled back to any accepted prefix (state_seq[:, keep-1]) without re-running
-// the trunk. Kept separate from the hot single-step decode kernel so that path
-// is unaffected.
+// Speculative-decoding variant: like gdn_hip_source but also writes the
+// per-token recurrent state into `state_seq` [B, T, Hv, Dv, Dk].
 static const char* gdn_seq_hip_source = R"(
     auto n = blockIdx.z * blockDim.z + threadIdx.z;
     auto b_idx = n / Hv;
@@ -181,7 +174,6 @@ static const char* gdn_seq_hip_source = R"(
 )";
 
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
-// Create and cache the HIP kernel
 static mx::fast::CustomKernelFunction make_gdn_kernel() {
     return mx::fast::hip_kernel(
         "gated_delta_step",
@@ -190,11 +182,7 @@ static mx::fast::CustomKernelFunction make_gdn_kernel() {
         gdn_hip_source);
 }
 
-// In-place variant: state_out (output 1) ALIASES state_in (input 5), so the new
-// recurrent state is written into the SAME buffer it was read from. Safe because
-// the kernel loads the whole state into registers before writing it back. This
-// is what lets a captured HIP graph's gated-delta recurrence accumulate across
-// replays (a fresh output buffer would freeze the state at capture time).
+// In-place variant: state_out (output 1) aliases state_in (input 5).
 static mx::fast::CustomKernelFunction make_gdn_kernel_inplace() {
     return mx::fast::hip_kernel(
         "gated_delta_step",
@@ -228,10 +216,7 @@ static mx::fast::CustomKernelFunction& get_gdn_kernel() {
     return kernel;
 }
 
-// Copy `src` into `dst`'s buffer IN PLACE: output 0 aliases input 0 (dst). The
-// kernel never reads dst, so this is just an in-place overwrite. Used to update
-// a PERSISTENT recurrent-state buffer (conv_state) so a captured HIP graph's
-// recurrence accumulates across replays instead of freezing at capture.
+// In-place copy of `src` into `dst`'s buffer (output 0 aliases input 0).
 static mx::fast::CustomKernelFunction& get_inplace_copy_kernel() {
     static auto kernel = mx::fast::hip_kernel(
         "inplace_copy",
@@ -273,15 +258,13 @@ static std::pair<mx::array, mx::array> gated_delta_kernel(
     return {results[0], results[1]};
 }
 #else
-// Non-ROCm fallback: use the reference Python port implementation via MLX ops.
-// This avoids the hip_kernel() call which requires a ROCm backend.
+// Non-ROCm fallback.
 static std::pair<mx::array, mx::array> gated_delta_kernel(
     const mx::array& q, const mx::array& k,
     const mx::array& v, const mx::array& g,
     const mx::array& beta, const mx::array& state)
 {
     // TODO: implement a CPU/Metal fallback using standard MLX ops.
-    // For now, throw a descriptive error so the caller can handle it.
     throw std::runtime_error(
         "GDN HIP kernel is only available on ROCm builds. "
         "Rebuild with -DMLX_BUILD_ROCM=ON for GPU acceleration.");
@@ -289,7 +272,7 @@ static std::pair<mx::array, mx::array> gated_delta_kernel(
 #endif
 
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
-// Dispatch the fused HIP kernel, also returning the per-token state stack.
+// Dispatch the fused HIP kernel, returning the per-token state stack.
 static std::tuple<mx::array, mx::array, mx::array> gated_delta_kernel_seq(
     const mx::array& q, const mx::array& k,
     const mx::array& v, const mx::array& g,
@@ -387,7 +370,7 @@ std::pair<mx::array, mx::array> gated_delta_step_ops(
         return {results[0], results[1]};
     }
 
-    // Compiled path for g.ndim()==2 with mask (prefill with masking)
+    // g.ndim()==2 with mask (prefill).
     if (g.ndim() == 2 && mask.has_value()) {
         static auto compiled_step_masked_2d = mx::compile(
             [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
@@ -402,7 +385,6 @@ std::pair<mx::array, mx::array> gated_delta_step_ops(
                 s = mx::add(s, mx::multiply(mx::expand_dims(k, -2), mx::expand_dims(delta, -1)));
                 auto y = mx::sum(mx::multiply(s, mx::expand_dims(q, -2)), -1);
 
-                // mask.ndim() == 1 for squeezed per-timestep mask
                 auto expanded_mask = mx::expand_dims(mx::expand_dims(mx::expand_dims(mask, -1), -1), -1);
                 s = mx::where(expanded_mask, s, state);
                 return {y, s};
@@ -412,7 +394,7 @@ std::pair<mx::array, mx::array> gated_delta_step_ops(
         return {results[0], results[1]};
     }
 
-    // Compiled path for g.ndim()==3 with mask (prefill with 3d decay)
+    // g.ndim()==3 with mask (prefill, 3d decay).
     if (g.ndim() == 3 && mask.has_value()) {
         static auto compiled_step_masked_3d = mx::compile(
             [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
@@ -436,7 +418,7 @@ std::pair<mx::array, mx::array> gated_delta_step_ops(
         return {results[0], results[1]};
     }
 
-    // Unmasked paths for g.ndim()==3 (ndim==2 without mask handled above by compiled_gated_delta_step)
+    // g.ndim()==3 without mask.
     if (g.ndim() == 3 && !mask.has_value()) {
         static auto compiled_step_3d = mx::compile(
             [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
@@ -456,7 +438,7 @@ std::pair<mx::array, mx::array> gated_delta_step_ops(
         return {results[0], results[1]};
     }
 
-    // Fallback: g.ndim()==2, no mask -- should not reach here (handled at top of function)
+    // Fallback: g.ndim()==2, no mask.
     auto old_state = state;
     mx::array decay = mx::expand_dims(mx::expand_dims(g, -1), -1);
     auto s = mx::multiply(state, decay);
@@ -496,7 +478,7 @@ std::pair<mx::array, mx::array> gated_delta_ops(
     int repeat_factor = Hv / Hk;
     auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
 
-    // Try fused HIP kernel (handles all T, no mask) — ROCm only
+    // Fused HIP kernel (all T, no mask) — ROCm only.
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     if (!mask.has_value() && Dk % 32 == 0) {
         auto q_work = repeat_heads(q, repeat_factor);
@@ -505,7 +487,7 @@ std::pair<mx::array, mx::array> gated_delta_ops(
     }
 #endif
 
-    // *** FAST PATH: T=1 decode without mask ***
+    // Fast path: T=1 decode without mask.
     if (T == 1 && !mask.has_value()) {
         auto q_t = mx::reshape(q, {B, Hk, Dk});
         auto k_t = mx::reshape(k, {B, Hk, Dk});
@@ -524,7 +506,7 @@ std::pair<mx::array, mx::array> gated_delta_ops(
         return {mx::expand_dims(y, 1), new_s};
     }
 
-    // *** GENERAL PATH: T>1 prefill with mask ***
+    // General path: T>1 prefill with mask.
     auto q_work = repeat_heads(q, repeat_factor);
     auto k_work = repeat_heads(k, repeat_factor);
 
@@ -575,8 +557,7 @@ std::pair<mx::array, mx::array> gated_delta_update(
     return gated_delta_ops(q, k, v, g, beta, s, mask, inplace_state);
 }
 
-// Write src into dst's device buffer IN PLACE; returns an array sharing dst's
-// buffer with src's contents. dst and src must have the same total element count.
+// In-place write of src into dst's device buffer (same total element count).
 mx::array inplace_write(const mx::array& dst, const mx::array& src) {
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     int n = static_cast<int>(src.size());
@@ -608,7 +589,7 @@ std::tuple<mx::array, mx::array, mx::array> gated_delta_ops_seq(
     int repeat_factor = Hv / Hk;
     auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
 
-    // Fused HIP kernel (no mask) — writes per-token states directly.
+    // Fused HIP kernel (no mask) — ROCm only.
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     if (!mask.has_value() && Dk % 32 == 0) {
         auto q_work = repeat_heads(q, repeat_factor);

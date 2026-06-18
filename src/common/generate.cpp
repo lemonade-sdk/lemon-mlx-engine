@@ -14,8 +14,7 @@
 #include <sstream>
 #include <iostream>
 
-// Forward declarations for ROCm arena/graph support.
-// These symbols only exist in the ROCm build of MLX.
+// ROCm arena/graph support symbols (ROCm build only).
 #if defined(MLX_BUILD_ROCM)
 namespace mlx::core {
   bool gpu_arena_begin(size_t capacity);
@@ -36,22 +35,9 @@ namespace mlx_lm {
 
 namespace mx = mlx::core;
 
-// ---------------------------------------------------------------------------
-// Dedicated generation stream (matches Python's module-level generation_stream)
-// ---------------------------------------------------------------------------
+// Dedicated generation stream (thread-local).
 
 mx::Stream& generation_stream() {
-    // MLX Metal streams are thread-local (known issue in MLX 0.31.2:
-    // "There is no Stream(gpu, N) in current thread"). Each thread
-    // needs its own stream. This matches the fix applied in mlx-lm
-    // (thread-local generation stream) and mlx-vlm.
-    //
-    // On ROCm, reuse the default stream of the selected device instead of
-    // creating a new one. A fresh stream is a fresh GPU HW command queue, and
-    // on a discrete GPU over a non-coherent link (TB5 eGPU) the first dispatch
-    // on a brand-new queue intermittently stalls — whereas the default stream's
-    // queue is already warm from model load/warmup. Set MLX_GEN_OWN_STREAM=1 to
-    // restore the dedicated-stream behavior.
 #ifdef __APPLE__
     static thread_local mx::Stream s = mx::new_stream(mx::default_device());
     return s;
@@ -66,7 +52,6 @@ mx::Stream& generation_stream() {
 }
 
 // RAII guard to set/restore the default stream for a scope.
-// On Apple, skip stream switching to avoid Metal thread-affinity issues.
 struct StreamGuard {
     mx::Stream old_stream_;
     bool changed_ = false;
@@ -92,13 +77,7 @@ struct StreamGuard {
 // ---------------------------------------------------------------------------
 
 mx::array TopPSampler::sample_impl(const mx::array& logits) {
-    // top-p filtering is disabled; argsort + take_along_axis on large vocab
-    // produces incorrect results. Investigation needed for re-enablement.
-    // Fall back to compiled temperature-scaled categorical sampling.
-    //
-    // On Apple Metal, avoid mx::compile — it captures stream state at
-    // compilation time and becomes unstable across generation requests.
-    // Direct sampling is fast enough on Apple Silicon.
+    // top-p filtering disabled; falls back to temperature-scaled categorical.
 #ifdef __APPLE__
     return mx::random::categorical(
         mx::multiply(logits, mx::array(1.0f / temperature_)));
@@ -120,13 +99,7 @@ mx::array TopPSampler::sample_impl(const mx::array& logits) {
 // ---------------------------------------------------------------------------
 
 mx::array CategoricalSampler::sample_impl(const mx::array& logits) {
-    // Compiled sampling — matches Python's @mx.compile on categorical_sampling.
-    // Use shapeless=false (not shapeless=true which crashes RandomBits).
-    // Shape is constant during generation so this only compiles once.
-    //
-    // On Apple Metal, avoid mx::compile — it captures stream state at
-    // compilation time and becomes unstable across generation requests.
-    // Direct sampling is fast enough on Apple Silicon.
+    // Compiled temperature-scaled categorical sampling.
 #ifdef __APPLE__
     float inv_temp = 1.0f / temperature_;
     return mx::random::categorical(mx::multiply(logits, mx::array(inv_temp)));
@@ -162,7 +135,6 @@ AnySampler AnySampler::from_params(const GenerateParameters& params) {
 // ---------------------------------------------------------------------------
 
 void RepetitionProcessor::prompt(const mx::array& prompt_tokens) {
-    // Evaluate to ensure data is available.
     mx::eval(prompt_tokens);
     auto data = prompt_tokens.data<int32_t>();
     int n = static_cast<int>(prompt_tokens.size());
@@ -178,7 +150,7 @@ void RepetitionProcessor::prompt(const mx::array& prompt_tokens) {
 mx::array RepetitionProcessor::process(const mx::array& logits) {
     if (tokens_.empty() || penalty_ == 1.0f) return logits;
 
-    // Build an index array from the tokens in the repetition window.
+    // Index array of the tokens in the repetition window.
     std::vector<uint32_t> idx_vec;
     idx_vec.reserve(tokens_.size());
     for (int tok : tokens_) {
@@ -188,24 +160,20 @@ mx::array RepetitionProcessor::process(const mx::array& logits) {
     auto indices = mx::array(idx_vec.data(), {n_indices}, mx::uint32);
 
     // Gather the logit values at those token indices along the last axis.
-    // take_along_axis requires indices to have the same ndim as logits.
-    // Reshape indices to match logits dims: if logits is [B, V], indices -> [1, N].
     auto shaped_indices = indices;
     if (logits.ndim() == 2) {
         shaped_indices = mx::reshape(indices, {1, n_indices});
     }
     auto selected_logits = mx::take_along_axis(logits, shaped_indices, -1);
 
-    // Where logit < 0 multiply by penalty, where >= 0 divide by penalty.
-    // This matches the Swift: selected < 0 ? selected * penalty : selected / penalty
+    // logit < 0 -> multiply by penalty, else divide by penalty.
     auto zero = mx::array(0.0f);
     auto penalized = mx::where(
         mx::less(selected_logits, zero),
         mx::multiply(selected_logits, mx::array(penalty_)),
         mx::divide(selected_logits, mx::array(penalty_)));
 
-    // Scatter the penalized values back into the logits at the original positions.
-    // put_along_axis is the mirror of take_along_axis and handles negative axis normalization.
+    // Scatter the penalized values back into the logits.
     auto result = mx::put_along_axis(logits, shaped_indices, penalized, -1);
 
     return result;
@@ -276,8 +244,7 @@ std::optional<std::string> NaiveStreamingDetokenizer::next(
 
     auto new_text = new_segment.substr(segment_.size());
 
-    // If the new text ends with the UTF-8 replacement character (U+FFFD = 0xEF 0xBF 0xBD),
-    // the token didn't produce a complete unicode character yet.
+    // Incomplete unicode character: new text ends with U+FFFD (EF BF BD).
     if (new_text.size() >= 3 &&
         new_text[new_text.size() - 3] == '\xef' &&
         new_text[new_text.size() - 2] == '\xbf' &&
@@ -323,12 +290,10 @@ static double measure(const std::function<void()>& fn) {
 // ---------------------------------------------------------------------------
 
 LMInput::Text TokenIterator::add_batch_dim(const LMInput::Text& text) {
-    // Equivalent to Swift's `previous[text: .newAxis]`:
-    // Ensure tokens are always 2D [1, seq_len] regardless of input shape.
-    // reshape handles scalar→[1,1], [L]→[1,L], [1,L]→[1,L].
+    // Ensure tokens are always 2D [1, seq_len].
     return LMInput::Text(
         mx::reshape(text.tokens, {1, -1}),
-        text.mask  // mask stays as-is
+        text.mask
     );
 }
 
@@ -337,12 +302,9 @@ LMInput::Text TokenIterator::add_batch_dim(const LMInput::Text& text) {
 // ---------------------------------------------------------------------------
 
 mx::array TokenIterator::convert_to_token(const mx::array& logits) {
-    // Extract the last token's logits: logits[..., -1, ...]
-    // For shape [B, seq_len, vocab], take logits[:, -1, :] -> [B, vocab]
-    // Then squeeze to [vocab] for sampling.
+    // Extract the last token's logits.
     mx::array last_logits = logits;
 
-    // If logits has 3 dimensions [B, T, V], slice to [B, 1, V] then squeeze.
     if (logits.ndim() == 3) {
         int seq_len = logits.shape(1);
         last_logits = mx::slice(logits, {0, seq_len - 1, 0},
@@ -350,15 +312,12 @@ mx::array TokenIterator::convert_to_token(const mx::array& logits) {
         last_logits = mx::squeeze(last_logits, 1);
     }
 
-    // Apply logit processor if present.
     if (processor_.has_value()) {
         last_logits = processor_->process(last_logits);
     }
 
-    // Sample a token from the logits.
     auto y = sampler_.sample(last_logits);
 
-    // Inform the processor of the sampled token.
     if (processor_.has_value()) {
         processor_->did_sample(y);
     }
@@ -371,17 +330,12 @@ mx::array TokenIterator::convert_to_token(const mx::array& logits) {
 // ---------------------------------------------------------------------------
 
 mx::array TokenIterator::step(const LMInput::Text& previous) {
-    // Run on the dedicated generation stream.
     StreamGuard sg(generation_stream());
 
     auto batched = add_batch_dim(previous);
 
 #if defined(MLX_BUILD_ROCM)
-    // --- HIP graph ceiling benchmark (opt-in via MLX_DECODE_GRAPH_BENCH) ---
-    // After a few real tokens (KV populated, shapes steady), capture ONE decode
-    // step and time replays vs an eager step to measure the achievable speedup.
-    // This is a measurement probe (it does not produce coherent output beyond
-    // this point), so it prints and exits.
+    // HIP graph ceiling benchmark (opt-in via MLX_DECODE_GRAPH_BENCH).
     {
         static const bool g_bench = std::getenv("MLX_DECODE_GRAPH_BENCH") != nullptr;
         static int g_bench_step = 0;
@@ -390,20 +344,14 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
             auto* cache_ptr = cache_.empty() ? nullptr : &cache_;
             auto* state_ptr = state_.has_value() ? &state_.value() : nullptr;
 
-            // Eager reference step (normal allocator, NOT the arena — the arena
-            // is a bump allocator that never reclaims until reset, so its peak is
-            // the sum of every temporary in a forward; keep only the captured
-            // step in it).
+            // Eager reference step.
             std::cerr << "[graph-bench] eager ref step..." << std::endl;
             auto e0 = std::chrono::steady_clock::now();
             { auto r = context_.call_fn(batched, cache_ptr, state_ptr); mx::eval(r.logits); }
             auto e1 = std::chrono::steady_clock::now();
             double eager_ms = std::chrono::duration<double, std::milli>(e1 - e0).count();
 
-            // The DecodeArena (one big shared buffer) deadlocks HIP graph
-            // replay on RDNA4 — capture with the normal allocator instead
-            // (CommandEncoder holds capture-time buffers alive so addresses stay
-            // valid for replay). Arena is opt-in for comparison only.
+            // Arena is opt-in for comparison only.
             bool use_arena = std::getenv("MLX_DECODE_GRAPH_ARENA") != nullptr;
             if (use_arena) {
                 std::cerr << "[graph-bench] arena_begin (1 GB)..." << std::endl;
@@ -414,18 +362,14 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
             } else {
                 std::cerr << "[graph-bench] capturing with normal allocator (no arena)" << std::endl;
             }
-            // Pin the pre-capture cache state arrays so they are NOT freed when
-            // the captured step reassigns them — the graph reads their buffers
-            // by address on replay; freeing them would make replay fault.
+            // Pin the pre-capture cache state arrays so replay addresses stay valid.
             std::vector<KVCache> bench_pinned_cache = cache_;
 
-            // Debug: force live graph_external_pos to isolate whether reading the
-            // persistent graph_decode_pos buffer (vs a frozen host-built pos) wedges.
             if (std::getenv("MLX_GRAPH_EXT_POS")) {
                 mlx_lm::set_graph_external_pos(true);
                 mlx_lm::set_graph_decode_pos(0);
             }
-            // Capture one step (records all forward + cache-update kernels).
+            // Capture one step.
             std::cerr << "[graph-bench] capturing step..." << std::endl;
             gpu::gpu_graph_begin_capture();
             auto _cap_t0 = std::chrono::steady_clock::now();
@@ -463,21 +407,11 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     }
 #endif
 
-    // --- HIP-graph decode (ROCm): capture one device-position decode step, then
-    // replay it per token. The position lives in a fixed device buffer the
-    // captured graph reads (RoPE, length mask, KV write); the loop advances it
-    // BETWEEN replays (loop-owned — an in-graph increment would race the readers).
-    // The KV write (slice_update at the device pos) and the gated-delta recurrent
-    // state (in-place custom-kernel output) update fixed buffers in place, so one
-    // captured graph follows the growing context. See HIP_KV_FINDINGS.md.
+    // HIP-graph decode (ROCm): capture one device-position decode step, replay per token.
 #if defined(MLX_BUILD_ROCM)
     {
         static const bool g_graph = graph_decode_enabled();
-        // Decode-only: skip prefill (L>1). The captured graph is a single-token
-        // step, so g_input is [1,1]; engaging on a multi-token prefill would size
-        // g_input wrong and fault the embedding gather. Also requires greedy decode
-        // (no logit processor): the captured graph bakes an argmax, so sampled or
-        // penalty-adjusted decoding falls through to the eager path.
+        // Decode-only (L==1), greedy decode only (no logit processor).
         int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
         if (g_graph && Lstep == 1 && !cache_.empty() && !processor_.has_value()) {
             namespace gpu = mlx::core;
@@ -497,10 +431,7 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 for (auto& c : cache_) if (!c.as_mamba()) return c.offset();
                 return 0;
             };
-            // Write the input token id into the fixed g_input buffer via a GPU op
-            // (device-coherent on the eGPU; a host memcpy never reaches the device).
-            // slice_update donates g_input in place so its address (baked into the
-            // captured embedding gather) stays stable across replays.
+            // Write the input token id into the fixed g_input buffer via a GPU op.
             auto write_token = [&](const mx::array& tok) {
                 auto t = mx::astype(mx::reshape(tok, mx::Shape{}), g_input.dtype());
                 g_input = mx::slice_update(
@@ -508,12 +439,8 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                     mx::Shape(g_input.ndim(), 0), g_input.shape());
                 mx::eval(g_input);
             };
-            // NOTE: graph decode is EXPERIMENTAL / opt-in (MLX_DECODE_GRAPH) and
-            // not correct past the first few replays on this hardware — between-
-            // replay allocations corrupt the captured forward's transient buffers,
-            // and the decode arena that would fix it deadlocks HIP-graph replay on
-            // RDNA. Default decode (graph_decode_enabled()==false) uses the eager
-            // path below. See HIP_KV_FINDINGS.md.
+            // EXPERIMENTAL / opt-in (MLX_DECODE_GRAPH); not correct past the first
+            // few replays on this hardware. See HIP_KV_FINDINGS.md.
             if (!g_init) {
                 mlx_lm::set_graph_external_pos(true);
                 g_input = mx::zeros({1, 1}, batched.tokens.dtype());
@@ -523,18 +450,14 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 
             if (!g_captured) {
                 if (++g_warm <= kWarm) {
-                    // Eager graph-mode warmup: device-pos attention, advancing pos.
-                    // Populates the persistent buffers and JIT-compiles every kernel
-                    // so the capture (which can't hipMalloc/JIT mid-stream) is clean.
+                    // Eager graph-mode warmup: populates buffers and JITs kernels.
                     mlx_lm::set_graph_decode_pos(trunk_pos());
                     auto r = context_.call_fn(batched, cache_ptr, state_ptr);
                     mx::eval(r.logits);
                     state_ = r.state;
                     return convert_to_token(r.logits);
                 }
-                // Capture one decode step. Retire prior work first so the in-place
-                // writes (KV slice_update donation, gated-delta state alias) are
-                // uniquely owned and record IN-PLACE, not as a baked full-buffer copy.
+                // Capture one decode step (retire prior work first).
                 int pos = trunk_pos();
                 mlx_lm::set_graph_decode_pos(pos);
                 write_token(batched.tokens);
@@ -552,14 +475,12 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                     g_logits = rc.logits;
                     state_ = rc.state;
                     g_captured = true;
-                    gpu::gpu_graph_replay();  // capture only RECORDS — execute once
+                    gpu::gpu_graph_replay();  // capture only records — execute once
                     return convert_to_token(g_logits);
                 }
-                gpu::gpu_graph_reset();
-                // capture failed: fall through to the normal eager path below.
+                gpu::gpu_graph_reset();  // capture failed: fall through to eager path
             } else {
-                // Replay: advance the device pos in place (loop-owned), write the new
-                // input token, replay the captured step, sample.
+                // Replay: advance pos, write token, replay, sample.
                 mlx_lm::advance_graph_decode_pos(1);
                 write_token(batched.tokens);
                 gpu::gpu_graph_replay();
@@ -569,9 +490,7 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     }
 #endif
 
-    // --- HIP Graph capture state machine (ROCm only) ---
-    // After warmup tokens, capture the decode step as a HIP graph for
-    // single-dispatch replay. Uses arena allocator for deterministic addresses.
+    // HIP Graph capture state machine (ROCm only).
 #if defined(MLX_BUILD_ROCM)
     namespace gpu = mlx::core;
 
@@ -584,37 +503,17 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
         break;
 
       case GraphState::Profiling: {
-        // Arena profiling disabled: the arena can't distinguish temporary
-        // activations from persistent KV cache updates. Both use malloc(),
-        // and freeing the arena destroys KV cache data that lives across
-        // steps. Enabling this requires KV cache pre-allocation (#7).
         graph_state_ = GraphState::Disabled;
         break;
       }
 
       case GraphState::Capturing: {
-        // Graph capture records kernels WITHOUT executing them, which
-        // leaves the KV cache in a stale state and corrupts subsequent
-        // steps. Full graph replay requires:
-        // 1. Separating the KV cache update from the captured graph
-        // 2. Using hipGraphExecKernelNodeSetParams to update input
-        //    token pointers each step
-        // 3. Reading output logits from deterministic arena addresses
-        //
-        // Arena profiling proved the mechanism works (18 KB per step,
-        // deterministic addresses). Capture is disabled until the
-        // KV cache isolation and pointer update logic is implemented.
         gpu::gpu_arena_end();
         graph_state_ = GraphState::Disabled;
         break;
       }
 
       case GraphState::Replaying: {
-        // Graph replay requires updating input token pointers and reading
-        // output logits from the arena — not yet wired. The capture proves
-        // the mechanism works; full replay needs hipGraphExecKernelNodeSetParams
-        // to update the input token address each step.
-        // For now, disable replay and use normal execution.
         gpu::gpu_graph_reset();
         gpu::gpu_arena_end();
         graph_state_ = GraphState::Disabled;
@@ -642,19 +541,16 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 // ---------------------------------------------------------------------------
 
 void TokenIterator::prepare(const LMInput& input, int window_size) {
-    // Run on the dedicated generation stream (matches Python's prefill in generation_stream).
     StreamGuard sg(generation_stream());
 
-    // Inform the processor about the prompt tokens.
     if (processor_.has_value()) {
         processor_->prompt(input.text.tokens);
     }
 
-    // Run model's prepare function to consume the prompt.
     auto prep_result = context_.prepare_fn(input, cache_, window_size);
 
     if (prep_result.is_tokens()) {
-        // Model returned remaining tokens — evaluate them to prime the cache.
+        // Model returned remaining tokens — prime the cache.
         auto remaining = prep_result.as_tokens();
         auto token = step(remaining);
         y_ = LMInput::Text(token);
@@ -666,16 +562,12 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
         y_ = LMInput::Text(token);
         mx::async_eval(y_.tokens);
 
-        // Capture state from prefill output (for models that return logits).
         if (prep_output.state.has_value()) {
             state_ = prep_output.state;
         }
     }
 
     // Capture trunk hidden state at last prompt position for first MTP step.
-    // This must happen AFTER step() or convert_to_token() has populated state_.
-    // For the tokens path (llm_default_prepare), step() populates state_.
-    // For the logits path, we captured state from prep_output above.
     if (use_mtp_ && state_.has_value() && state_->hidden_intermediates.has_value()) {
         auto trunk_h = state_->hidden_intermediates.value();  // [B, T, H]
         int last_pos = trunk_h.shape(1) - 1;
@@ -707,9 +599,7 @@ TokenIterator::TokenIterator(
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)  // Initialize with 1 (accepted)
 {
-    // When MTP is active, initialize state_ so step() always requests
-    // hidden_intermediates from the model. The MTP head needs the trunk's
-    // hidden state as input.
+    // When MTP is active, request hidden_intermediates from the model.
     if (use_mtp_) {
         mtp_caches_ = context.new_mtp_cache_fn(params);
         state_ = LMOutput::State();  // Empty state signals model to return hidden
@@ -747,10 +637,7 @@ TokenIterator::TokenIterator(
     generation_start_ = std::chrono::steady_clock::now();
 }
 
-// External-cache constructor WITH parameters — enables MTP speculative decoding
-// while reusing a persistent (multi-turn) KV cache. Mirrors the params-only
-// constructor's MTP setup but adopts the provided trunk cache instead of
-// allocating a fresh one.
+// External-cache constructor with parameters — MTP over a reused KV cache.
 TokenIterator::TokenIterator(
     ModelContext& context,
     const LMInput& input,
@@ -797,11 +684,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     }
 
     MTPHead* mtp_head = static_cast<MTPHead*>(context_.get_mtp_head_fn());
-    // get_mtp_head_fn is a valid callback even when the model carries no MTP
-    // head weights (mtp_weights_ empty -> build_mtp_head() never ran), in which
-    // case it returns nullptr. Dereferencing it in the draft loop below
-    // segfaults for any n_draft>1. Fall back to plain decode instead of crashing
-    // when --use-mtp is requested on a model without an MTP head.
+    // Null when the model carries no MTP head weights — fall back to plain decode.
     if (mtp_head == nullptr) {
         auto token = step(y_);
         y_ = LMInput::Text(token);
@@ -812,12 +695,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     static const bool kMtpTiming = (std::getenv("MTP_TIMING") != nullptr);
     auto t_start = std::chrono::steady_clock::now();
     auto t_draft = t_start, t_verify = t_start;
-    // Read the trunk's sequence position from a FULL-ATTENTION (non-Mamba)
-    // cache. This model is hybrid (Qwen3.5-Next): linear-attention layers use a
-    // MambaCache whose get_position() is 0, so cache_[0] (often a MambaCache)
-    // would report position 0. Using that as the rollback target would
-    // set_position(0) and WIPE every full-attention KV cache, destroying context
-    // (the cause of degenerate looping output under speculative decoding).
+    // Read the trunk's position from a full-attention (non-Mamba) cache.
     int trunk_cache_pos = 0;
     for (auto& c : cache_) {
         if (!c.as_mamba()) {
@@ -826,31 +704,17 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         }
     }
 
-    // Reset MTP head cache to prevent stale KV pairs from previous speculative
-    // steps (where drafts may have been rejected). Without this reset, the MTP
-    // head's attention would attend to KV from rejected drafts, corrupting the
-    // hidden state and producing garbage output. The head's intra-step
-    // self-attention is over the (few) draft tokens it produces this step, whose
-    // RoPE relative phases are preserved regardless of the absolute base offset.
+    // Reset MTP head cache to drop stale KV from prior speculative steps.
     for (auto& c : mtp_caches_) {
         c.set_position(0);
     }
 
-    // Draft phase — correct Qwen3.5 MTP recurrence.
-    //
-    // d0 is the trunk's OWN already-computed next token (y_). It is trusted and
-    // never verified — feeding it through the MTP head's output-norm would be
-    // wrong (that norm belongs after the MTP decoder layer, not on the raw trunk
-    // hidden). The MTP head then drafts d1..d_{K-1}: for each, run the MTP
-    // decoder layer FIRST with the PREVIOUS token's embedding to advance the
-    // hidden state, THEN apply the head's output-norm + the (shared) lm_head and
-    // argmax. mtp_trunk_hidden_ is the trunk's pre-final-norm hidden at the
-    // position that predicted y_ (i.e. h0); MTPHead applies its own pre_fc_norm.
+    // Draft phase. d0 is the trunk's already-computed next token (y_), trusted
+    // and never verified; the head drafts d1..d_{K-1}.
     auto hidden = mtp_trunk_hidden_.has_value()
         ? mtp_trunk_hidden_.value()
         : context_.embed_fn(y_.tokens);
-    // Defensive: ensure hidden is always 3D [1, 1, H]. The MTP head reads
-    // L = x.shape(1); a 2D [1, H] input would give L=H, crashing downstream.
+    // Ensure hidden is always 3D [1, 1, H].
     if (hidden.ndim() == 2) {
         hidden = mx::reshape(hidden, {1, 1, hidden.shape(-1)});
     }
@@ -858,48 +722,26 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     std::vector<int> draft_tokens;
     draft_tokens.reserve(n_draft);
 
-    // Keep the draft recurrence ON-DEVICE. d0 is the trunk's confirmed next
-    // token (y_); each subsequent draft d_i = argmax(head output after feeding
-    // embed(d_{i-1})). Previously every draft did a BLOCKING .item() to read the
-    // argmax back to host so it could rebuild embed(prev) — that serialized the
-    // whole draft chain behind n_draft-1 full GPU syncs. Instead we keep each
-    // argmax as a [1,1] int32 array and feed it straight into embed_fn (which
-    // does mx::take on the embedding table), so the next draft's embedding
-    // depends on this draft's argmax entirely on-device with no host round-trip.
-    // We sync ONCE after the chain to read all draft token ids together.
-    //
-    // d0 (= y_.tokens) stays a [1,1] int32 array; never .item()'d here.
+    // Keep the draft recurrence on-device; sync once after the chain.
     auto prev_tok_arr = mx::reshape(y_.tokens, {1, 1});  // [1,1] int32, d0
     std::vector<mx::array> draft_tok_arrs;               // d1..d_{n-1}, on-device
     draft_tok_arrs.reserve(n_draft > 1 ? n_draft - 1 : 0);
 
     for (int i = 1; i < n_draft; ++i) {
-        // Run the MTP decoder layer with the previous token's embedding to
-        // advance the hidden state, THEN predict this draft token. prev_tok_arr
-        // is the on-device argmax of the previous draft (or d0 for i==1); feeding
-        // it to embed_fn does mx::take directly, no host round-trip.
+        // Advance the hidden state with the previous token, then predict d_i.
         auto prev_embed = context_.embed_fn(prev_tok_arr);
         hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{},
                             mtp_caches_.empty() ? nullptr : &mtp_caches_[0]);
 
         auto norm_h = mtp_head->apply_output_norm(hidden);
         auto logits = context_.apply_lm_head_fn(norm_h);
-        // argmax stays on-device as a [1,1] int32 array; it is BOTH this draft's
-        // token id AND the next draft's embedding input. No .item() here.
         prev_tok_arr = mx::reshape(
             mx::argmax(logits, -1, /*keepdims=*/false), {1, 1});
         prev_tok_arr = mx::astype(prev_tok_arr, mx::int32);
         draft_tok_arrs.push_back(prev_tok_arr);
-        // NOTE: do NOT mx::clear_cache() here. Freeing the whole buffer pool
-        // after every draft forces the next draft (and the verify) to re-allocate
-        // from the driver, adding ms of overhead inside the speculative hot loop.
-        // The main generation loop already clears periodically (every 256 tokens).
     }
 
-    // Single sync for the whole draft chain: concatenate d1..d_{n-1} (if any)
-    // into one [n_draft-1] array, eval once, then read the host ints together.
-    // d0 is read from y_.tokens in the same eval. This is the ONLY host sync in
-    // the draft phase (was n_draft-1 separate .item() syncs before).
+    // Single sync: concatenate d1..d_{n-1}, eval once with d0, read ints together.
     if (!draft_tok_arrs.empty()) {
         auto drafts_dev = mx::reshape(
             mx::concatenate(draft_tok_arrs, /*axis=*/0),
@@ -924,27 +766,19 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     }
 
     // Build draft token sequence for trunk verification.
-    // Feed [d0, d1, d2] at cache position P (where P = N+K after prepare).
-    // The trunk processes d0 at position P, producing logit at P that predicts P+1.
-    // So logit[0] predicts d1, logit[1] predicts d2, etc.
-    // We compare logit[i] vs draft[i+1] to verify the drafts.
-    // Note: d0 is not verified — it's trusted from the MTP head.
     std::vector<int32_t> draft_seq;
     draft_seq.reserve(draft_tokens.size());
     for (int t : draft_tokens) draft_seq.push_back(static_cast<int32_t>(t));
     auto draft_arr = mx::array(draft_seq.data(), {1, static_cast<int>(draft_seq.size())}, mx::int32);
     LMInput::Text draft_text(draft_arr);
 
-    // Enable per-token recurrent-state capture on the linear (Mamba) layers so a
-    // partially-accepted verify can be rolled back to the accepted prefix using
-    // the "gated-delta intermediates" — without re-running the trunk. A snapshot
-    // is also taken as a cheap safety fallback (used only if capture is missing).
+    // Enable per-token recurrent-state capture on the linear (Mamba) layers for
+    // prefix rollback; snapshot is a safety fallback.
     struct SavedMambaState {
         MambaCache::Snapshot snapshot;
         bool has_mamba = false;
     };
-    // MTP_NO_INTERMEDIATES=1 forces the legacy restore+re-run rollback (for
-    // A/B profiling of the gated-delta intermediates path).
+    // MTP_NO_INTERMEDIATES=1 forces the legacy restore+re-run rollback.
     static const bool kUseIntermediates = (std::getenv("MTP_NO_INTERMEDIATES") == nullptr);
     std::vector<SavedMambaState> saved_mamba;
     saved_mamba.reserve(cache_.size());
@@ -962,29 +796,15 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         }
     }
 
-    // Run trunk model forward on all draft tokens.
-    // Request hidden intermediates so state_ is properly updated.
+    // Run trunk model forward on all draft tokens, requesting hidden intermediates.
     auto state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
     auto result = context_.call_fn(draft_text, cache_.empty() ? nullptr : &cache_, &state);
     state_ = result.state;
     maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
 
-    // Compare trunk argmax vs draft tokens.
-    // logits shape: [1, n_draft, vocab].
-    // logits[0, i, :] is the trunk's prediction after processing draft[i].
-    // Since draft[i] is at position P+i, logits[0, i, :] predicts position P+i+1.
-    // So we compare logit[i] vs draft[i+1] (not draft[i]).
-    // Note: draft[0] is not verified — it's trusted from the MTP head.
-    //
-    // Vectorize: take argmax over the WHOLE [1, n_draft, vocab] logits in ONE op
-    // -> [1, n_draft] (the trunk's predicted token at every draft position,
-    // including the bonus slot n_draft-1), eval once, and read all n_draft host
-    // ints together. Previously this was a per-draft mx::argmax(...).item() loop
-    // plus a separate argmax for the bonus token — n_draft total blocking syncs.
-    // Now it is exactly ONE sync; the accept/mismatch scan runs on host ints.
+    // Compare trunk argmax vs draft tokens: logit[i] predicts draft[i+1].
+    // Take argmax over [1, n_draft, vocab] in one op, then scan on host ints.
     auto logits = result.logits;
-    // argmax returns uint32 indices; cast to int32 so data<int32_t>() reads the
-    // token ids directly (token ids are < 2^31 so this is value-preserving).
     auto trunk_argmax = mx::astype(mx::argmax(logits, -1), mx::int32);  // [1, n_draft]
     mx::eval(trunk_argmax);
     const int32_t* trunk_pred = trunk_argmax.data<int32_t>();
@@ -995,37 +815,22 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         if (trunk_token == draft_tokens[i + 1]) {
             accepted++;
         } else {
-            // Mismatch — use trunk token instead, stop accepting.
-            // draft_tokens[i+1] is replaced with trunk's prediction.
+            // Mismatch — replace with trunk token and stop accepting.
             draft_tokens[i + 1] = trunk_token;
             break;
         }
     }
 
-    // Set y_ to the last token to emit.
-    // accepted is the number of drafts verified (excluding d0).
-    // Total emitted = 1 (d0) + accepted (verified d1...d_{accepted}).
+    // Set y_ to the following token (bonus on full accept, else trunk correction).
     if (accepted == n_draft - 1) {
-        // All verifiable drafts accepted — bonus token is the trunk's prediction
-        // at the last draft position (already in trunk_pred, no extra argmax).
         int32_t bonus_token = trunk_pred[n_draft - 1];
         y_ = LMInput::Text(mx::array({bonus_token}, {1}, mx::int32));
     } else {
-        // Mismatch at position `accepted+1`. draft_tokens[accepted+1] was already
-        // replaced with the trunk's token above.
         y_ = LMInput::Text(mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
     }
     if (kMtpTiming) { mx::eval(y_.tokens); t_verify = std::chrono::steady_clock::now(); }
 
-    // ---- Commit the accepted prefix WITHOUT re-running the trunk ----
-    //
-    // The verification forward already advanced every cache by n_draft tokens and
-    // produced hidden states for all of them. Causal attention/recurrence means
-    // the hidden at position `accepted` (which predicts y_) is IDENTICAL to what a
-    // re-run on [d0..d_accepted] would produce, and each linear layer's recurrent
-    // state as-of the accepted prefix was captured per-token during the forward
-    // (the gated-delta intermediates). So we trim the caches to the accepted
-    // prefix directly instead of restoring + re-running the whole trunk.
+    // Commit the accepted prefix without re-running the trunk: trim the caches.
 
     // Capture the next-step trunk hidden at the position that predicts y_.
     auto capture_hidden_at = [&](int pos) {
@@ -1053,8 +858,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         // All drafts accepted — caches already hold exactly [d0..d_{n-1}].
         capture_hidden_at(n_draft - 1);
     } else if (any_mamba && !have_spec) {
-        // Safety fallback (should not happen on ROCm): restore the recurrent
-        // state and re-run the trunk on the accepted prefix [d0..d_accepted].
+        // Safety fallback: restore recurrent state and re-run on accepted prefix.
         for (size_t i = 0; i < cache_.size(); ++i) {
             if (saved_mamba[i].has_mamba) {
                 auto* m = cache_[i].as_mamba();
@@ -1076,8 +880,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         logits = result.logits;
         capture_hidden_at(accepted);
     } else if (accepted < n_draft - 1 && !cache_.empty()) {
-        // Fast path: trim caches to [d0..d_accepted] using the gated-delta
-        // intermediates (linear layers) and set_position (attention layers).
+        // Fast path: trim caches to [d0..d_accepted].
         capture_hidden_at(accepted);
         int keep_pos = trunk_cache_pos + accepted + 1;
         for (auto& c : cache_) {
@@ -1099,10 +902,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     // Record acceptance for adaptive draft length.
     record_acceptance(n_draft, accepted);
 
-    // Update MTP metrics counters.
-    // Only n_draft-1 tokens are actually drafted+verified by the MTP head; d0 is
-    // the trunk's own confirmed token (always emitted, never a "draft"). Counting
-    // it would understate acceptance by a factor of (n_draft-1)/n_draft.
+    // Update MTP metrics counters (d0 is not counted as a draft).
     mtp_speculative_steps_++;
     mtp_draft_proposed_ += (n_draft > 1 ? n_draft - 1 : 1);
     mtp_draft_accepted_ += accepted;
@@ -1128,16 +928,8 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             us(t_start, t_end));
     }
 
-    // Emit contract: this step emits exactly the accepted prefix
-    // [d0, d1, ..., d_{accepted}] (accepted+1 tokens), all of which are now
-    // committed to the trunk KV cache. d0 is returned immediately; d1..d_accepted
-    // are buffered and drained by subsequent next() calls.
-    //
-    // y_ holds the FOLLOWING token (the trunk's correction on a mismatch, or the
-    // bonus token when all drafts were accepted). It is NOT emitted or committed
-    // here — it becomes d0 of the next speculative step and is emitted exactly
-    // once there. Buffering it as well would double-emit it and desync the cache
-    // (the bug that produced doubled/looping output).
+    // Emit the accepted prefix [d0..d_accepted]: d0 now, d1..d_accepted buffered.
+    // y_ holds the following token, emitted as d0 of the next step (not here).
     draft_buffer_.clear();
     for (size_t i = 1; i < draft_tokens.size() && static_cast<int>(i) <= accepted; ++i) {
         draft_buffer_.push_back(draft_tokens[i]);
@@ -1154,11 +946,6 @@ void TokenIterator::record_acceptance(int proposed, int accepted) {
 }
 
 int TokenIterator::current_draft_count() const {
-    // Honor the configured draft count. The previous adaptive shrink computed
-    // accept_rate as accepted/(history * configured_max) while `accepted` was
-    // capped by the *current* (already-shrunk) count — so once it dropped to 2,
-    // the rate could never exceed 1/n and it stayed pinned at 2 forever,
-    // regardless of real acceptance. Drafting is driven by --n-draft instead.
     return n_draft_tokens_;
 }
 
@@ -1186,7 +973,6 @@ void TokenIterator::measure_prefill_boundary_() {
 }
 
 std::optional<int> TokenIterator::next() {
-    // Check max_tokens limit.
     if (max_tokens_.has_value() && token_count_ >= max_tokens_.value()) {
         return std::nullopt;
     }
@@ -1194,10 +980,7 @@ std::optional<int> TokenIterator::next() {
     // MTP path: drain buffer first, then run speculative step.
     if (use_mtp_) {
         if (!draft_buffer_.empty() && draft_buffer_idx_ < draft_buffer_.size()) {
-            // Return an already-accepted, already-committed buffered token.
-            // Do NOT touch y_: it holds the correction/bonus token that the next
-            // speculative step emits as its d0. Overwriting y_ here would make the
-            // next step re-emit this buffered token (the doubled-output bug).
+            // Return a buffered accepted token; do NOT touch y_.
             int tok = draft_buffer_[draft_buffer_idx_++];
             token_count_++;
             return tok;
@@ -1219,8 +1002,7 @@ std::optional<int> TokenIterator::next() {
     auto token = step(previous_y);
     y_ = LMInput::Text(token);
     if (g_sync_decode) {
-        // Diagnostic: fully retire each forward before building the next, so the
-        // previous step's KV slice is freed and slice_update donation can succeed.
+        // Diagnostic: fully retire each forward before building the next.
         mx::eval(token);
         token_count_++;
         measure_prefill_boundary_();
@@ -1263,7 +1045,6 @@ GenerateCompletionInfo generate(
     const std::function<GenerateDisposition(int token)>& on_token)
 {
     // Upgrade GPU wired memory for the duration of generation.
-    // Matches Python mlx-lm's `with wired_limit(model)` in stream_generate().
     WiredLimitGuard wired_guard;
 
     int prompt_token_count = static_cast<int>(input.text.tokens.size());
@@ -1276,13 +1057,11 @@ GenerateCompletionInfo generate(
     while (auto maybe_token = iter.next()) {
         int token = *maybe_token;
 
-        // Restart the decode clock after the first token (prefill is accounted
-        // for inside the iterator's prompt_prefill_time_).
+        // Restart the decode clock after the first token.
         if (token_count == 0) {
             start = std::chrono::steady_clock::now();
         }
 
-        // Check for EOS.
         if (eos_token_ids.count(token)) {
             break;
         }
@@ -1290,29 +1069,23 @@ GenerateCompletionInfo generate(
         token_count++;
 
         // Periodically clear the memory cache to reduce memory pressure.
-        // Matches Python mlx-lm's `if n % 256 == 0: mx.clear_cache()`.
         if (token_count % 256 == 0) {
             mx::clear_cache();
         }
 
-        // Invoke callback.
         if (on_token(token) == GenerateDisposition::stop) {
             break;
         }
     }
 
-    // Synchronize the generation stream to ensure all pending GPU work completes.
     mx::synchronize(generation_stream());
 
-    // Use the iterator's completion_info to get accurate MTP metrics.
     auto info = iter.completion_info(prompt_token_count);
 
-    // Override timing with our measured values (iter's clock starts after prefill).
+    // Override timing with our measured values.
     auto now = std::chrono::steady_clock::now();
     double gen_time = std::chrono::duration<double>(now - start).count();
     info.generation_time = gen_time;
-    // completion_info() already reports the corrected prefill interval
-    // (host prepare + GPU prefill exec); do not add it again.
 
     return info;
 }
@@ -1328,7 +1101,6 @@ GenerateCompletionInfo generate_text(
     const std::set<int>& eos_token_ids,
     const std::function<GenerateDisposition(const std::string& text, int token)>& on_text)
 {
-    // We need the decode function from context.
     auto decode_fn = context.decode_fn;
 
     NaiveStreamingDetokenizer detokenizer;

@@ -40,10 +40,7 @@ KVCacheSimple::update_impl(
         int B = new_keys.shape(0);
         int H = new_keys.shape(1);
         int D = new_keys.shape(3);
-        // Static one-shot allocation: size to cover the prompt (n_new) plus the
-        // expected generation (reserve_) so every subsequent decode step writes
-        // in place at offset_ and the grow-and-copy path below never runs — a
-        // fixed buffer at a stable address (no doubling copies, graph-ready).
+        // One-shot allocation sized to prompt + generation reserve.
         int alloc_len = std::max({n_new, initial_capacity_, n_new + reserve_});
 
         keys_ = mx::zeros({B, H, alloc_len, D}, new_keys.dtype());
@@ -125,7 +122,7 @@ int KVCacheSimple::trim_impl(int n) {
 void KVCacheSimple::set_position(size_t pos) {
     int target = static_cast<int>(pos);
     if (target >= offset_) {
-        return;  // Nothing to roll back (or invalid restore -- silently ignore).
+        return;  // Nothing to roll back.
     }
     int delta = offset_ - target;
     trim_impl(delta);
@@ -192,14 +189,12 @@ RotatingKVCache::update_impl(
     return {keys_.value(), values_.value()};
 }
 
-// Roll back logical offset only. Physical ring buffer is unchanged —
-// the ring retains all data and only the write position shifts back.
-// Safe for speculative decoding since data remains valid.
+// Roll back logical offset only; physical ring buffer is unchanged.
 void RotatingKVCache::set_position(size_t pos) {
     int target = static_cast<int>(pos);
     if (target >= offset_) return;  // Nothing to roll back.
     offset_ = target;
-    // Re-sync idx_ to the physical buffer length (may exceed offset_).
+    // Re-sync idx_ to the physical buffer length.
     if (keys_.has_value()) {
         idx_ = keys_.value().shape(2);
     }
@@ -265,15 +260,10 @@ QuantizedKVCache::update_impl(
 }
 
 // Roll back to a saved offset by slicing the QTuples along axis 2.
-// Matches KVCacheSimple behavior: physically removes stale entries so
-// dequantize_kv() never sees them. This is critical for MTP speculative
-// decoding where rejected draft tokens must be fully removed from cache.
 void QuantizedKVCache::set_position(size_t pos) {
     int target = static_cast<int>(pos);
 
-    // Special case: resetting to position 0 should always clear the cache,
-    // even if offset_ is already 0 (e.g., after a speculative step with
-    // rejected drafts that left stale quantized KV data).
+    // Resetting to position 0 always clears the cache, even if offset_ is 0.
     if (target == 0) {
         keys_ = std::nullopt;
         values_ = std::nullopt;
@@ -290,13 +280,10 @@ void QuantizedKVCache::set_position(size_t pos) {
         return;
     }
 
-    // Simplified: set_position(pos) means cache should contain tokens at
-    // positions 0..pos-1, so we keep exactly 'target' elements directly.
-    // This avoids incorrect calculations when offset tracking is inconsistent.
+    // Keep exactly 'target' elements (tokens 0..target-1).
     int total = keys_->weight.shape(2);
     int keep = target;
 
-    // Defensive validation: ensure keep is in valid range
     if (keep < 0) {
         keep = 0;
     }
@@ -304,7 +291,6 @@ void QuantizedKVCache::set_position(size_t pos) {
         keep = total;
     }
 
-    // Defensive validation: verify tensor dimensionality is 4D
     if (keys_->weight.ndim() != 4 || keys_->scales.ndim() != 4 ||
         keys_->biases.ndim() != 4) {
         throw std::runtime_error(
@@ -317,11 +303,9 @@ void QuantizedKVCache::set_position(size_t pos) {
     }
 
     if (keep == 0) {
-        // Remove all entries
         keys_ = std::nullopt;
         values_ = std::nullopt;
     } else {
-        // Slice QTuple structures to keep positions 0..keep-1
         int B = keys_->weight.shape(0);
         int H = keys_->weight.shape(1);
         int packed_D = keys_->weight.shape(3);
@@ -336,7 +320,6 @@ void QuantizedKVCache::set_position(size_t pos) {
                       {B, H, keep, scales_D})
         };
 
-        // Slice values QTuple
         B = values_->weight.shape(0);
         H = values_->weight.shape(1);
         packed_D = values_->weight.shape(3);

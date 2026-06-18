@@ -35,10 +35,7 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_ops(
     const mlx::core::array& beta,
     const std::optional<mlx::core::array>& state = std::nullopt,
     const std::optional<mlx::core::array>& mask = std::nullopt,
-    // When true, the fused decode kernel writes the new SSM state in place into
-    // the state input's buffer (output aliases input). Required for HIP-graph
-    // replay so the recurrence accumulates; only valid when state is uniquely
-    // owned by the cache (graph decode mode, no MTP snapshot aliasing).
+    // When true, the fused decode kernel writes the new SSM state in place.
     bool inplace_state = false);
 
 // Full gated delta update: computes beta, g, initializes state, calls gated_delta_ops.
@@ -51,18 +48,12 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_update(
     const std::optional<mlx::core::array>& mask = std::nullopt,
     bool inplace_state = false);
 
-// Write `src` into `dst`'s device buffer IN PLACE; returns an array sharing
-// dst's buffer with src's contents (same total size required). Lets a captured
-// HIP graph update a persistent recurrent-state buffer so the recurrence
-// accumulates across replays (an ordinary reassignment freezes at capture).
+// In-place write of `src` into `dst`'s device buffer (same total size required).
 mlx::core::array inplace_write(const mlx::core::array& dst,
                               const mlx::core::array& src);
 
-// Speculative-decoding variant of gated_delta_ops. In addition to the output and
-// the final state, returns the per-token SSM state STACK `state_seq`
-// [B, T, Hv, Dv, Dk], where state_seq[:, t] is the recurrent state AFTER token t.
-// This lets a multi-token verification forward be rolled back to any accepted
-// prefix by selecting state_seq[:, keep-1] — no re-run of the forward needed.
+// Speculative-decoding variant of gated_delta_ops: also returns the per-token
+// SSM state stack `state_seq` [B, T, Hv, Dv, Dk] (state after each token).
 // Returns (output [B, T, Hv, Dv], final_state [B, Hv, Dv, Dk], state_seq).
 std::tuple<mlx::core::array, mlx::core::array, mlx::core::array> gated_delta_ops_seq(
     const mlx::core::array& q, const mlx::core::array& k,
