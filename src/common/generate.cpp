@@ -20,7 +20,8 @@
 namespace mlx::core {
 bool gpu_arena_begin(size_t capacity);
 void gpu_arena_reset();
-void gpu_arena_reset_to(size_t mark);
+void gpu_arena_reset_to(size_t byte_mark, size_t desc_mark);
+size_t gpu_arena_desc_used();
 void gpu_arena_end();
 size_t gpu_arena_used();
 bool gpu_arena_active();
@@ -353,6 +354,7 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
             static int g_warm = 0;
             static bool g_captured = false;
             static size_t g_arena_mark = 0;
+            static size_t g_arena_desc_mark = 0;
             static const int kWarm = 6;
             static mx::array g_input = mx::zeros({1, 1}, mx::int32);
             static mx::array g_logits = mx::zeros({1}, mx::float32);
@@ -411,9 +413,12 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 // identical pointers each reset). Without this the buffers come from
                 // hipMallocAsync at addresses the pool recycles between replays, so
                 // the captured graph writes to stale/aliased memory (frozen output).
-                if (!gpu::gpu_arena_active())
-                    gpu::gpu_arena_begin(size_t(1) << 30);
-                gpu::gpu_arena_reset();
+                static const bool g_use_arena = std::getenv("MLX_NO_ARENA") == nullptr;
+                if (g_use_arena) {
+                    if (!gpu::gpu_arena_active())
+                        gpu::gpu_arena_begin(size_t(1) << 30);
+                    gpu::gpu_arena_reset();
+                }
                 mlx_lm::set_graph_capturing(true);
                 gpu::gpu_graph_begin_capture();
                 auto rc = context_.call_fn(
@@ -432,10 +437,11 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                     g_logits = logits_out;
                     state_ = rc.state;
                     g_captured = true;
-                    // Mark = arena offset after the captured graph's buffers. Each
-                    // replay rewinds here so per-token sampling reuses [mark, …) and
-                    // the graph region [0, mark) is never overwritten.
+                    // Mark = arena byte+descriptor offset after the captured graph's
+                    // buffers. Each replay rewinds here so per-token sampling reuses
+                    // [mark, …) while the graph region [0, mark) is never overwritten.
                     g_arena_mark = gpu::gpu_arena_used();
+                    g_arena_desc_mark = gpu::gpu_arena_desc_used();
                     gpu::gpu_graph_replay();  // capture only records — execute once
                     // Materialize the token to a detached host constant: g_logits is
                     // the captured graph's output buffer (overwritten by the next
@@ -447,10 +453,12 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 }
                 gpu::gpu_graph_reset();  // capture failed: fall through to eager
             } else {
-                // Replay: rewind arena to the post-capture mark so the graph's
-                // buffers [0, mark) stay intact, then advance pos, write token,
-                // replay, sample (sampling reuses [mark, …)).
-                gpu::gpu_arena_reset_to(g_arena_mark);
+                // Replay: rewind the arena to the post-capture mark (BOTH byte offset
+                // and descriptor index) so the graph's buffers/descriptors [0, mark)
+                // stay intact and only per-token sampling reuses [mark, …).
+                static const bool g_use_arena2 = std::getenv("MLX_NO_ARENA") == nullptr;
+                if (g_use_arena2)
+                    gpu::gpu_arena_reset_to(g_arena_mark, g_arena_desc_mark);
                 mlx_lm::advance_graph_decode_pos(1);
                 write_token(batched.tokens);
                 // Ensure the in-place pos/token writes land before the graph reads
@@ -459,7 +467,13 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 // every replay (frozen output).
                 mx::synchronize(generation_stream());
                 gpu::gpu_graph_replay();
-                return convert_to_token(g_logits);
+                // Materialize the token to a detached host constant before the next
+                // replay overwrites g_logits and before the next arena rewind reuses
+                // the sampling region (a lazy token would dangle).
+                auto rtok = convert_to_token(g_logits);
+                mx::eval(rtok);
+                return mx::reshape(mx::array(rtok.item<int>(), mx::int32),
+                                   rtok.shape());
             }
         }
     }
