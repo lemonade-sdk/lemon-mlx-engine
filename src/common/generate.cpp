@@ -355,7 +355,10 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
             static bool g_captured = false;
             static size_t g_arena_mark = 0;
             static size_t g_arena_desc_mark = 0;
-            static const int kWarm = 6;
+            static const int kWarm = []{
+                const char* e = std::getenv("MLX_GRAPH_WARM");
+                return e ? std::atoi(e) : 6;
+            }();
             static mx::array g_input = mx::zeros({1, 1}, mx::int32);
             static mx::array g_logits = mx::zeros({1}, mx::float32);
 
@@ -467,6 +470,33 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 // every replay (frozen output).
                 mx::synchronize(generation_stream());
                 gpu::gpu_graph_replay();
+                if (g_pt) {
+                    auto& p = mlx_lm::graph_decode_pos();
+                    mx::eval(p);
+                    int pv = p.item<int>();
+                    float ksum = -1.f;
+                    for (auto& c : cache_) {
+                        if (!c.as_mamba()) {
+                            auto st = c.state();
+                            if (!st.empty() && pv >= 1) {
+                                auto k = st[0];  // [B,H,CAP,D]
+                                int H = k.shape(1), D = k.shape(3);
+                                auto row = mx::slice(k, {0, 0, pv - 1, 0},
+                                                     {1, H, pv, D});
+                                auto s = mx::sum(mx::abs(mx::astype(row, mx::float32)));
+                                mx::eval(s);
+                                ksum = s.item<float>();
+                            }
+                            break;
+                        }
+                    }
+                    unsigned msum = 0, csum = 0;
+                    std::cerr << "[replay] pos=" << pv
+                              << " tok_in=" << g_input.item<int>()
+                              << " kv_slot[" << (pv - 1) << "]_sum=" << ksum
+                              << " ssm_sum=" << msum << " conv_sum=" << csum
+                              << std::endl;
+                }
                 // Materialize the token to a detached host constant before the next
                 // replay overwrites g_logits and before the next arena rewind reuses
                 // the sampling region (a lazy token would dangle).
