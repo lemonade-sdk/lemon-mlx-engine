@@ -203,7 +203,11 @@ mx::array SwitchGLU::operator()(
     // Expand dims for gather_mm: add [-2, -3]
     auto x_expanded = mx::expand_dims(mx::expand_dims(x, -2), -3);
 
-    bool do_sort = (indices.size() >= 64);
+    static const int sort_min = []() {
+        const char* e = std::getenv("MLX_MOE_SORT_MIN");
+        return e ? std::atoi(e) : 64;
+    }();
+    bool do_sort = (static_cast<int>(indices.size()) >= sort_min);
 
     mx::array work_x = x_expanded;
     mx::array idx = indices;
