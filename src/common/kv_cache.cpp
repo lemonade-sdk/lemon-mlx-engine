@@ -4,6 +4,13 @@
 #include <mlx/mlx.h>
 #include <algorithm>
 
+#if defined(MLX_BUILD_ROCM)
+namespace mlx::core {
+// In-place row write into a persistent [B,H,CAP,D] KV buffer at pos[0].
+void gpu_kv_row_write(array& kv, const array& row, const array& pos);
+}
+#endif
+
 namespace mlx_lm {
 
 namespace mx = mlx::core;

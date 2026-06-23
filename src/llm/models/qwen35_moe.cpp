@@ -357,7 +357,7 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
                         {1, 1, 1, CAP + 1}),
             x.dtype());
         output = sdpa(queries, k_all, v_all, scale_, AttentionMask::from_array(addmask));
-        if (!std::getenv("MLX_GRAPH_NO_APPEND")) cache->update(keys, values);
+        cache->update(keys, values);
     } else {
         if (cache) {
             auto [k, v] = cache->update(keys, values);
@@ -466,10 +466,54 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         a_val = linear_fwd(inputs, in_proj_a_weight_);
     }
 
-    // Conv1d processing
+    // Conv1d processing.
     auto dtype = inputs.dtype();
+
+    // Device-position double-buffered recurrent state for capture-once HIP-graph
+    // decode. The captured graph is replayed many times; an in-place RMW at a
+    // fixed address does NOT accumulate across replays (only device-position-
+    // indexed writes do, same as the KV cache). So in graph/device-pos mode we
+    // keep conv+SSM state as a [2, …] ping-pong buffer: read slot pos&1, write
+    // slot (pos+1)&1 via dynamic slice/slice_update. Each replay's device pos
+    // advances, so it reads the previous replay's write and accumulates.
+    // Graph-decode recurrent state uses a device-parity double buffer (read
+    // slot pos&1, write (pos+1)&1) so each replay reads the previous replay's
+    // write and accumulates, like the KV cache. A single-buffer in-place RMW
+    // aliases the same address for read and write within one captured step,
+    // which wedges capture — hence the ping-pong.
+    bool gdn_dbuf = mlx_lm::graph_external_pos() && S == 1 && cache;
+    mx::array ridx(0), widx(0);
+    if (gdn_dbuf) {
+        auto pos2 = mlx_lm::graph_decode_pos();
+        ridx = mx::remainder(pos2, mx::array(2, mx::int32));
+        widx = mx::remainder(mx::add(pos2, mx::array(1, mx::int32)),
+                             mx::array(2, mx::int32));
+        // Promote single-buffer state (from prefill) to a [2, …] double buffer,
+        // both slots seeded with the current state so the first read is correct
+        // regardless of parity.
+        for (int i = 0; i < 2; ++i) {
+            if ((*cache)[i].has_value() && (*cache)[i].value().shape(0) != 2) {
+                auto s = mx::expand_dims((*cache)[i].value(), 0);
+                (*cache)[i] = mx::contiguous(mx::concatenate({s, s}, 0));
+            }
+        }
+        // Outside graph capture, snapshot the parity to concrete values now.
+        // The lazy index aliases the shared decode-pos buffer; the async
+        // pipeline would otherwise evaluate it AFTER the engine advances the
+        // pos for the next step, reading the wrong slot. During capture the
+        // index must stay lazy so the replayed graph re-derives it on device
+        // (and thus ping-pongs as the pos advances).
+        if (!mlx_lm::graph_capturing()) {
+            mx::eval(ridx, widx);
+        }
+    }
+
     mx::array conv_state(0.0f);
-    if (cache && (*cache)[0].has_value()) {
+    if (gdn_dbuf && (*cache)[0].has_value()) {
+        conv_state = mx::squeeze(
+            mx::slice((*cache)[0].value(), ridx, {0},
+                      {1, B, conv_kernel_size_ - 1, conv_dim_}), 0);
+    } else if (cache && (*cache)[0].has_value()) {
         conv_state = (*cache)[0].value();
     } else {
         conv_state = mx::zeros({B, conv_kernel_size_ - 1, conv_dim_}, dtype);
@@ -485,12 +529,10 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     if (cache) {
         int start = conv_input.shape(1) - (conv_kernel_size_ - 1);
         auto new_conv = mx::slice(conv_input, {0, start, 0}, {B, conv_input.shape(1), conv_dim_});
-        static const bool no_inplace_conv = std::getenv("MLX_GRAPH_NO_INPLACE") != nullptr;
-        if (mlx_lm::graph_capturing() && !no_inplace_conv && (*cache)[0].has_value() &&
-            (*cache)[0].value().shape() == new_conv.shape()) {
-            // Graph capture: write the rolling conv window into the persistent
-            // conv buffer in place.
-            (*cache)[0] = inplace_write((*cache)[0].value(), new_conv);
+        if (gdn_dbuf && (*cache)[0].has_value()) {
+            // Write the new rolling window into the (pos+1)&1 slot.
+            (*cache)[0] = mx::slice_update((*cache)[0].value(),
+                                           mx::expand_dims(new_conv, 0), widx, {0});
         } else {
             (*cache)[0] = new_conv;
         }
@@ -532,18 +574,34 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
 
         // GDN decode step via the fused HIP kernel (gated_delta_update).
         // MLX_GDN_NO_FUSED=1 falls back to the inline mx::compile recurrence.
-        auto ssm_state = (*cache)[1].has_value() ? (*cache)[1].value()
-                           : mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
+        mx::array ssm_state(0.0f);
+        if (gdn_dbuf && (*cache)[1].has_value()) {
+            ssm_state = mx::squeeze(
+                mx::slice((*cache)[1].value(), ridx, {0},
+                          {1, B, num_v_heads_, head_v_dim_, head_k_dim_}), 0);
+        } else if ((*cache)[1].has_value()) {
+            ssm_state = (*cache)[1].value();
+        } else {
+            ssm_state = mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
+        }
 
         static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
         if (use_fused_gdn) {
-            // Graph capture: write the new SSM state in place into the persistent buffer.
+            // Double-buffer mode accumulates via the device-indexed slice_update
+            // below, so the kernel writes a fresh output (no in-place). Outside
+            // double-buffer mode, keep the in-place write under graph capture.
             static const bool no_inplace = std::getenv("MLX_GRAPH_NO_INPLACE") != nullptr;
-            bool inplace_state = mlx_lm::graph_capturing() && !no_inplace && (*cache)[1].has_value();
+            bool inplace_state = !gdn_dbuf && mlx_lm::graph_capturing() &&
+                                 !no_inplace && (*cache)[1].has_value();
             auto [o, ns] = gated_delta_update(
                 q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state,
                 std::nullopt, inplace_state);
-            (*cache)[1] = ns;
+            if (gdn_dbuf && (*cache)[1].has_value()) {
+                (*cache)[1] = mx::slice_update((*cache)[1].value(),
+                                               mx::expand_dims(ns, 0), widx, {0});
+            } else {
+                (*cache)[1] = ns;
+            }
             auto normalized = norm_(o, z);
             return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
         }

@@ -84,10 +84,16 @@ mx::array SwitchLinear::operator()(
     auto* qi = QuantizedWeightRegistry::instance().find(&weight_);
 
     mx::array result(0.0f);
+    // Explicit lhs_indices forces right_sorted_=false in gather_qmm
+    // (right_sorted_ = sorted_indices && !lhs_indices), which disables the
+    // expert-batched prefill kernel. Pass nullopt when sorting so it's reachable.
+    std::optional<mx::array> lhs =
+        sorted_indices ? std::nullopt
+                       : std::optional<mx::array>(default_lhs_indices(x));
     if (qi) {
         result = mx::gather_qmm(
             x, weight_, qi->scales, qi->biases,
-            /*lhs_indices=*/std::optional<mx::array>(default_lhs_indices(x)),
+            /*lhs_indices=*/lhs,
             /*rhs_indices=*/std::optional<mx::array>(indices),
             /*transpose=*/true,
             /*group_size=*/qi->group_size,
@@ -197,7 +203,11 @@ mx::array SwitchGLU::operator()(
     // Expand dims for gather_mm: add [-2, -3]
     auto x_expanded = mx::expand_dims(mx::expand_dims(x, -2), -3);
 
-    bool do_sort = (indices.size() >= 64);
+    static const int sort_min = []() {
+        const char* e = std::getenv("MLX_MOE_SORT_MIN");
+        return e ? std::atoi(e) : 64;
+    }();
+    bool do_sort = (static_cast<int>(indices.size()) >= sort_min);
 
     mx::array work_x = x_expanded;
     mx::array idx = indices;

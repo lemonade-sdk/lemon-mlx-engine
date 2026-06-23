@@ -14,21 +14,27 @@
 #include <sstream>
 #include <iostream>
 
-// ROCm arena/graph support symbols (ROCm build only).
 #if defined(MLX_BUILD_ROCM)
+// ROCm arena + HIP-graph wrappers (defined in mlx/backend/rocm/eval.cpp; declared
+// here to avoid pulling HIP headers into engine code).
 namespace mlx::core {
-  bool gpu_arena_begin(size_t capacity);
-  void gpu_arena_reset();
-  void gpu_arena_end();
-  size_t gpu_arena_used();
-  bool gpu_arena_active();
-  bool gpu_graph_begin_capture();
-  bool gpu_graph_end_capture();
-  bool gpu_graph_replay();
-  bool gpu_graph_replay_async();
-  void gpu_graph_reset();
-  bool gpu_graph_available();
-}
+bool gpu_arena_begin(size_t capacity);
+void gpu_arena_reset();
+void gpu_arena_reset_to(size_t byte_mark, size_t desc_mark);
+void gpu_arena_set_paused(bool p);
+size_t gpu_arena_desc_used();
+void gpu_arena_end();
+size_t gpu_arena_used();
+bool gpu_arena_active();
+bool gpu_graph_begin_capture();
+bool gpu_graph_end_capture();
+bool gpu_graph_replay();
+bool gpu_graph_replay_async();
+void gpu_graph_reset();
+bool gpu_graph_available();
+void gpu_kv_pos_set(array& pos, int v);
+void gpu_set_graph_decode_mode(bool v);
+} // namespace mlx::core
 #endif
 
 namespace mlx_lm {
@@ -335,91 +341,24 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     auto batched = add_batch_dim(previous);
 
 #if defined(MLX_BUILD_ROCM)
-    // HIP graph ceiling benchmark (opt-in via MLX_DECODE_GRAPH_BENCH).
-    {
-        static const bool g_bench = std::getenv("MLX_DECODE_GRAPH_BENCH") != nullptr;
-        static int g_bench_step = 0;
-        if (g_bench && ++g_bench_step == 8) {
-            namespace gpu = mlx::core;
-            auto* cache_ptr = cache_.empty() ? nullptr : &cache_;
-            auto* state_ptr = state_.has_value() ? &state_.value() : nullptr;
-
-            // Eager reference step.
-            std::cerr << "[graph-bench] eager ref step..." << std::endl;
-            auto e0 = std::chrono::steady_clock::now();
-            { auto r = context_.call_fn(batched, cache_ptr, state_ptr); mx::eval(r.logits); }
-            auto e1 = std::chrono::steady_clock::now();
-            double eager_ms = std::chrono::duration<double, std::milli>(e1 - e0).count();
-
-            // Arena is opt-in for comparison only.
-            bool use_arena = std::getenv("MLX_DECODE_GRAPH_ARENA") != nullptr;
-            if (use_arena) {
-                std::cerr << "[graph-bench] arena_begin (1 GB)..." << std::endl;
-                if (!gpu::gpu_arena_begin(size_t(1) << 30)) {
-                    std::cerr << "[graph-bench] arena_begin FAILED" << std::endl;
-                    std::_Exit(1);
-                }
-            } else {
-                std::cerr << "[graph-bench] capturing with normal allocator (no arena)" << std::endl;
-            }
-            // Pin the pre-capture cache state arrays so replay addresses stay valid.
-            std::vector<KVCache> bench_pinned_cache = cache_;
-
-            if (std::getenv("MLX_GRAPH_EXT_POS")) {
-                mlx_lm::set_graph_external_pos(true);
-                mlx_lm::set_graph_decode_pos(0);
-            }
-            // Capture one step.
-            std::cerr << "[graph-bench] capturing step..." << std::endl;
-            gpu::gpu_graph_begin_capture();
-            auto _cap_t0 = std::chrono::steady_clock::now();
-            auto rc = context_.call_fn(batched, cache_ptr, state_ptr);
-            auto _cap_t1 = std::chrono::steady_clock::now();
-            mx::eval(rc.logits);
-            auto _cap_t2 = std::chrono::steady_clock::now();
-            std::cerr << "[graph-bench] in-capture call_fn="
-                      << std::chrono::duration<double,std::milli>(_cap_t1-_cap_t0).count()
-                      << "ms eval(logits)="
-                      << std::chrono::duration<double,std::milli>(_cap_t2-_cap_t1).count()
-                      << "ms" << std::endl;
-            bool ok = gpu::gpu_graph_end_capture();
-            std::cerr << "[graph-bench] capture ok=" << ok;
-            if (use_arena)
-                std::cerr << " arena_used=" << (gpu::gpu_arena_used() / 1.0e6) << " MB";
-            std::cerr << std::endl;
-            if (ok) {
-                gpu::gpu_graph_replay(); // warm
-                const int M = 50;
-                auto t0 = std::chrono::steady_clock::now();
-                for (int i = 0; i < M; i++) gpu::gpu_graph_replay();
-                auto t1 = std::chrono::steady_clock::now();
-                double rep_ms = std::chrono::duration<double, std::milli>(t1 - t0).count() / M;
-                std::cerr << "[graph-bench] eager step  = " << eager_ms << " ms ("
-                          << (1000.0 / eager_ms) << " tok/s)\n"
-                          << "[graph-bench] graph replay = " << rep_ms << " ms ("
-                          << (1000.0 / rep_ms) << " tok/s)  speedup "
-                          << (eager_ms / rep_ms) << "x" << std::endl;
-            }
-            gpu::gpu_graph_reset();
-            if (use_arena) gpu::gpu_arena_end();
-            std::_Exit(ok ? 0 : 1);
-        }
-    }
-#endif
-
-    // HIP-graph decode (ROCm): capture one device-position decode step, replay per token.
-#if defined(MLX_BUILD_ROCM)
+    // HIP-graph decode (capture-once): warm up eagerly, capture ONE device-position
+    // decode step, then per token advance the device pos + write the new input token
+    // into a fixed-address buffer and replay the SAME graph. No per-token re-capture
+    // (which deadlocks on the model's mid-forward host reads) and no re-instantiate.
     {
         static const bool g_graph = graph_decode_enabled();
-        // Decode-only (L==1), greedy decode only (no logit processor).
         int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
         if (g_graph && Lstep == 1 && !cache_.empty() && !processor_.has_value()) {
             namespace gpu = mlx::core;
-            static const bool g_dbg = std::getenv("MLX_GRAPH_DEBUG") != nullptr;
             static bool g_init = false;
             static int g_warm = 0;
             static bool g_captured = false;
-            static const int kWarm = 6;
+            static size_t g_arena_mark = 0;
+            static size_t g_arena_desc_mark = 0;
+            static const int kWarm = []{
+                const char* e = std::getenv("MLX_GRAPH_WARM");
+                return e ? std::atoi(e) : 6;
+            }();
             static mx::array g_input = mx::zeros({1, 1}, mx::int32);
             static mx::array g_logits = mx::zeros({1}, mx::float32);
 
@@ -431,16 +370,16 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 for (auto& c : cache_) if (!c.as_mamba()) return c.offset();
                 return 0;
             };
-            // Write the input token id into the fixed g_input buffer via a GPU op.
+            // Write the input token id into the fixed g_input buffer IN PLACE via a
+            // raw kernel — slice_update would reallocate g_input to a new address,
+            // but the captured graph reads g_input's baked address, so an in-place
+            // write is required for replays to see each new token.
             auto write_token = [&](const mx::array& tok) {
-                auto t = mx::astype(mx::reshape(tok, mx::Shape{}), g_input.dtype());
-                g_input = mx::slice_update(
-                    g_input, mx::broadcast_to(t, g_input.shape()),
-                    mx::Shape(g_input.ndim(), 0), g_input.shape());
-                mx::eval(g_input);
+                mx::array t = mx::reshape(tok, mx::Shape{1});
+                mx::eval(t);
+                gpu::gpu_kv_pos_set(g_input, t.item<int>());
             };
-            // EXPERIMENTAL / opt-in (MLX_DECODE_GRAPH); not correct past the first
-            // few replays on this hardware. See HIP_KV_FINDINGS.md.
+
             if (!g_init) {
                 mlx_lm::set_graph_external_pos(true);
                 g_input = mx::zeros({1, 1}, batched.tokens.dtype());
@@ -450,7 +389,7 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 
             if (!g_captured) {
                 if (++g_warm <= kWarm) {
-                    // Eager graph-mode warmup: populates buffers and JITs kernels.
+                    // Eager graph-mode warmup: populate buffers + JIT kernels.
                     mlx_lm::set_graph_decode_pos(trunk_pos());
                     auto r = context_.call_fn(batched, cache_ptr, state_ptr);
                     mx::eval(r.logits);
@@ -461,71 +400,131 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
                 int pos = trunk_pos();
                 mlx_lm::set_graph_decode_pos(pos);
                 write_token(batched.tokens);
+                // Force the GatedDeltaNet recurrent state (conv window + SSM state)
+                // to CONTIGUOUS, materialized, pool-backed buffers BEFORE capture.
+                // Warmup leaves the conv state as a non-contiguous slice view; an
+                // in-place custom-kernel write whose output aliases a non-contiguous
+                // input reads a copy but writes the original (mismatch) → the state
+                // drifts across replays. Making them contiguous makes the in-place
+                // write a true read-modify-write on a stable address.
+                for (auto& c : cache_) {
+                    if (auto* m = c.as_mamba()) {
+                        for (int i = 0; i < 2; ++i) {
+                            if ((*m)[i].has_value()) {
+                                auto cont = mx::contiguous((*m)[i].value());
+                                mx::eval(cont);  // materialize NOW (arena inactive =>
+                                                 // pool buffer with a stable address)
+                                (*m)[i] = cont;
+                            }
+                        }
+                    }
+                }
                 mx::synchronize(generation_stream());
-                if (g_dbg) std::cerr << "[graph] begin_capture pos=" << pos << std::endl;
+                // Activate the DecodeArena so the captured forward's buffers get
+                // deterministic, stable addresses (a bump allocator that hands back
+                // identical pointers each reset). Without this the buffers come from
+                // hipMallocAsync at addresses the pool recycles between replays, so
+                // the captured graph writes to stale/aliased memory (frozen output).
+                static const bool g_use_arena = std::getenv("MLX_NO_ARENA") == nullptr;
+                if (g_use_arena) {
+                    if (!gpu::gpu_arena_active())
+                        gpu::gpu_arena_begin(size_t(1) << 30);
+                    gpu::gpu_arena_reset();
+                }
                 mlx_lm::set_graph_capturing(true);
                 gpu::gpu_graph_begin_capture();
                 auto rc = context_.call_fn(
                     LMInput::Text(g_input, batched.mask), cache_ptr, state_ptr);
-                mx::eval(rc.logits);
+                // Force a dedicated logits output buffer as the graph's LAST op:
+                // rc.logits's buffer may be donated/aliased to an intermediate that
+                // gets reused, so the graph's final write doesn't land where the
+                // engine reads. mx::copy emits a real kernel into a clean buffer that
+                // g_logits owns and that the replay re-writes every token.
+                auto logits_out = mx::contiguous(mx::copy(rc.logits));
+                // The GatedDeltaNet recurrent-state writes ((*cache)[i] =
+                // slice_update(...)) do NOT feed the logits, so evaluating only
+                // logits_out would leave them out of the captured graph — the
+                // state buffer would then stay frozen at capture values on every
+                // replay (decode reverts to the warmup state). Evaluate the
+                // state arrays IN THE SAME eval so their in-place writes are
+                // recorded into the graph and re-execute on replay (mirroring the
+                // side-effecting KV write).
+                std::vector<mx::array> capture_eval = {logits_out};
+                for (auto& c : cache_) {
+                    if (auto* m = c.as_mamba()) {
+                        for (int i = 0; i < 2; ++i)
+                            if ((*m)[i].has_value())
+                                capture_eval.push_back((*m)[i].value());
+                    }
+                }
+                mx::eval(capture_eval);
                 bool ok = gpu::gpu_graph_end_capture();
                 mlx_lm::set_graph_capturing(false);
-                if (g_dbg) std::cerr << "[graph] end_capture ok=" << ok << std::endl;
                 if (ok) {
-                    g_logits = rc.logits;
+                    g_logits = logits_out;
                     state_ = rc.state;
                     g_captured = true;
+                    // Mark = arena byte+descriptor offset after the captured graph's
+                    // buffers. Each replay rewinds here so per-token sampling reuses
+                    // [mark, …) while the graph region [0, mark) is never overwritten.
+                    g_arena_mark = gpu::gpu_arena_used();
+                    g_arena_desc_mark = gpu::gpu_arena_desc_used();
+                    // Pause the arena: the captured graph keeps its arena buffers
+                    // (backing stays valid at baked addresses), but all further
+                    // allocations (per-token sampling + any replay-time temporaries)
+                    // route to the POOL — so sampling can never clobber the graph's
+                    // arena buffers and corrupt the next replay.
+                    gpu::gpu_arena_set_paused(true);
                     gpu::gpu_graph_replay();  // capture only records — execute once
-                    return convert_to_token(g_logits);
+                    // Materialize the token to a detached host constant: g_logits is
+                    // the captured graph's output buffer (overwritten by the next
+                    // replay), so the token must not stay lazily bound to it.
+                    auto tok = convert_to_token(g_logits);
+                    mx::eval(tok);
+                    return mx::reshape(mx::array(tok.item<int>(), mx::int32),
+                                       tok.shape());
                 }
-                gpu::gpu_graph_reset();  // capture failed: fall through to eager path
+                gpu::gpu_graph_reset();  // capture failed: fall through to eager
             } else {
-                // Replay: advance pos, write token, replay, sample.
+                // Replay: rewind the arena to the post-capture mark (BOTH byte offset
+                // and descriptor index) so the graph's buffers/descriptors [0, mark)
+                // stay intact and only per-token sampling reuses [mark, …).
+                // Arena is paused after capture; sampling uses the pool, so no
+                // per-replay arena rewind is needed (and reset_to corrupted the
+                // next replay). g_arena_mark/desc kept for reference only.
+                (void)g_arena_mark; (void)g_arena_desc_mark;
                 mlx_lm::advance_graph_decode_pos(1);
                 write_token(batched.tokens);
-                gpu::gpu_graph_replay();
-                return convert_to_token(g_logits);
+                // The pos/token writes and the replay all launch on the SAME
+                // generation stream (launch_kernel submits immediately), so the
+                // graph reads the fresh values in stream order — no drain needed.
+                // Async replay: the captured graph launches on the generation
+                // stream and the following convert_to_token + eval run on the
+                // same stream, so they order after the graph without a separate
+                // drain. The eval below is the single per-token sync.
+                gpu::gpu_graph_replay_async();
+                // Materialize the token to a detached host constant before the next
+                // replay overwrites g_logits and before the next arena rewind reuses
+                // the sampling region (a lazy token would dangle).
+                auto rtok = convert_to_token(g_logits);
+                mx::eval(rtok);
+                return mx::reshape(mx::array(rtok.item<int>(), mx::int32),
+                                   rtok.shape());
             }
         }
     }
 #endif
 
-    // HIP Graph capture state machine (ROCm only).
+    // Normal execution path (used by Warmup, Disabled, and fallback).
+    // Decode-mode (single-token forward) tells the ROCm backend to keep the whole
+    // forward in one graph and refresh it via ExecUpdate (one launch/token). Stays
+    // set through the lazy token eval that happens after this returns.
 #if defined(MLX_BUILD_ROCM)
-    namespace gpu = mlx::core;
-
-    switch (graph_state_) {
-      case GraphState::Warmup:
-        warmup_steps_++;
-        if (warmup_steps_ >= kGraphWarmupSteps) {
-          graph_state_ = GraphState::Profiling;
-        }
-        break;
-
-      case GraphState::Profiling: {
-        graph_state_ = GraphState::Disabled;
-        break;
-      }
-
-      case GraphState::Capturing: {
-        gpu::gpu_arena_end();
-        graph_state_ = GraphState::Disabled;
-        break;
-      }
-
-      case GraphState::Replaying: {
-        gpu::gpu_graph_reset();
-        gpu::gpu_arena_end();
-        graph_state_ = GraphState::Disabled;
-        break;
-      }
-
-      case GraphState::Disabled:
-        break;
+    {
+        int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
+        mlx::core::gpu_set_graph_decode_mode(Lstep == 1);
     }
 #endif
-
-    // Normal execution path (used by Warmup, Disabled, and fallback)
     auto result = context_.call_fn(
         batched,
         cache_.empty() ? nullptr : &cache_,
@@ -542,6 +541,11 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 
 void TokenIterator::prepare(const LMInput& input, int window_size) {
     StreamGuard sg(generation_stream());
+#if defined(MLX_BUILD_ROCM)
+    // Prefill: large multi-token intermediates — keep the per-graph caps active
+    // (decode-mode off) so peak graph memory stays bounded.
+    mlx::core::gpu_set_graph_decode_mode(false);
+#endif
 
     if (processor_.has_value()) {
         processor_->prompt(input.text.tokens);
@@ -1012,7 +1016,8 @@ std::optional<int> TokenIterator::next() {
     token_count_++;
     mx::eval(previous_y.tokens);
     measure_prefill_boundary_();
-    return previous_y.tokens.item<int32_t>();
+    int32_t tid = previous_y.tokens.item<int32_t>();
+    return tid;
 }
 
 // ---------------------------------------------------------------------------

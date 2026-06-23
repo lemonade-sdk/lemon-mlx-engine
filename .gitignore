@@ -5,6 +5,11 @@ cmake-build-*/
 out/
 .cache/
 chroma_data/
+release/
+
+# Profiling
+.rocprofv3/
+*.rocprofv3/
 
 # IDE
 .idea/
