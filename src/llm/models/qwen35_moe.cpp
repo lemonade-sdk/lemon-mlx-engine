@@ -476,6 +476,11 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // keep conv+SSM state as a [2, …] ping-pong buffer: read slot pos&1, write
     // slot (pos+1)&1 via dynamic slice/slice_update. Each replay's device pos
     // advances, so it reads the previous replay's write and accumulates.
+    // Graph-decode recurrent state uses a device-parity double buffer (read
+    // slot pos&1, write (pos+1)&1) so each replay reads the previous replay's
+    // write and accumulates, like the KV cache. A single-buffer in-place RMW
+    // aliases the same address for read and write within one captured step,
+    // which wedges capture — hence the ping-pong.
     bool gdn_dbuf = mlx_lm::graph_external_pos() && S == 1 && cache;
     mx::array ridx(0), widx(0);
     if (gdn_dbuf) {
