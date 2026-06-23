@@ -33,6 +33,7 @@ bool gpu_graph_replay_async();
 void gpu_graph_reset();
 bool gpu_graph_available();
 void gpu_kv_pos_set(array& pos, int v);
+void gpu_set_graph_decode_mode(bool v);
 } // namespace mlx::core
 #endif
 
@@ -514,7 +515,16 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     }
 #endif
 
-    // Normal execution path (used by Warmup, Disabled, and fallback)
+    // Normal execution path (used by Warmup, Disabled, and fallback).
+    // Decode-mode (single-token forward) tells the ROCm backend to keep the whole
+    // forward in one graph and refresh it via ExecUpdate (one launch/token). Stays
+    // set through the lazy token eval that happens after this returns.
+#if defined(MLX_BUILD_ROCM)
+    {
+        int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
+        mlx::core::gpu_set_graph_decode_mode(Lstep == 1);
+    }
+#endif
     auto result = context_.call_fn(
         batched,
         cache_.empty() ? nullptr : &cache_,
@@ -531,6 +541,11 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 
 void TokenIterator::prepare(const LMInput& input, int window_size) {
     StreamGuard sg(generation_stream());
+#if defined(MLX_BUILD_ROCM)
+    // Prefill: large multi-token intermediates — keep the per-graph caps active
+    // (decode-mode off) so peak graph memory stays bounded.
+    mlx::core::gpu_set_graph_decode_mode(false);
+#endif
 
     if (processor_.has_value()) {
         processor_->prompt(input.text.tokens);
