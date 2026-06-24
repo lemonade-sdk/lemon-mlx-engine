@@ -12,7 +12,6 @@
 #include <mlx-lm/llm/models/qwen35_moe.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/common/attention_utils.h>
-#include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <algorithm>
@@ -278,94 +277,19 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
         {0, 2, 1, 3});
     values = mx::transpose(mx::reshape(values, {B, L, num_kv_heads_, -1}), {0, 2, 1, 3});
 
-    // RoPE with partial rotary factor; device-position RoPE in graph-decode mode.
+    // RoPE with partial rotary factor.
     int offset = cache ? cache->offset() : 0;
-    static const bool g_devpos_env = std::getenv("MLX_DECODE_DEVICE_POS") != nullptr;
-    // Graph-decode mode is decode-only (single token).
-    bool gmode = (mlx_lm::graph_external_pos() || g_devpos_env) && L == 1;
-    if (gmode) {
-        mx::array pos = mlx_lm::graph_external_pos()
-            ? mlx_lm::graph_decode_pos()
-            : mx::array({offset}, {1}, mx::int32);
-        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, pos);
-        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, pos);
-    } else {
-        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
-        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
-    }
+    queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
+    keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
 
     // KV cache update + SDPA.
     mx::array output(0.0f);
-    if (gmode && L == 1 && cache && cache->state().size() == 2) {
-        // In-graph device-position decode: write token at slot `pos`, attend over
-        // the whole buffer with a length mask.
-        mx::array pos = mlx_lm::graph_external_pos()
-            ? mlx_lm::graph_decode_pos()
-            : mx::array({cache->offset()}, {1}, mx::int32);
-        auto kv = cache->update_at_pos(keys, values, pos);
-        const auto& full_k = kv.first;
-        const auto& full_v = kv.second;
-        int CAP = full_k.shape(2);
-        auto cols = mx::arange(0, CAP, mx::int32);
-        auto addmask = mx::astype(
-            mx::reshape(mx::where(mx::less_equal(cols, pos), mx::array(0.0f),
-                                  mx::array(-std::numeric_limits<float>::infinity())),
-                        {1, 1, 1, CAP}),
-            x.dtype());
-        output = sdpa(queries, full_k, full_v, scale_, AttentionMask::from_array(addmask));
-    } else if (gmode && L == 1 && cache) {
-        // Write-free graph-decode forward: concat the current token, attend with
-        // a device-position mask.
-        auto st = cache->state();
-        if (st.size() < 2) {
-            cache->update(keys, values);
-            auto st2 = cache->state();
-            const auto& fk = st2[0];
-            const auto& fv = st2[1];
-            int CAP2 = fk.shape(2);
-            auto cols2 = mx::arange(0, CAP2, mx::int32);
-            auto pos2 = mx::array({cache->offset() - 1}, {1}, mx::int32);
-            auto m2 = mx::astype(
-                mx::reshape(mx::where(mx::less_equal(cols2, pos2), mx::array(0.0f),
-                                      mx::array(-std::numeric_limits<float>::infinity())),
-                            {1, 1, 1, CAP2}),
-                x.dtype());
-            output = sdpa(queries, fk, fv, scale_, AttentionMask::from_array(m2));
-            output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
-            static auto compiled_gate0 = mx::compile(
-                [](const std::vector<mx::array>& in) -> std::vector<mx::array> {
-                    return {mx::multiply(in[0], mx::sigmoid(in[1]))}; },
-                /*shapeless=*/true);
-            return linear_fwd(compiled_gate0({output, gate})[0], o_proj_weight_,
-                              o_proj_bias_);
-        }
-        const auto& past_k = st[0];
-        const auto& past_v = st[1];
-        int CAP = past_k.shape(2);
-        auto k_all = mx::concatenate({past_k, keys}, 2);    // [B,H,CAP+1,D]
-        auto v_all = mx::concatenate({past_v, values}, 2);
-        auto cols = mx::arange(0, CAP + 1, mx::int32);
-        mx::array pos = mlx_lm::graph_external_pos()
-            ? mlx_lm::graph_decode_pos()
-            : mx::array({cache->offset()}, {1}, mx::int32);  // N past tokens
-        // valid = past index in [0,N)  OR  the appended current token (last slot)
-        auto valid = mx::logical_or(mx::less(cols, pos),
-                                    mx::equal(cols, mx::array(CAP, mx::int32)));
-        auto addmask = mx::astype(
-            mx::reshape(mx::where(valid, mx::array(0.0f),
-                                  mx::array(-std::numeric_limits<float>::infinity())),
-                        {1, 1, 1, CAP + 1}),
-            x.dtype());
-        output = sdpa(queries, k_all, v_all, scale_, AttentionMask::from_array(addmask));
-        cache->update(keys, values);
-    } else {
-        if (cache) {
-            auto [k, v] = cache->update(keys, values);
-            keys = k;
-            values = v;
-        }
-        output = sdpa(queries, keys, values, scale_, mask);
+    if (cache) {
+        auto [k, v] = cache->update(keys, values);
+        keys = k;
+        values = v;
     }
+    output = sdpa(queries, keys, values, scale_, mask);
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
     // Swift: oProj(sigmoidMultiply(output, gate))
@@ -469,51 +393,8 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // Conv1d processing.
     auto dtype = inputs.dtype();
 
-    // Device-position double-buffered recurrent state for capture-once HIP-graph
-    // decode. The captured graph is replayed many times; an in-place RMW at a
-    // fixed address does NOT accumulate across replays (only device-position-
-    // indexed writes do, same as the KV cache). So in graph/device-pos mode we
-    // keep conv+SSM state as a [2, …] ping-pong buffer: read slot pos&1, write
-    // slot (pos+1)&1 via dynamic slice/slice_update. Each replay's device pos
-    // advances, so it reads the previous replay's write and accumulates.
-    // Graph-decode recurrent state uses a device-parity double buffer (read
-    // slot pos&1, write (pos+1)&1) so each replay reads the previous replay's
-    // write and accumulates, like the KV cache. A single-buffer in-place RMW
-    // aliases the same address for read and write within one captured step,
-    // which wedges capture — hence the ping-pong.
-    bool gdn_dbuf = mlx_lm::graph_external_pos() && S == 1 && cache;
-    mx::array ridx(0), widx(0);
-    if (gdn_dbuf) {
-        auto pos2 = mlx_lm::graph_decode_pos();
-        ridx = mx::remainder(pos2, mx::array(2, mx::int32));
-        widx = mx::remainder(mx::add(pos2, mx::array(1, mx::int32)),
-                             mx::array(2, mx::int32));
-        // Promote single-buffer state (from prefill) to a [2, …] double buffer,
-        // both slots seeded with the current state so the first read is correct
-        // regardless of parity.
-        for (int i = 0; i < 2; ++i) {
-            if ((*cache)[i].has_value() && (*cache)[i].value().shape(0) != 2) {
-                auto s = mx::expand_dims((*cache)[i].value(), 0);
-                (*cache)[i] = mx::contiguous(mx::concatenate({s, s}, 0));
-            }
-        }
-        // Outside graph capture, snapshot the parity to concrete values now.
-        // The lazy index aliases the shared decode-pos buffer; the async
-        // pipeline would otherwise evaluate it AFTER the engine advances the
-        // pos for the next step, reading the wrong slot. During capture the
-        // index must stay lazy so the replayed graph re-derives it on device
-        // (and thus ping-pongs as the pos advances).
-        if (!mlx_lm::graph_capturing()) {
-            mx::eval(ridx, widx);
-        }
-    }
-
     mx::array conv_state(0.0f);
-    if (gdn_dbuf && (*cache)[0].has_value()) {
-        conv_state = mx::squeeze(
-            mx::slice((*cache)[0].value(), ridx, {0},
-                      {1, B, conv_kernel_size_ - 1, conv_dim_}), 0);
-    } else if (cache && (*cache)[0].has_value()) {
+    if (cache && (*cache)[0].has_value()) {
         conv_state = (*cache)[0].value();
     } else {
         conv_state = mx::zeros({B, conv_kernel_size_ - 1, conv_dim_}, dtype);
@@ -523,37 +404,13 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         qkv = mx::where(mx::expand_dims(*mask, -1), qkv, mx::zeros_like(qkv));
     }
 
-    auto conv_input = mx::concatenate({conv_state, qkv}, 1);
-
-    // Save conv state for next step
-    if (cache) {
-        int start = conv_input.shape(1) - (conv_kernel_size_ - 1);
-        auto new_conv = mx::slice(conv_input, {0, start, 0}, {B, conv_input.shape(1), conv_dim_});
-        if (gdn_dbuf && (*cache)[0].has_value()) {
-            // Write the new rolling window into the (pos+1)&1 slot.
-            (*cache)[0] = mx::slice_update((*cache)[0].value(),
-                                           mx::expand_dims(new_conv, 0), widx, {0});
-        } else {
-            (*cache)[0] = new_conv;
-        }
-    }
-
-    // T=1 decode fast path
-    if (S == 1 && cache && (*cache)[0].has_value() && conv_input.shape(1) == conv_kernel_size_) {
-        // Fused conv1d + silu; build the reshaped conv weight once and reuse.
-        if (!conv1d_w_dec_.has_value()) {
-            conv1d_w_dec_ = mx::reshape(
-                mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
-                {1, conv_kernel_size_, conv_dim_});
-        }
-        const mx::array& w = *conv1d_w_dec_;
-        static auto compiled_conv_silu = mx::compile(
-            [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
-                auto dot = mx::sum(mx::multiply(inputs[0], inputs[1]), 1, true);
-                return {mx::multiply(dot, mx::sigmoid(dot))};
-            },
-            /*shapeless=*/true);
-        auto conv_out = compiled_conv_silu({conv_input, w})[0];
+    // T=1 decode fast path: one fused conv-step kernel replaces the
+    // concatenate(state,qkv) + slice(new_state) + conv1d + silu op chain,
+    // eliminating their copy_gg/copy_g kernels.
+    if (S == 1 && cache) {
+        auto [conv_out, new_state] =
+            gdn_conv_step(conv_state, qkv, conv1d_weight_);
+        (*cache)[0] = new_state;
 
         // Split into q, k, v
         auto q_out = mx::reshape(mx::slice(conv_out, {0, 0, 0}, {B, 1, key_dim_}),
@@ -575,11 +432,7 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         // GDN decode step via the fused HIP kernel (gated_delta_update).
         // MLX_GDN_NO_FUSED=1 falls back to the inline mx::compile recurrence.
         mx::array ssm_state(0.0f);
-        if (gdn_dbuf && (*cache)[1].has_value()) {
-            ssm_state = mx::squeeze(
-                mx::slice((*cache)[1].value(), ridx, {0},
-                          {1, B, num_v_heads_, head_v_dim_, head_k_dim_}), 0);
-        } else if ((*cache)[1].has_value()) {
+        if ((*cache)[1].has_value()) {
             ssm_state = (*cache)[1].value();
         } else {
             ssm_state = mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
@@ -587,21 +440,10 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
 
         static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
         if (use_fused_gdn) {
-            // Double-buffer mode accumulates via the device-indexed slice_update
-            // below, so the kernel writes a fresh output (no in-place). Outside
-            // double-buffer mode, keep the in-place write under graph capture.
-            static const bool no_inplace = std::getenv("MLX_GRAPH_NO_INPLACE") != nullptr;
-            bool inplace_state = !gdn_dbuf && mlx_lm::graph_capturing() &&
-                                 !no_inplace && (*cache)[1].has_value();
             auto [o, ns] = gated_delta_update(
                 q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state,
-                std::nullopt, inplace_state);
-            if (gdn_dbuf && (*cache)[1].has_value()) {
-                (*cache)[1] = mx::slice_update((*cache)[1].value(),
-                                               mx::expand_dims(ns, 0), widx, {0});
-            } else {
-                (*cache)[1] = ns;
-            }
+                std::nullopt, /*inplace=*/false);
+            (*cache)[1] = ns;
             auto normalized = norm_(o, z);
             return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
         }
@@ -663,7 +505,16 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
     }
 
-    // General path: T>1 prefill
+    // General path: T>1 prefill (also S==1 with no cache). Build the conv input
+    // window and save the trailing state here (the decode fast path above does
+    // this inside the fused kernel instead).
+    auto conv_input = mx::concatenate({conv_state, qkv}, 1);
+    if (cache) {
+        int start = conv_input.shape(1) - (conv_kernel_size_ - 1);
+        auto new_conv = mx::slice(conv_input, {0, start, 0},
+                                  {B, conv_input.shape(1), conv_dim_});
+        (*cache)[0] = new_conv;
+    }
     auto conv_out = mx::conv1d(conv_input, conv1d_weight_, 1, 0, 1, conv_dim_);
     conv_out = silu(conv_out);
 
@@ -781,26 +632,21 @@ mx::array Qwen35MoESparseMoeBlock::operator()(const mx::array& x) {
     auto router_logits = linear_fwd(x, gate_weight_);
 
     int k = top_k_;
-    int kth = router_logits.shape(-1) - k;
-    // argpartition on the logits selects the same top-k as on the softmax
-    // probabilities (softmax is monotonic), so we can avoid the full-256 softmax.
-    auto inds = mx::argpartition(router_logits, kth, -1);
-    inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
-
+    mx::array inds(0.0f);
     mx::array scores(0.0f);
     if (norm_topk_prob_) {
-        // The renormalized softmax over all experts, restricted to the top-k, is
-        // exactly the softmax over the top-k logits:
-        //   softmax_N(l)_i / sum_{j in topk} softmax_N(l)_j
-        //     = exp(l_i) / sum_{j in topk} exp(l_j) = softmax_k(l_topk)_i.
-        // So gather the k=8 selected logits and softmax over just those — this
-        // replaces a 256-wide softmax + a separate divide/sum renormalize with a
-        // single 8-wide softmax.
-        auto top_logits = mx::take_along_axis(router_logits, inds, -1);
-        scores = mx::softmax(top_logits, -1);
+        // Fused router: top-k of the logits + softmax over just those k in one
+        // kernel (renormalized softmax restricted to top-k == softmax over the
+        // top-k logits). Replaces argpartition(block_sort)+slice+take_along+softmax.
+        auto routed = moe_route(router_logits, k);
+        inds = routed.first;
+        scores = routed.second;
     } else {
         // Raw (un-renormalized) softmax weights: softmax over all experts first,
         // then gather the selected ones.
+        int kth = router_logits.shape(-1) - k;
+        inds = mx::argpartition(router_logits, kth, -1);
+        inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
         auto gates = mx::softmax(router_logits, -1);
         scores = mx::take_along_axis(gates, inds, -1);
     }
@@ -875,8 +721,9 @@ mx::array Qwen35MoEDecoderLayer::operator()(
         h = (*self_attn_)(normed, attention_mask, cache);
     }
 
-    auto r = mx::add(x, h);
-    auto post_normed = mx::fast::rms_norm(r, post_attention_layernorm_weight_, rms_norm_eps_);
+    // Fused residual-add + post-attention RMSNorm (one kernel; sum stays on-chip).
+    auto [r, post_normed] =
+        add_rms_norm(x, h, post_attention_layernorm_weight_, rms_norm_eps_);
 
     mx::array mlp_out(0.0f);
     if (use_moe_) {
@@ -1085,16 +932,9 @@ mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCa
 std::vector<KVCache> Qwen35MoEModel::new_cache_impl(const GenerateParameters& params) {
     std::vector<KVCache> caches;
     caches.reserve(config_.num_hidden_layers);
-    // Use a static, fixed-address KV buffer for graph decode or MLX_KV_STATIC;
-    // otherwise grow-by-doubling.
-    bool want_static =
-        std::getenv("MLX_KV_STATIC") != nullptr || mlx_lm::graph_decode_enabled();
-    int cap = (want_static && params.ctx_size > 0) ? params.ctx_size : 256;
-    int reserve = !want_static
-        ? 0
-        : (params.ctx_size > 0
-            ? 0
-            : (params.max_tokens.has_value() ? params.max_tokens.value() : 2048));
+    // Grow-by-doubling KV cache.
+    int cap = 256;
+    int reserve = 0;
     for (const auto& layer : model_.get_layers()) {
         if (layer.is_linear()) {
             caches.emplace_back(MambaCache{});

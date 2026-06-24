@@ -229,6 +229,127 @@ static mx::fast::CustomKernelFunction& get_inplace_copy_kernel() {
     return kernel;
 }
 
+// Fused GDN conv1d decode step: causal depthwise conv (KS taps) + silu, and the
+// state shift, in ONE kernel. Replaces concatenate(state,qkv)+slice+conv+silu,
+// eliminating their copy_gg/copy_g kernels. One thread per (batch, channel).
+//   conv_state [B,KS-1,CD], qkv [B,1,CD], weight [CD,1,KS]
+//   -> conv_out [B,1,CD] (silu'd), new_state [B,KS-1,CD]
+static const char* conv_step_hip_source = R"(
+    long c = (long)blockIdx.x * blockDim.x + threadIdx.x;   // channel
+    long bb = (long)blockIdx.y * blockDim.y + threadIdx.y;  // batch
+    if (c >= CD || bb >= B) return;
+    const InT* st = conv_state + bb * (KS - 1) * CD + c;
+    InT xq_raw = qkv[bb * CD + c];
+    float xq = static_cast<float>(xq_raw);
+    float acc = 0.0f;
+    for (int t = 0; t < KS - 1; ++t)
+        acc += static_cast<float>(st[(long)t * CD]) *
+               static_cast<float>(weight[c * KS + t]);
+    acc += xq * static_cast<float>(weight[c * KS + (KS - 1)]);
+    float sig = 1.0f / (1.0f + expf(-acc));
+    conv_out[bb * CD + c] = static_cast<InT>(acc * sig);
+    InT* ns = new_state + bb * (KS - 1) * CD + c;
+    for (int t = 0; t < KS - 2; ++t)
+        ns[(long)t * CD] = st[(long)(t + 1) * CD];
+    ns[(long)(KS - 2) * CD] = xq_raw;
+)";
+
+static mx::fast::CustomKernelFunction& get_conv_step_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "gdn_conv_step",
+        {"conv_state", "qkv", "weight"},
+        {"conv_out", "new_state"},
+        conv_step_hip_source);
+    return kernel;
+}
+
+// Fused residual-add + RMSNorm: sum = a + b ; normed = rmsnorm(sum) * weight.
+// Returns BOTH (sum for the next residual, normed for the next matmul) in one
+// kernel, eliminating the standalone add (binary_vv) and keeping the residual
+// on-chip. One wave (32 lanes) per row; reduces the hidden dim H via __shfl.
+static const char* add_rms_norm_hip_source = R"(
+    int r = blockIdx.y * blockDim.y + threadIdx.y;   // row
+    int lane = threadIdx.x;                            // 0..31
+    if (r >= N) return;
+    const InT* ar = a + (long)r * H;
+    const InT* br = b + (long)r * H;
+    InT* sr = sum_out + (long)r * H;
+    InT* nr = normed_out + (long)r * H;
+    float ss = 0.0f;
+    for (int h = lane; h < H; h += 32) {
+        float s = static_cast<float>(ar[h]) + static_cast<float>(br[h]);
+        sr[h] = static_cast<InT>(s);
+        ss += s * s;
+    }
+    for (int off = 16; off > 0; off >>= 1)
+        ss += __shfl_xor(ss, off);
+    float scale = rsqrtf(ss / (float)H + eps[0]);
+    for (int h = lane; h < H; h += 32) {
+        float s = static_cast<float>(sr[h]);
+        nr[h] = static_cast<InT>(s * scale * static_cast<float>(weight[h]));
+    }
+)";
+
+static mx::fast::CustomKernelFunction& get_add_rms_norm_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "add_rms_norm",
+        {"a", "b", "weight", "eps"},
+        {"sum_out", "normed_out"},
+        add_rms_norm_hip_source);
+    return kernel;
+}
+
+// Fused MoE router (norm_topk_prob): one warp per row finds the top-K of E
+// logits and softmaxes over just those K, in a single pass — replaces
+// argpartition(block_sort) + slice + take_along + softmax. Each lane owns
+// E/32 logits in registers; K rounds of warp __shfl argmax, masking the picked
+// one each round. Requires E % 32 == 0. indices: descending by logit; scores
+// aligned (order is irrelevant to the weighted-sum combine).
+static const char* moe_route_hip_source = R"(
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int lane = threadIdx.x;
+    if (row >= ROWS) return;
+    constexpr int PER = E / 32;
+    const InT* lg = logits + (long)row * E;
+    float v[PER];
+    #pragma unroll
+    for (int j = 0; j < PER; ++j) v[j] = static_cast<float>(lg[lane * PER + j]);
+    float topv[K];
+    for (int r = 0; r < K; ++r) {
+        float lmax = -1e30f; int lidx = -1;
+        #pragma unroll
+        for (int j = 0; j < PER; ++j)
+            if (v[j] > lmax) { lmax = v[j]; lidx = lane * PER + j; }
+        for (int off = 16; off > 0; off >>= 1) {
+            float om = __shfl_down(lmax, off);
+            int oi = __shfl_down(lidx, off);
+            if (om > lmax) { lmax = om; lidx = oi; }
+        }
+        lmax = __shfl(lmax, 0);
+        lidx = __shfl(lidx, 0);
+        topv[r] = lmax;
+        if (lane == 0) indices[(long)row * K + r] = (unsigned int)lidx;
+        if (lidx / PER == lane) v[lidx % PER] = -1e30f;
+    }
+    if (lane == 0) {
+        float mx = -1e30f;
+        #pragma unroll
+        for (int r = 0; r < K; ++r) if (topv[r] > mx) mx = topv[r];
+        float sum = 0.0f;
+        #pragma unroll
+        for (int r = 0; r < K; ++r) { topv[r] = expf(topv[r] - mx); sum += topv[r]; }
+        #pragma unroll
+        for (int r = 0; r < K; ++r)
+            scores[(long)row * K + r] = static_cast<InT>(topv[r] / sum);
+    }
+)";
+
+static mx::fast::CustomKernelFunction& get_moe_route_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "moe_route", {"logits"}, {"indices", "scores"}, moe_route_hip_source);
+    return kernel;
+}
+
 // ---------------------------------------------------------------------------
 // gatedDeltaKernel — dispatch the fused HIP kernel
 // ---------------------------------------------------------------------------
@@ -555,6 +676,93 @@ std::pair<mx::array, mx::array> gated_delta_update(
     auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
 
     return gated_delta_ops(q, k, v, g, beta, s, mask, inplace_state);
+}
+
+std::pair<mx::array, mx::array> gdn_conv_step(
+    const mx::array& conv_state,  // [B, KS-1, CD]
+    const mx::array& qkv,         // [B, 1, CD]
+    const mx::array& weight)      // [CD, 1, KS]
+{
+    int B = qkv.shape(0);
+    int CD = qkv.shape(2);
+    // Kernel-tap count from total size, NOT weight.shape(2): the loaded conv
+    // weight may carry K in a different axis (shape(2) can be 1). The flat
+    // layout is channel-major (element [c,k] at c*K+k) either way.
+    int KS = static_cast<int>(weight.size() / CD);
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    static const bool force_mxops = std::getenv("MLX_GDN_CONV_MXOPS") != nullptr;
+    if (!force_mxops) {
+        auto t = qkv.dtype();
+        auto results = get_conv_step_kernel()(
+            {conv_state, qkv, weight},
+            {{B, 1, CD}, {B, KS - 1, CD}},
+            {t, t},
+            {CD, B, 1},   // grid (total threads, Metal-style)
+            {256, 1, 1},  // threadgroup
+            {{"InT", t}, {"CD", CD}, {"KS", KS}, {"B", B}},
+            std::nullopt, true, {});
+        return {results[0], results[1]};
+    }
+#endif
+    // Reference path (mx ops): concatenate + depthwise conv + silu + state shift.
+    auto conv_input = mx::concatenate({conv_state, qkv}, 1);
+    auto w = mx::reshape(mx::transpose(mx::reshape(weight, {CD, KS})), {1, KS, CD});
+    auto dot = mx::sum(mx::multiply(conv_input, w), 1, true);
+    auto conv_out = mx::multiply(dot, mx::sigmoid(dot));
+    auto new_state = mx::slice(conv_input, {0, 1, 0}, {B, KS, CD});
+    return {conv_out, new_state};
+}
+
+std::pair<mx::array, mx::array> add_rms_norm(
+    const mx::array& a, const mx::array& b,
+    const mx::array& weight, float eps)
+{
+    int H = a.shape(-1);
+    int N = static_cast<int>(a.size() / H);
+    auto t = a.dtype();
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    static const bool force_mxops = std::getenv("MLX_FUSED_NORM_MXOPS") != nullptr;
+    if (!force_mxops) {
+        auto results = get_add_rms_norm_kernel()(
+            {a, b, weight, mx::array(eps)},
+            {a.shape(), a.shape()},
+            {t, t},
+            {32, N, 1},   // grid (total threads): one wave per row
+            {32, 1, 1},   // threadgroup
+            {{"InT", t}, {"H", H}, {"N", N}},
+            std::nullopt, true, {});
+        return {results[0], results[1]};
+    }
+#endif
+    auto s = mx::add(a, b);
+    return {s, mx::fast::rms_norm(s, weight, eps)};
+}
+
+std::pair<mx::array, mx::array> moe_route(const mx::array& logits, int k) {
+    int E = logits.shape(-1);
+    int rows = static_cast<int>(logits.size() / E);
+    auto t = logits.dtype();
+    auto out_shape = logits.shape();
+    out_shape.back() = k;
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    static const bool force_mxops = std::getenv("MLX_MOE_ROUTE_MXOPS") != nullptr;
+    if (!force_mxops && (E % 32) == 0 && k <= 16) {
+        auto res = get_moe_route_kernel()(
+            {logits},
+            {{rows, k}, {rows, k}},
+            {mlx::core::uint32, t},
+            {32, rows, 1},
+            {32, 1, 1},
+            {{"InT", t}, {"E", E}, {"K", k}, {"ROWS", rows}},
+            std::nullopt, true, {});
+        return {mx::reshape(res[0], out_shape), mx::reshape(res[1], out_shape)};
+    }
+#endif
+    int kth = E - k;
+    auto inds = mx::argpartition(logits, kth, -1);
+    inds = mx::slice(inds, {0, 0, kth}, logits.shape());
+    auto top = mx::take_along_axis(logits, inds, -1);
+    return {inds, mx::softmax(top, -1)};
 }
 
 // In-place write of src into dst's device buffer (same total element count).

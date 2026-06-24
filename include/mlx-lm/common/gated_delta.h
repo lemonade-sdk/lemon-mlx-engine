@@ -52,6 +52,32 @@ std::pair<mlx::core::array, mlx::core::array> gated_delta_update(
 mlx::core::array inplace_write(const mlx::core::array& dst,
                               const mlx::core::array& src);
 
+// Fused GDN conv1d decode step: causal depthwise conv (KS taps) + silu + state
+// shift in one kernel. conv_state [B,KS-1,CD], qkv [B,1,CD], weight [CD,1,KS].
+// Returns (conv_out [B,1,CD] silu'd, new_state [B,KS-1,CD]). Replaces the
+// concatenate+slice+conv+silu op chain (kills their copy kernels).
+std::pair<mlx::core::array, mlx::core::array> gdn_conv_step(
+    const mlx::core::array& conv_state,
+    const mlx::core::array& qkv,
+    const mlx::core::array& weight);
+
+// Fused residual-add + RMSNorm. Returns (sum = a+b, normed = rmsnorm(sum)*weight)
+// in one kernel — eliminates the standalone residual add and keeps the sum
+// on-chip for the norm. a,b: [..., H]; weight: [H].
+std::pair<mlx::core::array, mlx::core::array> add_rms_norm(
+    const mlx::core::array& a,
+    const mlx::core::array& b,
+    const mlx::core::array& weight,
+    float eps);
+
+// Fused MoE router (norm_topk_prob): top-k of the router logits + softmax over
+// just those k, in one kernel (replaces argpartition+slice+take_along+softmax).
+// Returns (indices [.., k] uint32, scores [.., k]). ROCm fast path needs
+// E % 32 == 0 and k <= 16; otherwise falls back to argpartition.
+std::pair<mlx::core::array, mlx::core::array> moe_route(
+    const mlx::core::array& logits,
+    int k);
+
 // Speculative-decoding variant of gated_delta_ops: also returns the per-token
 // SSM state stack `state_seq` [B, T, Hv, Dv, Dk] (state after each token).
 // Returns (output [B, T, Hv, Dv], final_state [B, Hv, Dv, Dk], state_seq).

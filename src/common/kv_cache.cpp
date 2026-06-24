@@ -4,13 +4,6 @@
 #include <mlx/mlx.h>
 #include <algorithm>
 
-#if defined(MLX_BUILD_ROCM)
-namespace mlx::core {
-// In-place row write into a persistent [B,H,CAP,D] KV buffer at pos[0].
-void gpu_kv_row_write(array& kv, const array& row, const array& pos);
-}
-#endif
-
 namespace mlx_lm {
 
 namespace mx = mlx::core;
@@ -133,16 +126,6 @@ void KVCacheSimple::set_position(size_t pos) {
     }
     int delta = offset_ - target;
     trim_impl(delta);
-}
-
-std::pair<mlx::core::array, mlx::core::array>
-KVCacheSimple::update_at_pos(const mlx::core::array& new_keys,
-                             const mlx::core::array& new_values,
-                             const mlx::core::array& pos) {
-    keys_ = mx::slice_update(keys_.value(), new_keys, pos, {2});
-    values_ = mx::slice_update(values_.value(), new_values, pos, {2});
-    offset_ += new_keys.shape(2);
-    return {keys_.value(), values_.value()};
 }
 
 // --- RotatingKVCache ---

@@ -110,7 +110,6 @@ add_library(mlx-lm-common
     src/common/kv_cache.cpp
     src/common/attention_utils.cpp
     src/common/generate.cpp
-    src/common/graph_decode.cpp
     src/common/base_config.cpp
     src/common/hub_api.cpp
     src/common/safetensors.cpp
