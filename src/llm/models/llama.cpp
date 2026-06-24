@@ -433,7 +433,7 @@ std::unordered_map<std::string, mx::array*> LlamaModelInner::weight_map() {
 // --- LlamaModel ---
 
 LlamaModel::LlamaModel(const LlamaConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
 

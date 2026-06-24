@@ -565,7 +565,7 @@ std::unordered_map<std::string, mx::array*> GraniteMoeHybridModelInner::weight_m
 
 GraniteMoeHybridModel::GraniteMoeHybridModel(const GraniteMoeHybridConfiguration& config)
     : config_(config),
-      model_(config),
+      model_(config_),
       logits_scaling_(config.logits_scaling)
 {
     if (!config.tie_word_embeddings) {

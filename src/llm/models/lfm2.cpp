@@ -312,7 +312,7 @@ std::unordered_map<std::string, mx::array*> LFM2ModelInner::weight_map() {
 // --- LFM2Model ---
 
 LFM2Model::LFM2Model(const LFM2Configuration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {}
 
 PrepareResult LFM2Model::prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int ws) {

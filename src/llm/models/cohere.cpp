@@ -166,7 +166,7 @@ std::unordered_map<std::string, mx::array*> CohereModelInner::weight_map() {
 // --- CohereModel ---
 
 CohereModel::CohereModel(const CohereConfiguration& args)
-    : config_(args), model_(args), logit_scale_(args.logit_scale)
+    : config_(args), model_(config_), logit_scale_(args.logit_scale)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
 }

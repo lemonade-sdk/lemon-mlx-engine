@@ -370,7 +370,7 @@ std::unordered_map<std::string, mx::array*> LFM2MoEModelInner::weight_map() {
 // --- LFM2MoEModel ---
 
 LFM2MoEModel::LFM2MoEModel(const LFM2MoEConfiguration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     std::set<int> attn_set(config.full_attn_idxs.begin(), config.full_attn_idxs.end());
     kv_heads_.resize(config.num_hidden_layers);

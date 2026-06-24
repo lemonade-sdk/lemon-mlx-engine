@@ -267,7 +267,7 @@ std::unordered_map<std::string, mx::array*> BaichuanM1ModelInner::weight_map() {
 // --- BaichuanM1Model ---
 
 BaichuanM1Model::BaichuanM1Model(const BaichuanM1Configuration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     if (!config.tie_word_embeddings) {
         lm_head_weight_ = mx::zeros({config.vocab_size, config.hidden_size});

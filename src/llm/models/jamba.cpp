@@ -449,7 +449,7 @@ std::unordered_map<std::string, mx::array*> JambaModelInner::weight_map() {
 // --- JambaModel ---
 
 JambaModel::JambaModel(const JambaConfiguration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     if (!config.tie_word_embeddings) {
         lm_head_weight_ = mx::zeros({config.vocab_size, config.hidden_size});

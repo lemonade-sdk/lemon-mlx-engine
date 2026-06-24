@@ -621,7 +621,7 @@ std::unordered_map<std::string, mx::array*> Qwen35ModelInner::weight_map() {
 // --- Qwen35Model ---
 
 Qwen35Model::Qwen35Model(const Qwen35Configuration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {

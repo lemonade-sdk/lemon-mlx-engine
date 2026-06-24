@@ -424,7 +424,7 @@ std::unordered_map<std::string, mx::array*> FalconH1ModelInner::weight_map() {
 
 FalconH1Model::FalconH1Model(const FalconH1Configuration& config)
     : config_(config),
-      model_(config),
+      model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size})),
       mup_vector_(compute_mup_vector(config))
 {}

@@ -208,7 +208,7 @@ std::unordered_map<std::string, mx::array*> Gemma2ModelInner::weight_map() {
 // --- Gemma2Model ---
 
 Gemma2Model::Gemma2Model(const Gemma2Configuration& args)
-    : config_(args), model_(args), logit_soft_cap_(args.final_logit_softcapping)
+    : config_(args), model_(config_), logit_soft_cap_(args.final_logit_softcapping)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
 }

@@ -328,7 +328,7 @@ std::unordered_map<std::string, mx::array*> AfMoEModelInner::weight_map() {
 // --- AfMoEModel ---
 
 AfMoEModel::AfMoEModel(const AfMoEConfiguration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
     for (const auto& lt : config.layer_types) {

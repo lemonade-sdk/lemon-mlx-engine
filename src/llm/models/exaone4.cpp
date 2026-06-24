@@ -277,7 +277,7 @@ std::unordered_map<std::string, mx::array*> Exaone4ModelInner::weight_map() {
 // --- Exaone4Model ---
 
 Exaone4Model::Exaone4Model(const Exaone4Configuration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
 

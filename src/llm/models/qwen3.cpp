@@ -197,7 +197,7 @@ std::unordered_map<std::string, mx::array*> Qwen3ModelInner::weight_map() {
 // --- Qwen3Model ---
 
 Qwen3Model::Qwen3Model(const Qwen3Configuration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {
