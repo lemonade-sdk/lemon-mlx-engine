@@ -189,7 +189,7 @@ std::unordered_map<std::string, mx::array*> Phi3ModelInner::weight_map() {
 // --- Phi3Model ---
 
 Phi3Model::Phi3Model(const Phi3Configuration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {

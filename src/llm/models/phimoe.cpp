@@ -185,7 +185,7 @@ std::unordered_map<std::string, mx::array*> PhiMoEModelInner::weight_map() {
 
 PhiMoEModel::PhiMoEModel(const PhiMoEConfiguration& config)
     : config_(config),
-      model_(config),
+      model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size})),
       lm_head_bias_(mx::zeros({config.vocab_size}))
 {

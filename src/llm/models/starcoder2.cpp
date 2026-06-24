@@ -176,7 +176,7 @@ std::unordered_map<std::string, mx::array*> Starcoder2ModelInner::weight_map() {
 // --- Starcoder2Model ---
 
 Starcoder2Model::Starcoder2Model(const Starcoder2Configuration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {

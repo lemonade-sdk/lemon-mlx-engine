@@ -248,7 +248,7 @@ std::unordered_map<std::string, mx::array*> Gemma3TextModelInner::weight_map() {
 
 Gemma3TextModel::Gemma3TextModel(const Gemma3TextConfiguration& config)
     : config_(config),
-      model_(config),
+      model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size}))
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);

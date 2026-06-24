@@ -890,7 +890,7 @@ std::unordered_map<std::string, mx::array*> Qwen35MoEModelInner::weight_map() {
 // --- Qwen35MoEModel ---
 
 Qwen35MoEModel::Qwen35MoEModel(const Qwen35MoEConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     // Always allocate lm_head_weight_ so it is part of weight_map(). For TIED

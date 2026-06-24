@@ -322,7 +322,7 @@ std::unordered_map<std::string, mx::array*> GLM4MoEModelInner::weight_map() {
 // --- GLM4MoEModel ---
 
 GLM4MoEModel::GLM4MoEModel(const GLM4MoEConfiguration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
     if (!config.tie_word_embeddings) {
