@@ -70,6 +70,14 @@ std::pair<mlx::core::array, mlx::core::array> add_rms_norm(
     const mlx::core::array& weight,
     float eps);
 
+// Fused MoE router (norm_topk_prob): top-k of the router logits + softmax over
+// just those k, in one kernel (replaces argpartition+slice+take_along+softmax).
+// Returns (indices [.., k] uint32, scores [.., k]). ROCm fast path needs
+// E % 32 == 0 and k <= 16; otherwise falls back to argpartition.
+std::pair<mlx::core::array, mlx::core::array> moe_route(
+    const mlx::core::array& logits,
+    int k);
+
 // Speculative-decoding variant of gated_delta_ops: also returns the per-token
 // SSM state stack `state_seq` [B, T, Hv, Dv, Dk] (state after each token).
 // Returns (output [B, T, Hv, Dv], final_state [B, Hv, Dv, Dk], state_seq).

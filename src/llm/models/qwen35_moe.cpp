@@ -632,26 +632,21 @@ mx::array Qwen35MoESparseMoeBlock::operator()(const mx::array& x) {
     auto router_logits = linear_fwd(x, gate_weight_);
 
     int k = top_k_;
-    int kth = router_logits.shape(-1) - k;
-    // argpartition on the logits selects the same top-k as on the softmax
-    // probabilities (softmax is monotonic), so we can avoid the full-256 softmax.
-    auto inds = mx::argpartition(router_logits, kth, -1);
-    inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
-
+    mx::array inds(0.0f);
     mx::array scores(0.0f);
     if (norm_topk_prob_) {
-        // The renormalized softmax over all experts, restricted to the top-k, is
-        // exactly the softmax over the top-k logits:
-        //   softmax_N(l)_i / sum_{j in topk} softmax_N(l)_j
-        //     = exp(l_i) / sum_{j in topk} exp(l_j) = softmax_k(l_topk)_i.
-        // So gather the k=8 selected logits and softmax over just those — this
-        // replaces a 256-wide softmax + a separate divide/sum renormalize with a
-        // single 8-wide softmax.
-        auto top_logits = mx::take_along_axis(router_logits, inds, -1);
-        scores = mx::softmax(top_logits, -1);
+        // Fused router: top-k of the logits + softmax over just those k in one
+        // kernel (renormalized softmax restricted to top-k == softmax over the
+        // top-k logits). Replaces argpartition(block_sort)+slice+take_along+softmax.
+        auto routed = moe_route(router_logits, k);
+        inds = routed.first;
+        scores = routed.second;
     } else {
         // Raw (un-renormalized) softmax weights: softmax over all experts first,
         // then gather the selected ones.
+        int kth = router_logits.shape(-1) - k;
+        inds = mx::argpartition(router_logits, kth, -1);
+        inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
         auto gates = mx::softmax(router_logits, -1);
         scores = mx::take_along_axis(gates, inds, -1);
     }

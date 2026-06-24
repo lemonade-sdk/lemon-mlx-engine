@@ -299,6 +299,57 @@ static mx::fast::CustomKernelFunction& get_add_rms_norm_kernel() {
     return kernel;
 }
 
+// Fused MoE router (norm_topk_prob): one warp per row finds the top-K of E
+// logits and softmaxes over just those K, in a single pass — replaces
+// argpartition(block_sort) + slice + take_along + softmax. Each lane owns
+// E/32 logits in registers; K rounds of warp __shfl argmax, masking the picked
+// one each round. Requires E % 32 == 0. indices: descending by logit; scores
+// aligned (order is irrelevant to the weighted-sum combine).
+static const char* moe_route_hip_source = R"(
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int lane = threadIdx.x;
+    if (row >= ROWS) return;
+    constexpr int PER = E / 32;
+    const InT* lg = logits + (long)row * E;
+    float v[PER];
+    #pragma unroll
+    for (int j = 0; j < PER; ++j) v[j] = static_cast<float>(lg[lane * PER + j]);
+    float topv[K];
+    for (int r = 0; r < K; ++r) {
+        float lmax = -1e30f; int lidx = -1;
+        #pragma unroll
+        for (int j = 0; j < PER; ++j)
+            if (v[j] > lmax) { lmax = v[j]; lidx = lane * PER + j; }
+        for (int off = 16; off > 0; off >>= 1) {
+            float om = __shfl_down(lmax, off);
+            int oi = __shfl_down(lidx, off);
+            if (om > lmax) { lmax = om; lidx = oi; }
+        }
+        lmax = __shfl(lmax, 0);
+        lidx = __shfl(lidx, 0);
+        topv[r] = lmax;
+        if (lane == 0) indices[(long)row * K + r] = (unsigned int)lidx;
+        if (lidx / PER == lane) v[lidx % PER] = -1e30f;
+    }
+    if (lane == 0) {
+        float mx = -1e30f;
+        #pragma unroll
+        for (int r = 0; r < K; ++r) if (topv[r] > mx) mx = topv[r];
+        float sum = 0.0f;
+        #pragma unroll
+        for (int r = 0; r < K; ++r) { topv[r] = expf(topv[r] - mx); sum += topv[r]; }
+        #pragma unroll
+        for (int r = 0; r < K; ++r)
+            scores[(long)row * K + r] = static_cast<InT>(topv[r] / sum);
+    }
+)";
+
+static mx::fast::CustomKernelFunction& get_moe_route_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "moe_route", {"logits"}, {"indices", "scores"}, moe_route_hip_source);
+    return kernel;
+}
+
 // ---------------------------------------------------------------------------
 // gatedDeltaKernel — dispatch the fused HIP kernel
 // ---------------------------------------------------------------------------
@@ -685,6 +736,33 @@ std::pair<mx::array, mx::array> add_rms_norm(
 #endif
     auto s = mx::add(a, b);
     return {s, mx::fast::rms_norm(s, weight, eps)};
+}
+
+std::pair<mx::array, mx::array> moe_route(const mx::array& logits, int k) {
+    int E = logits.shape(-1);
+    int rows = static_cast<int>(logits.size() / E);
+    auto t = logits.dtype();
+    auto out_shape = logits.shape();
+    out_shape.back() = k;
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    static const bool force_mxops = std::getenv("MLX_MOE_ROUTE_MXOPS") != nullptr;
+    if (!force_mxops && (E % 32) == 0 && k <= 16) {
+        auto res = get_moe_route_kernel()(
+            {logits},
+            {{rows, k}, {rows, k}},
+            {mlx::core::uint32, t},
+            {32, rows, 1},
+            {32, 1, 1},
+            {{"InT", t}, {"E", E}, {"K", k}, {"ROWS", rows}},
+            std::nullopt, true, {});
+        return {mx::reshape(res[0], out_shape), mx::reshape(res[1], out_shape)};
+    }
+#endif
+    int kth = E - k;
+    auto inds = mx::argpartition(logits, kth, -1);
+    inds = mx::slice(inds, {0, 0, kth}, logits.shape());
+    auto top = mx::take_along_axis(logits, inds, -1);
+    return {inds, mx::softmax(top, -1)};
 }
 
 // In-place write of src into dst's device buffer (same total element count).
