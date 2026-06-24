@@ -21,11 +21,10 @@ namespace mlx_lm {
 mx::array dequantize_bitnet_weight(
     const mx::array& packed_weight,
     const mx::array& weight_scale,
-    int out_features)
+    int /*out_features*/)
 {
     // Cast to int32 for bitwise operations
     auto packed = mx::astype(packed_weight, mx::int32);
-    int in_features = packed_weight.shape(1);
 
     // Extract 4 ternary values from each byte: bits [1:0], [3:2], [5:4], [7:6]
     // Concatenate along axis 0 (not stack+reshape) to match the reference
