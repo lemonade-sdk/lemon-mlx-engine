@@ -839,11 +839,11 @@ mx::array Qwen35MoEModelInner::embed_tokens(const mx::array& input_ids) const {
 }
 
 mx::array Qwen35MoEModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 mx::array Qwen35MoEModelInner::apply_lm_head(const mx::array& hidden) const {
-    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+    return linear_forward(hidden, embed_tokens_weight_);
 }
 
 mx::array Qwen35MoEModelInner::apply_norm(const mx::array& hidden) const {

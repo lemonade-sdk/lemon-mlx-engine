@@ -280,7 +280,7 @@ LMOutput GPTOSSModel::call_impl(const LMInput::Text& input, std::vector<KVCache>
 
 mx::array GPTOSSModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::vector<KVCache> GPTOSSModel::new_cache_impl(const GenerateParameters& params) {

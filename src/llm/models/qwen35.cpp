@@ -600,11 +600,11 @@ mx::array Qwen35ModelInner::operator()(const mx::array& inputs, std::vector<KVCa
 }
 
 mx::array Qwen35ModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 mx::array Qwen35ModelInner::apply_lm_head(const mx::array& hidden) const {
-    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+    return linear_forward(hidden, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Qwen35ModelInner::weight_map() {
