@@ -5,11 +5,45 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 namespace mx = mlx::core;
 
 namespace mlx_lm {
+
+static mx::array dequantize_1bit(
+    const mx::array& packed,
+    const mx::array& scales,
+    const mx::array& biases,
+    int group_size,
+    int in_features)
+{
+    auto p = mx::astype(packed, mx::int32);
+    std::vector<mx::array> bit_planes;
+    bit_planes.reserve(32);
+    for (int i = 0; i < 32; ++i) {
+        auto b = mx::bitwise_and(mx::right_shift(p, mx::array(i)), mx::array(1));
+        bit_planes.push_back(b);
+    }
+
+    // Keep each uint32's 32 consecutive values together in the output row.
+    auto unpacked = mx::reshape(mx::stack(bit_planes, -1), {packed.shape(0), in_features});
+    auto values = mx::astype(unpacked, mx::float16);
+
+    int num_groups = in_features / group_size;
+    auto scales_expanded = mx::broadcast_to(
+        mx::reshape(scales, {scales.shape(0), num_groups, 1}),
+        {scales.shape(0), num_groups, group_size});
+    scales_expanded = mx::reshape(scales_expanded, {scales.shape(0), in_features});
+
+    auto biases_expanded = mx::broadcast_to(
+        mx::reshape(biases, {biases.shape(0), num_groups, 1}),
+        {biases.shape(0), num_groups, group_size});
+    biases_expanded = mx::reshape(biases_expanded, {biases.shape(0), in_features});
+
+    return mx::add(mx::multiply(values, scales_expanded), biases_expanded);
+}
 
 void register_quantized_weights(
     std::unordered_map<std::string, mx::array>& weights,
@@ -69,12 +103,23 @@ void register_quantized_weights(
 
         // Embedding weights use mx::take() for lookup, not matmul.
         // They must be dequantized at load time (quantized_matmul won't help).
+        // MLX GPU affine dequantize/quantized_matmul does not support 1-bit,
+        // so 1-bit affine weights also need to become dense at load time.
         bool is_embedding = (prefix.find("embed") != std::string::npos);
+        bool needs_loadtime_dequant = is_embedding || (bits == 1);
 
-        if (is_embedding) {
+        if (needs_loadtime_dequant) {
             // Dequantize in-place so load_weights() gets the float weight
             auto& packed = weights.at(weight_key);
-            packed = mx::dequantize(packed, scales, biases, group_size, bits);
+            if (bits == 1) {
+                if (!biases.has_value()) {
+                    throw std::runtime_error("1-bit affine quantized weights require biases");
+                }
+                int in_features = packed.shape(1) * 32;
+                packed = dequantize_1bit(packed, scales, *biases, group_size, in_features);
+            } else {
+                packed = mx::dequantize(packed, scales, biases, group_size, bits);
+            }
         } else {
             // Find the model's member array address for this weight
             auto wm_it = weight_map.find(weight_key);
