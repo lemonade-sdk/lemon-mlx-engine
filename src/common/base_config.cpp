@@ -22,6 +22,12 @@ BaseConfiguration parse_base_configuration(const nlohmann::json& config) {
         Quantization default_quant;
         default_quant.group_size = q_json.value("group_size", 64);
         default_quant.bits = q_json.value("bits", 4);
+        auto mode_str = q_json.value("mode", std::string("affine"));
+        if (mode_str == "mxfp4") {
+            default_quant.mode = QuantizationMode::Mxfp4;
+        } else {
+            default_quant.mode = QuantizationMode::Affine;
+        }
 
         PerLayerQuantization plq;
         plq.default_quantization = default_quant;

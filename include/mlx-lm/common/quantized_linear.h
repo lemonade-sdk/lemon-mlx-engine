@@ -18,6 +18,7 @@ struct QuantizationInfo {
     std::optional<mlx::core::array> biases;
     int group_size;
     int bits;
+    std::string mode = "affine";
 };
 
 // Global registry mapping weight array addresses to quantization metadata.
@@ -38,10 +39,11 @@ public:
     void register_weight(const mlx::core::array* weight_ptr,
                          mlx::core::array scales,
                          std::optional<mlx::core::array> biases,
-                         int group_size, int bits) {
+                         int group_size, int bits,
+                         const std::string& mode = "affine") {
         registry_.insert_or_assign(
             weight_ptr,
-            QuantizationInfo{std::move(scales), std::move(biases), group_size, bits});
+            QuantizationInfo{std::move(scales), std::move(biases), group_size, bits, mode});
     }
 
     const QuantizationInfo* find(const mlx::core::array* weight_ptr) const {
@@ -82,7 +84,8 @@ inline mlx::core::array linear_forward(
     if (qi) {
         auto result = mx::quantized_matmul(
               x, w, qi->scales, qi->biases,
-              /*transpose=*/true, qi->group_size, qi->bits);
+              /*transpose=*/true, qi->group_size, qi->bits,
+              /*mode=*/qi->mode);
         if (bias) result = mx::add(result, *bias);
         return result;
     }

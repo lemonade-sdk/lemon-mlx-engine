@@ -64,7 +64,8 @@ public:
     void adopt_fused_weight(mlx::core::array w,
                             mlx::core::array scales,
                             std::optional<mlx::core::array> biases,
-                            int group_size, int bits);
+                            int group_size, int bits,
+                            const std::string& mode = "affine");
 
     // Free this layer's weight buffer and drop its quant metadata. Called after
     // its data has been folded into a fused projection so VRAM stays neutral
