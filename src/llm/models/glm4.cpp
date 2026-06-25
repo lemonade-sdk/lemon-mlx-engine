@@ -274,7 +274,7 @@ mx::array GLM4Model::forward_impl(
     std::vector<KVCache>* cache)
 {
     auto out = model_(inputs, cache);
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::unordered_map<std::string, mx::array>

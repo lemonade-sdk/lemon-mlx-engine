@@ -395,7 +395,7 @@ LMOutput GLM4MoELiteModel::call_impl(const LMInput::Text& input, std::vector<KVC
 
 mx::array GLM4MoELiteModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::unordered_map<std::string, mx::array>

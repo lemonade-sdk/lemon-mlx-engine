@@ -414,7 +414,7 @@ mx::array LlamaModelInner::operator()(
 
 mx::array LlamaModelInner::embed_as_linear(const mx::array& x) const {
     // Use embedding weights as a linear layer (for tied embeddings)
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> LlamaModelInner::weight_map() {
@@ -466,7 +466,7 @@ mx::array LlamaModel::forward_impl(
 {
     auto out = model_(inputs, cache);
     if (lm_head_weight_.has_value()) {
-        return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+        return linear_forward(out, lm_head_weight_.value());
     } else {
         return model_.embed_as_linear(out);
     }

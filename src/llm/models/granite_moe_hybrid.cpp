@@ -547,7 +547,7 @@ mx::array GraniteMoeHybridModelInner::operator()(
 }
 
 mx::array GraniteMoeHybridModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> GraniteMoeHybridModelInner::weight_map() {
@@ -587,7 +587,7 @@ mx::array GraniteMoeHybridModel::forward_impl(
     const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
     if (lm_head_weight_.has_value()) {
-        out = mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+        out = linear_forward(out, lm_head_weight_.value());
     } else {
         out = model_.embed_as_linear(out);
     }

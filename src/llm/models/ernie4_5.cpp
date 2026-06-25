@@ -275,11 +275,11 @@ mx::array Ernie45Model::forward_impl(
 {
     auto out = model_(inputs, cache);
     if (lm_head_weight_.has_value()) {
-        return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+        return linear_forward(out, lm_head_weight_.value());
     }
     // Tied embeddings: use embed_tokens weight as linear head
     auto wmap = model_.weight_map();
-    return mx::matmul(out, mx::transpose(*wmap["embed_tokens.weight"]));
+    return linear_forward(out, *wmap["embed_tokens.weight"]);
 }
 
 std::unordered_map<std::string, mx::array>

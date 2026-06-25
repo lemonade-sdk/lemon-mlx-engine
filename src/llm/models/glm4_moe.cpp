@@ -305,7 +305,7 @@ mx::array GLM4MoEModelInner::operator()(const mx::array& inputs, std::vector<KVC
 }
 
 mx::array GLM4MoEModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> GLM4MoEModelInner::weight_map() {
@@ -340,7 +340,7 @@ LMOutput GLM4MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache
 
 mx::array GLM4MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    if (lm_head_weight_.has_value()) return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+    if (lm_head_weight_.has_value()) return linear_forward(out, lm_head_weight_.value());
     return model_.embed_as_linear(out);
 }
 

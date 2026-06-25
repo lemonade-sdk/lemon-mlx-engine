@@ -265,7 +265,7 @@ LMOutput Gemma3TextModel::call_impl(const LMInput::Text& input, std::vector<KVCa
 mx::array Gemma3TextModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
     // Always use lm_head (not tied embeddings)
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::vector<KVCache> Gemma3TextModel::new_cache_impl(const GenerateParameters& params) {
