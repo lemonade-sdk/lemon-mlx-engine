@@ -34,7 +34,7 @@ FetchContent_Declare(
     mlx
     # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        rocm-support
+    GIT_TAG 6abf0b7e # rocm-support (pinned working ExecUpdate commit)
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)

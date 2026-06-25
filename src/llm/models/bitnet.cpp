@@ -319,23 +319,17 @@ BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 
             auto w_it = weights.find(weight_key);
             if (w_it != weights.end() && w_it->second.dtype() == mx::uint8) {
-                auto [wq, scales, biases] = bitnet_repack_weights(w_it->second, val);
-
-                // Replace uint8 weight with packed uint32 weight
-                to_add.emplace_back(weight_key, std::move(wq));
-                to_remove.push_back(key); // remove the .weight_scale entry
-
-                // Register in QuantizedWeightRegistry if the member array exists
-                auto wm_it = wmap.find(weight_key);
-                if (wm_it != wmap.end()) {
-                    reg.register_weight(
-                        wm_it->second,  // member array pointer (address stable)
-                        scales,
-                        biases,
-                        /*group_size=*/128,
-                        /*bits=*/2,
-                        "affine");
-                }
+                // TODO: quantized_matmul for 2-bit produces wrong results on
+                // this system. Fall back to dequantize-at-load for correctness.
+                // When the 2-bit QMV kernel is fixed, replace with:
+                //   auto [wq, scales, biases] = bitnet_repack_weights(w_it->second, val);
+                //   to_add.emplace_back(weight_key, std::move(wq));
+                //   reg.register_weight(wm_it->second, scales, biases, 64, 2, "affine");
+                int packed_rows = w_it->second.shape(0);
+                int out_features = packed_rows * 4;
+                to_add.emplace_back(weight_key,
+                    dequantize_bitnet_weight(w_it->second, val, out_features));
+                to_remove.push_back(key);
             }
         }
     }

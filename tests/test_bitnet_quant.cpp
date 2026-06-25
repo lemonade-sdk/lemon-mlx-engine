@@ -84,7 +84,7 @@ TEST_CASE("bitnet_repack_weights: all zeros (code=1) → dequant is 0", "[bitnet
     mx::eval({wq, scales, biases});
 
     // Dequantize via MLX
-    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
     mx::eval(dequant);
 
     // Code 1 → 0 for any scale
@@ -113,7 +113,7 @@ TEST_CASE("bitnet_repack_weights: all ones (code=2) → dequant is +scale", "[bi
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
     mx::eval({wq, scales, biases});
 
-    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
     mx::eval(dequant);
 
     // Code 2 → +scale
@@ -142,7 +142,7 @@ TEST_CASE("bitnet_repack_weights: all minus ones (code=0) → dequant is -scale"
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
     mx::eval({wq, scales, biases});
 
-    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
     mx::eval(dequant);
 
     // Code 0 → -scale
@@ -173,7 +173,7 @@ TEST_CASE("bitnet_repack_weights: mixed codes", "[bitnet_quant]") {
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
     mx::eval({wq, scales, biases});
 
-    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
     mx::eval(dequant);
 
     // Verify each value matches expected: dequant = (code - 1) * scale = (vals[i] + 1 - 1) * scale = vals[i] * scale
@@ -212,12 +212,12 @@ TEST_CASE("quantized_matmul matches dequantize-then-matmul (bit-exact)", "[bitne
     mx::eval({x, wq, scales, biases});
 
     // Reference: dequantize then matmul
-    auto w_dequant = mx::dequantize(wq, scales, biases, 128, 2);
+    auto w_dequant = mx::dequantize(wq, scales, biases, 64, 2);
     auto ref = mx::matmul(x, mx::transpose(w_dequant));
     mx::eval(ref);
 
     // GPU path: quantized_matmul (transpose=true since weight is [out, in])
-    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 128, 2);
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 64, 2);
     mx::eval(gpu);
 
     // Should be bit-exact (same accumulation precision, no quantization error)
@@ -252,12 +252,12 @@ TEST_CASE("quantized_matmul with scale=1.0: max error < 1e-5", "[bitnet_quant]")
     mx::eval({x, wq, scales, biases});
 
     // Reference: dequantize then matmul
-    auto w_dequant = mx::dequantize(wq, scales, biases, 128, 2);
+    auto w_dequant = mx::dequantize(wq, scales, biases, 64, 2);
     auto ref = mx::matmul(x, mx::transpose(w_dequant));
     mx::eval(ref);
 
     // GPU path
-    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 128, 2);
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 64, 2);
     mx::eval(gpu);
 
     // Bit-exact: both should produce exactly 0 for each output
@@ -304,7 +304,7 @@ TEST_CASE("bitnet_repack_weights with larger shape", "[bitnet_quant]") {
 
     // Quick dequant + matmul to verify no crash
     auto x = mx::full({1, in_features}, 1.0f, mx::bfloat16);
-    auto gpu = mx::quantized_matmul(x, wq, scales, biases, true, 128, 2);
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, true, 64, 2);
     mx::eval(gpu);
 
     REQUIRE(gpu.shape(0) == 1);
