@@ -24,6 +24,13 @@ void from_json(const nlohmann::json& j, Lille130mConfiguration& c) {
     c.rope_theta = j.at("rope_theta").get<float>();
     c.vocab_size = j.at("vocab_size").get<int>();
     c.tie_word_embeddings = j.value("tie_word_embeddings", true);
+
+    // Read quantization parameters if present
+    if (j.contains("quantization")) {
+        const auto& q = j["quantization"];
+        c.quant_bits = q.value("bits", 0);
+        c.quant_group_size = q.value("group_size", 0);
+    }
 }
 
 // --- Helpers ---
@@ -247,69 +254,54 @@ mx::array Lille130mModel::forward_impl(
     return transformer_.embed_as_linear(out);
 }
 
-namespace {
-
-bool ends_with(const std::string& value, const std::string& suffix) {
-    return value.size() >= suffix.size() &&
-           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-} // namespace
-
 std::unordered_map<std::string, mx::array>
 Lille130mModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    std::vector<std::string> to_remove;
-    std::vector<std::pair<std::string, mx::array>> to_add;
+    // Dequantize all affine-quantized weights at load time using the bits and
+    // group_size from the model config. Lille-130m is tiny (130M params), so
+    // dequantizing to float32 (~520MB) is fine. This bypasses quantized_matmul
+    // entirely, avoiding potential issues with the ROCm quantized kernel path
+    // for this particular model.
+    if (config_.quant_bits > 0 && config_.quant_group_size > 0) {
+        int bits = config_.quant_bits;
+        int group_size = config_.quant_group_size;
+        std::vector<std::string> to_remove;
+        std::vector<std::pair<std::string, mx::array>> to_add;
+        const std::string scales_suffix = ".scales";
 
-    // Lille-130m MLX checkpoints store affine-quantized uint32 weights with
-    // .scales/.biases companions. Dequantize them during sanitization so the
-    // embedding lookup, tied output projection, and dense load path all receive
-    // real weights instead of packed integers. Infer bits/group size from the
-    // packed checkpoint shape and the model member's dense shape.
-    auto wmap = weight_map();
-    const std::string scales_suffix = ".scales";
-    for (const auto& [key, scales] : weights) {
-        if (!ends_with(key, scales_suffix)) continue;
+        for (const auto& [key, scales] : weights) {
+            if (key.size() <= scales_suffix.size() ||
+                key.compare(key.size() - scales_suffix.size(), scales_suffix.size(), scales_suffix) != 0)
+                continue;
 
-        auto prefix = key.substr(0, key.size() - scales_suffix.size());
-        auto weight_key = prefix + ".weight";
-        auto weight_it = weights.find(weight_key);
-        auto target_it = wmap.find(weight_key);
-        if (weight_it == weights.end() || target_it == wmap.end()) continue;
+            auto prefix = key.substr(0, key.size() - scales_suffix.size());
+            auto weight_key = prefix + ".weight";
+            auto weight_it = weights.find(weight_key);
+            if (weight_it == weights.end()) continue;
 
-        const auto& packed = weight_it->second;
-        const auto& target = *target_it->second;
-        if (packed.ndim() != 2 || target.ndim() != 2 || scales.ndim() != 2) continue;
+            std::optional<mx::array> biases;
+            auto biases_key = prefix + ".biases";
+            auto biases_it = weights.find(biases_key);
+            if (biases_it != weights.end()) {
+                biases = biases_it->second;
+                to_remove.push_back(biases_key);
+            }
 
-        int in_features = target.shape(1);
-        int packed_cols = packed.shape(1);
-        int num_groups = scales.shape(1);
-        if (in_features <= 0 || packed_cols <= 0 || num_groups <= 0) continue;
-        if ((packed_cols * 32) % in_features != 0) continue;
-        if (in_features % num_groups != 0) continue;
-
-        int bits = (packed_cols * 32) / in_features;
-        int group_size = in_features / num_groups;
-
-        std::optional<mx::array> biases;
-        auto biases_key = prefix + ".biases";
-        auto biases_it = weights.find(biases_key);
-        if (biases_it != weights.end()) {
-            biases = biases_it->second;
-            to_remove.push_back(biases_key);
+            to_add.emplace_back(weight_key,
+                mx::dequantize(weight_it->second, scales, biases, group_size, bits));
+            to_remove.push_back(key);
         }
 
-        to_add.emplace_back(weight_key,
-            mx::dequantize(packed, scales, biases, group_size, bits));
-        to_remove.push_back(key);
-    }
-
-    for (auto& [k, v] : to_add) {
-        weights.insert_or_assign(k, std::move(v));
+        for (auto& [k, v] : to_add) {
+            weights.insert_or_assign(k, std::move(v));
+        }
+        for (const auto& k : to_remove) {
+            weights.erase(k);
+        }
     }
 
     // Remove unused precomputed rotary frequencies.
+    std::vector<std::string> to_remove;
     for (auto& [k, v] : weights) {
         if (k.find("rotary_emb") != std::string::npos) {
             to_remove.push_back(k);
