@@ -57,10 +57,15 @@ Qwen3Attention::Qwen3Attention(const Qwen3Configuration& args)
     if (args.rope_scaling.has_value()) {
         auto& scaling = args.rope_scaling.value();
         auto type_it = scaling.find("type");
-        if (type_it != scaling.end() && type_it->second.is_string() && type_it->second.as_string() == "linear") {
-            auto factor_it = scaling.find("factor");
-            if (factor_it != scaling.end() && factor_it->second.is_float()) {
-                rope_scale_ = 1.0f / factor_it->second.as_float();
+        if (type_it == scaling.end())
+            type_it = scaling.find("rope_type");
+        if (type_it != scaling.end() && type_it->second.is_string()) {
+            auto rope_type = type_it->second.as_string();
+            if (rope_type == "linear" || rope_type == "yarn") {
+                auto factor_it = scaling.find("factor");
+                if (factor_it != scaling.end() && factor_it->second.is_float()) {
+                    rope_scale_ = 1.0f / factor_it->second.as_float();
+                }
             }
         }
     }
