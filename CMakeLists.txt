@@ -256,6 +256,9 @@ if(MLX_LM_BUILD_EXAMPLES)
     add_executable(test_dynslice examples/test_dynslice.cpp)
     target_link_libraries(test_dynslice PRIVATE mlx)
 
+    add_executable(test_arena examples/test_arena.cpp)
+    target_link_libraries(test_arena PRIVATE mlx)
+
     add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)
     target_link_libraries(test_sdpa_ref PRIVATE mlx)
 
