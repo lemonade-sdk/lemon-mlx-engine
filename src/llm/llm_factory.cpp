@@ -72,6 +72,18 @@ static void* create_model(const std::string& config_json) {
     return new Model(config);
 }
 
+// BitNet type dispatch: creates BitNetModel or LlamaModel based on hidden_act.
+static void* create_bitnet_model(const std::string& config_json) {
+    auto j = nlohmann::json::parse(config_json);
+    std::string hidden_act = j.value("hidden_act", std::string("relu2"));
+    if (hidden_act == "relu2") {
+        BitNetConfiguration config = j.get<BitNetConfiguration>();
+        return new BitNetModel(config);
+    }
+    LlamaConfiguration config = j.get<LlamaConfiguration>();
+    return new LlamaModel(config);
+}
+
 // Helper: create, sanitize, load weights, and return an owned ModelContext.
 // The model is stored in a shared_ptr captured by the context's lambdas.
 using LLMLoaderFn = std::function<ModelContext(
@@ -119,6 +131,26 @@ static ModelContext load_typed_model(
     model->load_weights(weights);
 
     return ModelContext::from_model_owned(model);
+}
+
+// BitNet dispatch: models with model_type="bitnet" can be either true BitNet
+// b1.58 (hidden_act="relu2", has sub_norms) or standard Llama with BitNet
+// ternary quantization (hidden_act="silu", no sub_norms — e.g. Falcon-E).
+// Route to the appropriate model based on hidden_act.
+static ModelContext load_bitnet_model(
+    const std::string& config_json,
+    std::unordered_map<std::string, mlx::core::array> weights,
+    const BaseConfiguration& base_config)
+{
+    auto j = nlohmann::json::parse(config_json);
+    std::string hidden_act = j.value("hidden_act", std::string("relu2"));
+    if (hidden_act == "relu2") {
+        return load_typed_model<BitNetConfiguration, BitNetModel>(
+            config_json, std::move(weights), base_config);
+    }
+    // Standard Llama with BitNet ternary quant (Falcon-E, etc.)
+    return load_typed_model<LlamaConfiguration, LlamaModel>(
+        config_json, std::move(weights), base_config);
 }
 
 // Internal loader registry — maps model_type to a function that creates,
@@ -176,7 +208,7 @@ static std::unordered_map<std::string, LLMLoaderFn>& llm_loaders() {
         {"lfm2",         load_typed_model<LFM2Configuration, LFM2Model>},
         {"nemotron_h",   load_typed_model<NemotronHConfiguration, NemotronHModel>},
         {"granitemoehybrid", load_typed_model<GraniteMoeHybridConfiguration, GraniteMoeHybridModel>},
-        {"bitnet",         load_typed_model<BitNetConfiguration, BitNetModel>},
+        {"bitnet",         load_bitnet_model},
     };
     return loaders;
 }
@@ -236,7 +268,7 @@ ModelTypeRegistry& llm_type_registry() {
         {"lfm2",         create_model<LFM2Configuration, LFM2Model>},
         {"nemotron_h",   create_model<NemotronHConfiguration, NemotronHModel>},
         {"granitemoehybrid", create_model<GraniteMoeHybridConfiguration, GraniteMoeHybridModel>},
-        {"bitnet",         create_model<BitNetConfiguration, BitNetModel>},
+        {"bitnet",         create_bitnet_model},
     });
     return registry;
 }

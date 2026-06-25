@@ -26,6 +26,8 @@ static mx::array linear_fwd(
 
 BitNetAttention::BitNetAttention(const BitNetConfiguration& args)
     : args_(args),
+      use_relu2_(args.hidden_act == "relu2"),
+      has_sub_norm_(args.hidden_act == "relu2"),
       scale_(std::pow(static_cast<float>(args.resolved_head_dim()), -0.5f)),
       wq_weight_(mx::zeros({args.num_attention_heads * args.resolved_head_dim(), args.hidden_size})),
       wk_weight_(mx::zeros({args.num_key_value_heads * args.resolved_head_dim(), args.hidden_size})),
@@ -85,26 +87,33 @@ mx::array BitNetAttention::operator()(
 
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
-    // BitNet: sub-layer norm before output projection
-    output = mx::fast::rms_norm(output, attn_sub_norm_weight_, args_.rms_norm_eps);
+    // BitNet: sub-layer norm before output projection (only for true BitNet models)
+    if (has_sub_norm_) {
+        output = mx::fast::rms_norm(output, attn_sub_norm_weight_, args_.rms_norm_eps);
+    }
 
     return linear(output, wo_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> BitNetAttention::weight_map() {
-    return {
+    std::unordered_map<std::string, mx::array*> map = {
         {"q_proj.weight", &wq_weight_},
         {"k_proj.weight", &wk_weight_},
         {"v_proj.weight", &wv_weight_},
         {"o_proj.weight", &wo_weight_},
-        {"attn_sub_norm.weight", &attn_sub_norm_weight_},
     };
+    if (has_sub_norm_) {
+        map["attn_sub_norm.weight"] = &attn_sub_norm_weight_;
+    }
+    return map;
 }
 
 // --- BitNet MLP (relu² + sub-layer norm) ---
 
 BitNetMLP::BitNetMLP(const BitNetConfiguration& args)
-    : gate_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),
+    : use_relu2_(args.hidden_act == "relu2"),
+      has_sub_norm_(args.hidden_act == "relu2"),
+      gate_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),
       down_weight_(mx::zeros({args.hidden_size, args.intermediate_size})),
       up_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),
       ffn_sub_norm_weight_(mx::ones({args.intermediate_size})),
@@ -120,23 +129,28 @@ mx::array BitNetMLP::rms_norm(const mx::array& x, const mx::array& weight) const
 }
 
 mx::array BitNetMLP::operator()(const mx::array& x) {
-    // BitNet: relu_squared instead of silu, then sub-layer norm before down_proj
-    auto gate = relu_squared(linear(x, gate_weight_));
+    auto gate_out = linear(x, gate_weight_);
+    auto gate = use_relu2_ ? relu_squared(gate_out) : silu(gate_out);
     auto up = linear(x, up_weight_);
     auto hidden = mx::multiply(gate, up);
 
-    hidden = rms_norm(hidden, ffn_sub_norm_weight_);
+    if (has_sub_norm_) {
+        hidden = rms_norm(hidden, ffn_sub_norm_weight_);
+    }
 
     return linear(hidden, down_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> BitNetMLP::weight_map() {
-    return {
+    std::unordered_map<std::string, mx::array*> map = {
         {"gate_proj.weight", &gate_weight_},
         {"down_proj.weight", &down_weight_},
         {"up_proj.weight", &up_weight_},
-        {"ffn_sub_norm.weight", &ffn_sub_norm_weight_},
     };
+    if (has_sub_norm_) {
+        map["ffn_sub_norm.weight"] = &ffn_sub_norm_weight_;
+    }
+    return map;
 }
 
 // --- BitNet Transformer Block ---

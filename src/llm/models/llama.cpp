@@ -44,6 +44,8 @@ void from_json(const nlohmann::json& j, LlamaConfiguration& c) {
         c.attention_bias = j["attention_bias"].get<bool>();
     if (j.contains("mlp_bias"))
         c.mlp_bias = j["mlp_bias"].get<bool>();
+    if (j.contains("hidden_act"))
+        c.hidden_act = j["hidden_act"].get<std::string>();
 
     if (j.contains("rope_scaling") && !j["rope_scaling"].is_null()) {
         std::unordered_map<std::string, StringOrNumber> scaling;

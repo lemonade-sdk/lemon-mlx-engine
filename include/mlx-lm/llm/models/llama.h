@@ -34,6 +34,7 @@ struct LlamaConfiguration {
     bool tie_word_embeddings = true;
     bool attention_bias = false;
     bool mlp_bias = false;
+    std::string hidden_act = "silu";
 
     int resolved_head_dim() const {
         return head_dim.value_or(hidden_size / num_attention_heads);
