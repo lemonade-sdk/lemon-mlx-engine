@@ -8,6 +8,7 @@
 #include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
 #include <cmath>
+#include <cstring>
 
 namespace mx = mlx::core;
 
@@ -20,6 +21,90 @@ static mx::array linear_fwd(
     const mx::array& weight)
 {
     return linear_forward(x, weight, nullptr);
+}
+
+// Repack BitNet uint8 packed ternary weights into standard MLX uint32 2-bit
+// quantized format. Returns {wq_uint32, scales_fp16, biases_fp16}.
+//
+// BitNet packs 4 ternary codes {0→-1, 1→0, 2→+1} per byte across output lanes:
+//   uint8[row, c] = lane0[1:0] | lane1[3:2] | lane2[5:4] | lane3[7:6]
+//   where row = oc/4, lane = oc%4.
+//
+// MLX 2-bit format: uint32[out, ceil(in/16)], each uint32 = 16 codes at 2 bits
+// each, least-significant code first, padding with 0.
+//
+// The quantized matmul kernel requires group_size ∈ {32, 64, 128}.
+static constexpr int kBitnetGroupSize = 128;
+
+static std::tuple<mx::array, mx::array, mx::array>
+bitnet_repack_weights(
+    const mx::array& packed_weight,  // uint8 [out/4, in]
+    const mx::array& weight_scale)   // scalar (bf16 or fp16)
+{
+    auto shape = packed_weight.shape();
+    int packed_rows = shape[0];
+    int in_features = shape[1];
+    int out_features = packed_rows * 4;
+
+    if (in_features % kBitnetGroupSize != 0) {
+        throw std::runtime_error(
+            "BitNet: in_features " + std::to_string(in_features) +
+            " must be divisible by group_size " +
+            std::to_string(kBitnetGroupSize));
+    }
+    int num_groups = in_features / kBitnetGroupSize;
+
+    int in_rounded = ((in_features + 15) / 16) * 16;
+    int cols_uint32 = in_rounded / 16;
+
+    // Convert scale to fp16 and materialize
+    mx::array ws_fp16 = mx::astype(weight_scale, mx::float16);
+    mx::eval(ws_fp16);
+    auto ws = static_cast<float>(ws_fp16.data<mx::float16_t>()[0]);
+
+    // Materialize packed weight and read uint8 data
+    mx::eval(packed_weight);
+    auto w_data = packed_weight.data<uint8_t>();
+
+    // Allocate outputs: scales[out, num_groups], biases[out, num_groups]
+    std::vector<uint32_t> wq(out_features * cols_uint32, 0);
+    std::vector<mx::float16_t> scales(out_features * num_groups);
+    std::vector<mx::float16_t> biases(out_features * num_groups);
+
+    auto ws_h = static_cast<mx::float16_t>(ws);
+    auto neg_ws_h = static_cast<mx::float16_t>(-ws);
+
+    for (int oc = 0; oc < out_features; ++oc) {
+        int row = oc / 4;
+        int lane = oc % 4;
+        int bit_shift = lane * 2;
+
+        // Replicate the single BitNet scale across all groups
+        for (int g = 0; g < num_groups; ++g) {
+            scales[oc * num_groups + g] = ws_h;
+            biases[oc * num_groups + g] = neg_ws_h;
+        }
+
+        // Pack 16 input values per uint32
+        for (int g = 0; g < cols_uint32; ++g) {
+            uint32_t packed = 0;
+            for (int i = 0; i < 16; ++i) {
+                int c = g * 16 + i;
+                uint32_t val = 0;
+                if (c < in_features) {
+                    val = (w_data[row * in_features + c] >> bit_shift) & 0x03;
+                }
+                packed |= (val << (i * 2));
+            }
+            wq[oc * cols_uint32 + g] = packed;
+        }
+    }
+
+    auto wq_arr = mx::array(wq.data(), {out_features, cols_uint32}, mx::uint32);
+    auto scales_arr = mx::array(scales.data(), {out_features, num_groups}, mx::float16);
+    auto biases_arr = mx::array(biases.data(), {out_features, num_groups}, mx::float16);
+
+    return {std::move(wq_arr), std::move(scales_arr), std::move(biases_arr)};
 }
 
 // --- BitNet Attention ---
@@ -288,11 +373,24 @@ mx::array BitNetModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Dequantize uint8 packed ternary weights at load time.
-    // Each *.weight (uint8, shape [out/4, in]) is paired with a *.weight_scale (bf16, shape [1]).
-    // After dequantization, the weight becomes float16 [out, in] and the scale is removed.
+    // Repack uint8 packed ternary weights into standard MLX uint32 2-bit
+    // quantized format and register directly in QuantizedWeightRegistry.
+    //
+    // Each *.weight (uint8, shape [out/4, in]) is paired with a
+    // *.weight_scale (bf16, shape [1]). After repacking:
+    //   *.weight  → uint32 [out, ceil(in/16)] (standard MLX 2-bit format)
+    //   *.scales  → fp16   [out, 1] (replicated weight_scale per output)
+    //   *.biases  → fp16   [out, 1] (= -scales, so dequant gives {-ws,0,+ws})
+    // The BitNet weight_scale entry is removed.
+    //
+    // group_size = 128 (kernel-compatible, scale replicated across groups).
     std::vector<std::string> to_remove;
     std::vector<std::pair<std::string, mx::array>> to_add;
+
+    // Get weight_map() for member array pointers — these addresses are valid
+    // even before load_weights() fills the data.
+    auto wmap = weight_map();
+    auto& reg = QuantizedWeightRegistry::instance();
 
     const std::string scale_suffix = ".weight_scale";
 
@@ -305,12 +403,24 @@ BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 
             auto w_it = weights.find(weight_key);
             if (w_it != weights.end() && w_it->second.dtype() == mx::uint8) {
-                int packed_rows = w_it->second.shape(0);
-                int out_features = packed_rows * 4;
+                int in_features = w_it->second.shape(1);
+                auto [wq, scales, biases] = bitnet_repack_weights(w_it->second, val);
 
-                to_add.emplace_back(weight_key,
-                    dequantize_bitnet_weight(w_it->second, val, out_features));
-                to_remove.push_back(key);
+                // Replace uint8 weight with packed uint32 weight
+                to_add.emplace_back(weight_key, std::move(wq));
+                to_remove.push_back(key); // remove the .weight_scale entry
+
+                // Register in QuantizedWeightRegistry if the member array exists
+                auto wm_it = wmap.find(weight_key);
+                if (wm_it != wmap.end()) {
+                    reg.register_weight(
+                        wm_it->second,  // member array pointer (address stable)
+                        scales,
+                        biases,
+                        /*group_size=*/kBitnetGroupSize,
+                        /*bits=*/2,
+                        "affine");
+                }
             }
         }
     }

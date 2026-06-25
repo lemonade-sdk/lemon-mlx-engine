@@ -1,0 +1,96 @@
+diff --git a/mlx/backend/rocm/device.cpp b/mlx/backend/rocm/device.cpp
+index 11dfb44c..d2f58d06 100644
+--- a/mlx/backend/rocm/device.cpp
++++ b/mlx/backend/rocm/device.cpp
+@@ -489,6 +489,15 @@ void CommandEncoder::add_kernel_node_raw(
+     node_count_++;
+     return;
+   }
++  // Per-primitive graph opt-out: quantized matmul's tiny tiled kernels hurt
++  // graph performance, so launch them eagerly even when graphs are on.
++  if (skip_graph_) {
++    device_.make_current();
++    CHECK_HIP_ERROR(hipLaunchKernel(
++        func, grid_dim, block_dim, params, smem_bytes, stream_));
++    node_count_++;
++    return;
++  }
+ 
+   hipKernelNodeParams kernel_params = {};
+   kernel_params.func = func;
+@@ -586,6 +595,18 @@ void CommandEncoder::add_module_kernel_node(
+     node_count_++;
+     return;
+   }
++  // Per-primitive graph opt-out: quantized matmul's tiny tiled kernels hurt
++  // graph performance, so launch them eagerly even when graphs are on.
++  if (skip_graph_) {
++    device_.make_current();
++    CHECK_HIP_ERROR(hipModuleLaunchKernel(
++        reinterpret_cast<hipFunction_t>(func),
++        grid_dim.x, grid_dim.y, grid_dim.z,
++        block_dim.x, block_dim.y, block_dim.z,
++        smem_bytes, stream_, params, nullptr));
++    node_count_++;
++    return;
++  }
+   // Graph path: the node references `params` (which point into the kept-alive
+   // KernelArgs) until commit instantiates the graph. A module hipFunction_t is a
+   // valid hipKernelNodeParams.func on ROCm 7.13 (see device.h note).
+diff --git a/mlx/backend/rocm/device.h b/mlx/backend/rocm/device.h
+index e22dcca3..d7557588 100644
+--- a/mlx/backend/rocm/device.h
++++ b/mlx/backend/rocm/device.h
+@@ -253,6 +253,13 @@ class CommandEncoder {
+   // a persistent source graph (ROCm stores kernelParams by pointer, so one source
+   // can't safely feed multiple pooled execs).
+   std::unordered_map<std::string, std::vector<ExecSlot>> replay_pool_;
++
++  // Per-primitive graph opt-out: set before QuantizedMatmul eval_gpu so its
++  // many tiny tiled kernels launch eagerly instead of bloating the graph.
++  bool skip_graph_{false};
++
++ public:
++  void set_skip_graph(bool v) { skip_graph_ = v; }
+ };
+ 
+ class Device {
+diff --git a/mlx/backend/rocm/eval.cpp b/mlx/backend/rocm/eval.cpp
+index 301822bb..937e8a35 100644
+--- a/mlx/backend/rocm/eval.cpp
++++ b/mlx/backend/rocm/eval.cpp
+@@ -46,6 +46,13 @@ static bool is_graph_split_op(const char* name) {
+   return std::strcmp(name, "Concatenate") == 0;
+ }
+ 
++// Primitives whose tiny kernels don't benefit from graph batching.
++// QuantizedMatmul launches many tiled dequantization kernels that are
++// launch-bound — graph node management overhead > dispatch savings.
++static bool is_graph_quantized_op(const char* name) {
++  return std::strcmp(name, "QuantizedMatmul") == 0;
++}
++
+ void eval(array& arr) {
+   auto outputs = arr.outputs();
+   auto& encoder = rocm::get_command_encoder(arr.primitive().stream());
+@@ -61,6 +68,10 @@ void eval(array& arr) {
+   encoder.device().make_current();
+   if (rocm::use_hip_graphs()) {
+     rocm::set_current_prim(arr.primitive().name());
++    // Quantized ops: skip graph batching for their tiny internal kernels.
++    if (is_graph_quantized_op(arr.primitive().name())) {
++      encoder.set_skip_graph(true);
++    }
+   }
+   {
+     std::vector<array> inputs;
+@@ -69,6 +80,9 @@ void eval(array& arr) {
+     }
+     arr.primitive().eval_gpu(arr.inputs(), outputs);
+   }
++  if (rocm::use_hip_graphs()) {
++    encoder.set_skip_graph(false);
++  }
+ 
+   for (auto& in : arr.inputs()) {
+     if (in.data_shared_ptr() != arr.data_shared_ptr()) {
