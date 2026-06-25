@@ -323,7 +323,8 @@ BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
                 // format. Codes {0,1,2} with bias=-scale exactly represent
                 // {-scale,0,+scale}; bitnet_repack_weights() preserves the
                 // model's lane-major output layout used by dequantize_bitnet_weight().
-                auto [wq, scales, biases] = bitnet_repack_weights(w_it->second, val);
+                auto [wq, scales, biases] = bitnet_repack_weights(
+                    w_it->second, val, config_.bitnet_invert_weight_scales);
                 to_add.emplace_back(weight_key, std::move(wq));
                 to_remove.push_back(key);
 

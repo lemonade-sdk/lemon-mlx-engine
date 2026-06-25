@@ -35,6 +35,10 @@ struct LlamaConfiguration {
     bool attention_bias = false;
     bool mlp_bias = false;
     std::string hidden_act = "silu";
+    // Some MLX BitLinear checkpoints store weight_scale as an inverse divisor
+    // (scale = 1 / weight_scale). True BitNet/autobitlinear checkpoints store
+    // the direct multiplier.
+    bool bitnet_invert_weight_scales = false;
 
     int resolved_head_dim() const {
         return head_dim.value_or(hidden_size / num_attention_heads);

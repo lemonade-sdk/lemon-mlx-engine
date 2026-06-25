@@ -8,7 +8,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mlx-lm/common/bitnet_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/llm/models/llama.h>
 #include <mlx/mlx.h>
+#include <nlohmann/json.hpp>
 #include <cmath>
 #include <vector>
 
@@ -177,6 +179,90 @@ TEST_CASE("bitnet_repack_weights: all minus ones (code=0) → dequant is -scale"
     auto diff = mx::abs(mx::subtract(mx::astype(dequant, mx::float32), expected));
     mx::eval(diff);
     auto max_diff = mx::max(diff);
+    mx::eval(max_diff);
+
+    REQUIRE(max_diff.item<float>() < 1e-5f);
+}
+
+TEST_CASE("bitnet config detects inverse Falcon-E weight_scale semantics", "[bitnet_quant]") {
+    auto base = nlohmann::json{
+        {"model_type", "bitnet"},
+        {"hidden_size", 2048},
+        {"num_hidden_layers", 1},
+        {"intermediate_size", 4096},
+        {"num_attention_heads", 16},
+        {"num_key_value_heads", 2},
+        {"head_dim", 128},
+        {"rms_norm_eps", 1e-5},
+        {"vocab_size", 32768},
+        {"max_position_embeddings", 32768},
+        {"tie_word_embeddings", false},
+        {"quantization_config", {{"quant_method", "bitnet"}}}
+    };
+
+    auto falcon = base;
+    falcon["hidden_act"] = "silu";
+    auto falcon_cfg = falcon.get<LlamaConfiguration>();
+    REQUIRE(falcon_cfg.bitnet_invert_weight_scales);
+
+    auto bitnet = base;
+    bitnet["hidden_act"] = "relu2";
+    bitnet["quantization_config"]["linear_class"] = "autobitlinear";
+    auto bitnet_cfg = bitnet.get<LlamaConfiguration>();
+    REQUIRE_FALSE(bitnet_cfg.bitnet_invert_weight_scales);
+
+    auto explicit_inverse = base;
+    explicit_inverse["hidden_act"] = "relu2";
+    explicit_inverse["quantization_config"]["linear_class"] = "bitlinear";
+    auto explicit_inverse_cfg = explicit_inverse.get<LlamaConfiguration>();
+    REQUIRE(explicit_inverse_cfg.bitnet_invert_weight_scales);
+
+    auto silu_autobitlinear = base;
+    silu_autobitlinear["hidden_act"] = "silu";
+    silu_autobitlinear["quantization_config"]["linear_class"] = "autobitlinear";
+    auto silu_autobitlinear_cfg = silu_autobitlinear.get<LlamaConfiguration>();
+    REQUIRE_FALSE(silu_autobitlinear_cfg.bitnet_invert_weight_scales);
+}
+
+TEST_CASE("bitnet inverse weight_scale dequantizes Falcon-style scales", "[bitnet_quant]") {
+    int out_features = 4;
+    int in_features = 128;
+
+    std::vector<int> vals(out_features * in_features, 1); // ternary +1
+    auto packed = pack_ternary_values_lane_major(vals, out_features, in_features);
+    auto scale = mx::array(4.0f, mx::bfloat16);
+
+    auto normal = mx::astype(dequantize_bitnet_weight(packed, scale, out_features), mx::float32);
+    auto inverse = mx::astype(dequantize_bitnet_weight(packed, scale, out_features, true), mx::float32);
+    mx::eval({normal, inverse});
+
+    auto normal_diff = mx::max(mx::abs(mx::subtract(normal, mx::full({out_features, in_features}, 4.0f, mx::float32))));
+    auto inverse_diff = mx::max(mx::abs(mx::subtract(inverse, mx::full({out_features, in_features}, 0.25f, mx::float32))));
+    mx::eval({normal_diff, inverse_diff});
+
+    REQUIRE(normal_diff.item<float>() < 1e-5f);
+    REQUIRE(inverse_diff.item<float>() < 1e-5f);
+}
+
+TEST_CASE("bitnet_repack_weights supports inverse weight_scale", "[bitnet_quant]") {
+    int out_features = 8;
+    int in_features = 128;
+
+    std::vector<int> vals(out_features * in_features);
+    for (int oc = 0; oc < out_features; ++oc) {
+        for (int k = 0; k < in_features; ++k) {
+            vals[oc * in_features + k] = ((oc * 7 + k * 3) % 3) - 1;
+        }
+    }
+
+    auto packed = pack_ternary_values_lane_major(vals, out_features, in_features);
+    auto scale = mx::array(4.0f, mx::bfloat16);
+    auto ref = mx::astype(dequantize_bitnet_weight(packed, scale, out_features, true), mx::float32);
+    auto [wq, scales, biases] = bitnet_repack_weights(packed, scale, true);
+    auto got = mx::astype(mx::dequantize(wq, scales, biases, 128, 2), mx::float32);
+    mx::eval({ref, got});
+
+    auto max_diff = mx::max(mx::abs(mx::subtract(ref, got)));
     mx::eval(max_diff);
 
     REQUIRE(max_diff.item<float>() < 1e-5f);

@@ -72,21 +72,13 @@ static void* create_model(const std::string& config_json) {
     return new Model(config);
 }
 
-// BitNet type dispatch: creates BitNetModel or LlamaModel based on hidden_act.
+// BitNet type dispatch: BitNetModel supports both true relu² BitNet and
+// Falcon-E-style silu BitLinear checkpoints (without sub-norms).
 static void* create_bitnet_model(const std::string& config_json) {
     auto j = nlohmann::json::parse(config_json);
-    // Default to "relu2" for model_type=bitnet (true BitNet b1.58).
-    // Models like Falcon-E explicitly set hidden_act="silu" to indicate
-    // they are standard Llama with BitNet ternary quantization.
-    std::string hidden_act = j.value("hidden_act", std::string("relu2"));
-    if (hidden_act == "relu2") {
-        // Ensure config has hidden_act set so BitNetModel uses relu² + sub_norms.
-        if (!j.contains("hidden_act")) j["hidden_act"] = "relu2";
-        BitNetConfiguration config = j.get<BitNetConfiguration>();
-        return new BitNetModel(config);
-    }
-    LlamaConfiguration config = j.get<LlamaConfiguration>();
-    return new LlamaModel(config);
+    if (!j.contains("hidden_act")) j["hidden_act"] = "relu2";
+    BitNetConfiguration config = j.get<BitNetConfiguration>();
+    return new BitNetModel(config);
 }
 
 // Helper: create, sanitize, load weights, and return an owned ModelContext.
@@ -139,30 +131,20 @@ static ModelContext load_typed_model(
 }
 
 // BitNet dispatch: models with model_type="bitnet" can be either true BitNet
-// b1.58 (hidden_act="relu2", has sub_norms) or standard Llama with BitNet
-// ternary quantization (hidden_act="silu", no sub_norms — e.g. Falcon-E).
-// Route to the appropriate model based on hidden_act.
+// b1.58 (hidden_act="relu2", has sub_norms) or Falcon-E-style BitLinear
+// checkpoints (hidden_act="silu", no sub_norms). BitNetModel handles both and
+// preserves runtime 2-bit weights instead of dequantizing to fp16.
 static ModelContext load_bitnet_model(
     const std::string& config_json,
     std::unordered_map<std::string, mlx::core::array> weights,
     const BaseConfiguration& base_config)
 {
     auto j = nlohmann::json::parse(config_json);
-    // Default to "relu2" for model_type=bitnet (true BitNet b1.58).
-    std::string hidden_act = j.value("hidden_act", std::string("relu2"));
-    if (hidden_act == "relu2") {
-        // Ensure config has hidden_act set so BitNetModel uses relu² + sub_norms.
-        std::string cfg = config_json;
-        if (!j.contains("hidden_act")) {
-            j["hidden_act"] = "relu2";
-            cfg = j.dump();
-        }
-        return load_typed_model<BitNetConfiguration, BitNetModel>(
-            cfg, std::move(weights), base_config);
+    if (!j.contains("hidden_act")) {
+        j["hidden_act"] = "relu2";
     }
-    // Standard Llama with BitNet ternary quant (Falcon-E, etc.)
-    return load_typed_model<LlamaConfiguration, LlamaModel>(
-        config_json, std::move(weights), base_config);
+    return load_typed_model<BitNetConfiguration, BitNetModel>(
+        j.dump(), std::move(weights), base_config);
 }
 
 // Internal loader registry — maps model_type to a function that creates,

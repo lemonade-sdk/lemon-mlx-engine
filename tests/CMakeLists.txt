@@ -61,7 +61,7 @@ add_test(NAME test_nemotron_h COMMAND test_nemotron_h)
 
 # BitNet 2-bit quantized matmul numerical validation
 add_executable(test_bitnet_quant test_bitnet_quant.cpp)
-target_link_libraries(test_bitnet_quant PRIVATE mlx-lm-common Catch2::Catch2WithMain)
+target_link_libraries(test_bitnet_quant PRIVATE mlx-lm-llm mlx-lm-common Catch2::Catch2WithMain)
 add_test(NAME test_bitnet_quant COMMAND test_bitnet_quant)
 
 # Server API integration tests

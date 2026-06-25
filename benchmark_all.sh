@@ -65,8 +65,8 @@ benchmark "Granite-4.0-H-Tiny (issue #6 crash fix)" /home/bcloud/models/granite-
 # 9. Lille-130M (issue #9 dequant fix)
 benchmark "Lille-130M (issue #9 dequant fix)" /home/bcloud/models/lille-130m --raw
 
-# 10. Falcon-E-3B (1.58-bit, known broken checkpoint)
-benchmark "Falcon-E-3B (1.58-bit, broken checkpoint)" /home/bcloud/models/falcon-e-3b
+# 10. Falcon-E-3B (1.58-bit, inverse-scale BitLinear)
+benchmark "Falcon-E-3B (1.58-bit, inverse-scale BitLinear)" /home/bcloud/models/falcon-e-3b
 
 echo "════════════════════════════════════════════════════════════════════════════"
 echo "Benchmark complete."

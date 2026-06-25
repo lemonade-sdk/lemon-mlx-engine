@@ -47,6 +47,21 @@ void from_json(const nlohmann::json& j, LlamaConfiguration& c) {
     if (j.contains("hidden_act"))
         c.hidden_act = j["hidden_act"].get<std::string>();
 
+    if (j.contains("quantization_config") && j["quantization_config"].is_object()) {
+        const auto& qc = j["quantization_config"];
+        if (qc.value("quant_method", std::string()) == "bitnet") {
+            if (qc.contains("linear_class")) {
+                c.bitnet_invert_weight_scales =
+                    qc.value("linear_class", std::string()) != "autobitlinear";
+            } else {
+                // Falcon-E-style MLX BitLinear checkpoints omit linear_class and
+                // use scale = 1 / weight_scale. True relu2 BitNet checkpoints use
+                // direct scales unless marked otherwise.
+                c.bitnet_invert_weight_scales = (c.hidden_act != "relu2");
+            }
+        }
+    }
+
     if (j.contains("rope_scaling") && !j["rope_scaling"].is_null()) {
         std::unordered_map<std::string, StringOrNumber> scaling;
         for (auto& [key, val] : j["rope_scaling"].items()) {
@@ -496,7 +511,9 @@ LlamaModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
                 int out_features = packed_rows * 4;
 
                 to_add.emplace_back(weight_key,
-                    dequantize_bitnet_weight(w_it->second, val, out_features));
+                    dequantize_bitnet_weight(
+                        w_it->second, val, out_features,
+                        config_.bitnet_invert_weight_scales));
                 to_remove.push_back(key);
             }
         }

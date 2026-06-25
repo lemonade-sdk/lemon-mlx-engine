@@ -11,7 +11,8 @@ namespace mlx_lm {
 inline mlx::core::array dequantize_bitnet_weight(
     const mlx::core::array& packed_weight,
     const mlx::core::array& weight_scale,
-    int /*out_features*/)
+    int /*out_features*/,
+    bool invert_weight_scale = false)
 {
     namespace mx = mlx::core;
 
@@ -31,7 +32,9 @@ inline mlx::core::array dequantize_bitnet_weight(
 
     // Map 2-bit codes: 0→-1, 1→0, 2→+1, then scale.
     auto ternary = mx::astype(mx::subtract(flat, mx::array(1)), mx::float16);
-    auto scale = mx::astype(weight_scale, mx::float16);
+    auto scale = invert_weight_scale
+        ? mx::astype(mx::divide(mx::array(1.0f), weight_scale), mx::float16)
+        : mx::astype(weight_scale, mx::float16);
     return mx::multiply(ternary, scale);
 }
 
@@ -52,7 +55,8 @@ inline mlx::core::array dequantize_bitnet_weight(
 inline std::tuple<mlx::core::array, mlx::core::array, mlx::core::array>
 bitnet_repack_weights(
     const mlx::core::array& packed_weight,  // uint8 [out/4, in]
-    const mlx::core::array& weight_scale)  // scalar (bf16 or fp16)
+    const mlx::core::array& weight_scale,  // scalar (bf16 or fp16)
+    bool invert_weight_scale = false)
 {
     namespace mx = mlx::core;
     constexpr int kBitnetGroupSize = 128;
@@ -77,6 +81,9 @@ bitnet_repack_weights(
     mx::array ws_fp16 = mx::astype(weight_scale, mx::float16);
     mx::eval(ws_fp16);
     auto ws = static_cast<float>(ws_fp16.data<mx::float16_t>()[0]);
+    if (invert_weight_scale) {
+        ws = 1.0f / ws;
+    }
 
     // Materialize packed weight and read uint8 data
     mx::eval(packed_weight);
