@@ -300,6 +300,20 @@ public:
     update(const mlx::core::array& keys, const mlx::core::array& values) {
         return std::visit([&](auto& c) { return c.update(keys, values); }, kv_);
     }
+    std::pair<mlx::core::array, mlx::core::array>
+    update_at_pos(const mlx::core::array& keys, const mlx::core::array& values,
+                  const mlx::core::array& pos) {
+        return std::visit([&](auto& c)
+                              -> std::pair<mlx::core::array, mlx::core::array> {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple>) {
+                return c.update_at_pos(keys, values, pos);
+            } else {
+                throw std::runtime_error(
+                    "update_at_pos unsupported for rotating KV sub-cache");
+            }
+        }, kv_);
+    }
     bool is_trimmable() const {
         return std::visit([](const auto& c) { return c.is_trimmable(); }, kv_);
     }
@@ -350,6 +364,24 @@ public:
     std::pair<mlx::core::array, mlx::core::array>
     update(const mlx::core::array& keys, const mlx::core::array& values) {
         return std::visit([&](auto& c) { return c.update(keys, values); }, impl_);
+    }
+
+    // Device-offset write at `pos` (build-once graph decode). Only the simple /
+    // compound KV caches support it.
+    std::pair<mlx::core::array, mlx::core::array>
+    update_at_pos(const mlx::core::array& keys, const mlx::core::array& values,
+                  const mlx::core::array& pos) {
+        return std::visit([&](auto& c)
+                              -> std::pair<mlx::core::array, mlx::core::array> {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, CompoundCache>) {
+                return c.update_at_pos(keys, values, pos);
+            } else {
+                throw std::runtime_error(
+                    "update_at_pos unsupported for this cache type");
+            }
+        }, impl_);
     }
 
     bool is_trimmable() const {

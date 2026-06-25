@@ -14,6 +14,7 @@
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/common/graph_decode.h>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -279,17 +280,38 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
 
     // RoPE with partial rotary factor.
     int offset = cache ? cache->offset() : 0;
-    queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
-    keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
 
-    // KV cache update + SDPA.
+    // Device-position decode path (build-once HIP graph): RoPE offset, KV write
+    // slot, and causal mask all read a fixed-address [1] int32 device buffer so
+    // the same graph relaunches correctly as the loop advances pos device-side.
+    static const bool devpos_env = std::getenv("MLX_DECODE_DEVICE_POS") != nullptr;
+    bool gmode = (mlx_lm::graph_external_pos() || devpos_env) && L == 1 && cache;
+
     mx::array output(0.0f);
-    if (cache) {
-        auto [k, v] = cache->update(keys, values);
-        keys = k;
-        values = v;
+    if (gmode) {
+        auto& pos = mlx_lm::graph_decode_pos();          // fixed-address [1] int32
+        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, pos);
+        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, pos);
+        auto [k, v] = cache->update_at_pos(keys, values, pos);
+        int CAP = k.shape(2);
+        auto cols = mx::arange(0, CAP, mx::int32);
+        float ninf = -std::numeric_limits<float>::infinity();
+        auto addmask = mx::astype(
+            mx::reshape(mx::where(mx::less_equal(cols, pos),
+                                  mx::array(0.0f), mx::array(ninf)),
+                        {1, 1, 1, CAP}),
+            x.dtype());
+        output = sdpa(queries, k, v, scale_, AttentionMask::from_array(addmask));
+    } else {
+        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
+        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
+        if (cache) {
+            auto [k, v] = cache->update(keys, values);
+            keys = k;
+            values = v;
+        }
+        output = sdpa(queries, keys, values, scale_, mask);
     }
-    output = sdpa(queries, keys, values, scale_, mask);
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
     // Swift: oProj(sigmoidMultiply(output, gate))
