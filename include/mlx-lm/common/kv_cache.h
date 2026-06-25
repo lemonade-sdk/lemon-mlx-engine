@@ -56,6 +56,15 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
     int trim_impl(int n);
 
 public:
+    // Device-position write for build-once HIP-graph decode: write new_keys/values
+    // at slot `pos` (a [1] int32 device array) into the pre-allocated buffer via
+    // DynamicSliceUpdate (offset advances device-side on replay). The full buffer
+    // is returned; the caller attends over it with a device-pos length mask.
+    // Requires the buffer pre-allocated to capacity (no growth during decode).
+    std::pair<mlx::core::array, mlx::core::array> update_at_pos(
+        const mlx::core::array& new_keys, const mlx::core::array& new_values,
+        const mlx::core::array& pos);
+
     KVCacheSimple() = default;
     explicit KVCacheSimple(int initial_capacity) : initial_capacity_(initial_capacity) {}
     KVCacheSimple(int initial_capacity, int reserve)
