@@ -75,8 +75,13 @@ static void* create_model(const std::string& config_json) {
 // BitNet type dispatch: creates BitNetModel or LlamaModel based on hidden_act.
 static void* create_bitnet_model(const std::string& config_json) {
     auto j = nlohmann::json::parse(config_json);
+    // Default to "relu2" for model_type=bitnet (true BitNet b1.58).
+    // Models like Falcon-E explicitly set hidden_act="silu" to indicate
+    // they are standard Llama with BitNet ternary quantization.
     std::string hidden_act = j.value("hidden_act", std::string("relu2"));
     if (hidden_act == "relu2") {
+        // Ensure config has hidden_act set so BitNetModel uses relu² + sub_norms.
+        if (!j.contains("hidden_act")) j["hidden_act"] = "relu2";
         BitNetConfiguration config = j.get<BitNetConfiguration>();
         return new BitNetModel(config);
     }
@@ -143,10 +148,17 @@ static ModelContext load_bitnet_model(
     const BaseConfiguration& base_config)
 {
     auto j = nlohmann::json::parse(config_json);
+    // Default to "relu2" for model_type=bitnet (true BitNet b1.58).
     std::string hidden_act = j.value("hidden_act", std::string("relu2"));
     if (hidden_act == "relu2") {
+        // Ensure config has hidden_act set so BitNetModel uses relu² + sub_norms.
+        std::string cfg = config_json;
+        if (!j.contains("hidden_act")) {
+            j["hidden_act"] = "relu2";
+            cfg = j.dump();
+        }
         return load_typed_model<BitNetConfiguration, BitNetModel>(
-            config_json, std::move(weights), base_config);
+            cfg, std::move(weights), base_config);
     }
     // Standard Llama with BitNet ternary quant (Falcon-E, etc.)
     return load_typed_model<LlamaConfiguration, LlamaModel>(
