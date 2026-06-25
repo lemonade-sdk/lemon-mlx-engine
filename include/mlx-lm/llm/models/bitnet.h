@@ -19,14 +19,6 @@ namespace mlx_lm {
 // BitNet reuses Llama's configuration and JSON deserializer.
 using BitNetConfiguration = LlamaConfiguration;
 
-// Dequantize uint8 packed ternary weights to float16.
-// Each byte packs 4 ternary values as 2-bit values: 0→-1, 1→0, 2→+1.
-// Result is multiplied by weight_scale.
-mlx::core::array dequantize_bitnet_weight(
-    const mlx::core::array& packed_weight,
-    const mlx::core::array& weight_scale,
-    int out_features);
-
 // --- BitNet Attention (relu² + sub-layer norm) ---
 
 class BitNetAttention {

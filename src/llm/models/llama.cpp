@@ -8,6 +8,7 @@
 #include <mlx-lm/llm/models/llama.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/attention_utils.h>
+#include <mlx-lm/common/bitnet_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
 #include <cmath>
@@ -472,8 +473,38 @@ mx::array LlamaModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 LlamaModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Remove unused precomputed rotary frequencies
+    // Dequantize BitNet-style uint8 packed ternary weights at load time.
+    // Each *.weight (uint8, shape [out/4, in]) is paired with a *.weight_scale.
+    // Normal Llama weights do not have this pair and are left unchanged.
     std::vector<std::string> to_remove;
+    std::vector<std::pair<std::string, mx::array>> to_add;
+
+    const std::string scale_suffix = ".weight_scale";
+
+    for (auto& [key, val] : weights) {
+        if (key.size() > scale_suffix.size() &&
+            key.compare(key.size() - scale_suffix.size(), scale_suffix.size(), scale_suffix) == 0) {
+
+            auto prefix = key.substr(0, key.size() - scale_suffix.size());
+            auto weight_key = prefix + ".weight";
+
+            auto w_it = weights.find(weight_key);
+            if (w_it != weights.end() && w_it->second.dtype() == mx::uint8) {
+                int packed_rows = w_it->second.shape(0);
+                int out_features = packed_rows * 4;
+
+                to_add.emplace_back(weight_key,
+                    dequantize_bitnet_weight(w_it->second, val, out_features));
+                to_remove.push_back(key);
+            }
+        }
+    }
+
+    for (auto& [k, v] : to_add) {
+        weights.insert_or_assign(k, std::move(v));
+    }
+
+    // Remove unused precomputed rotary frequencies
     for (auto& [k, v] : weights) {
         if (k.find("self_attn.rotary_emb.inv_freq") != std::string::npos) {
             to_remove.push_back(k);
