@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mlx-lm/common/bitnet_utils.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
 #include <cmath>
 #include <vector>
@@ -36,6 +37,30 @@ static mx::array pack_ternary_values(
     }
 
     return mx::array(packed.data(), {out_features / 4, in_features}, mx::uint8);
+}
+
+// Helper matching the actual BitNet/dequantize_bitnet_weight lane-major order:
+// out[0:R] = lane0, out[R:2R] = lane1, out[2R:3R] = lane2, out[3R:4R] = lane3.
+static mx::array pack_ternary_values_lane_major(
+    const std::vector<int>& ternary_values,
+    int out_features,
+    int in_features)
+{
+    int packed_rows = out_features / 4;
+    std::vector<uint8_t> packed(packed_rows * in_features, 0);
+
+    for (int oc = 0; oc < out_features; ++oc) {
+        int lane = oc / packed_rows;
+        int row = oc % packed_rows;
+        int bit_shift = lane * 2;
+        for (int c = 0; c < in_features; ++c) {
+            int idx = oc * in_features + c;
+            int code = ternary_values[idx] + 1; // -1→0, 0→1, 1→2
+            packed[row * in_features + c] |= static_cast<uint8_t>(code << bit_shift);
+        }
+    }
+
+    return mx::array(packed.data(), {packed_rows, in_features}, mx::uint8);
 }
 
 TEST_CASE("bitnet_repack_weights: shape and dtype", "[bitnet_quant]") {
@@ -84,7 +109,7 @@ TEST_CASE("bitnet_repack_weights: all zeros (code=1) → dequant is 0", "[bitnet
     mx::eval({wq, scales, biases});
 
     // Dequantize via MLX
-    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
     mx::eval(dequant);
 
     // Code 1 → 0 for any scale
@@ -113,7 +138,7 @@ TEST_CASE("bitnet_repack_weights: all ones (code=2) → dequant is +scale", "[bi
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
     mx::eval({wq, scales, biases});
 
-    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
     mx::eval(dequant);
 
     // Code 2 → +scale
@@ -142,7 +167,7 @@ TEST_CASE("bitnet_repack_weights: all minus ones (code=0) → dequant is -scale"
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
     mx::eval({wq, scales, biases});
 
-    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
     mx::eval(dequant);
 
     // Code 0 → -scale
@@ -152,6 +177,31 @@ TEST_CASE("bitnet_repack_weights: all minus ones (code=0) → dequant is -scale"
     auto diff = mx::abs(mx::subtract(mx::astype(dequant, mx::float32), expected));
     mx::eval(diff);
     auto max_diff = mx::max(diff);
+    mx::eval(max_diff);
+
+    REQUIRE(max_diff.item<float>() < 1e-5f);
+}
+
+TEST_CASE("bitnet_repack_weights matches model lane-major dequant layout", "[bitnet_quant]") {
+    int out_features = 8;  // >4 exposes lane-major vs interleaved output order
+    int in_features = 128;
+
+    std::vector<int> vals(out_features * in_features);
+    for (int oc = 0; oc < out_features; ++oc) {
+        for (int k = 0; k < in_features; ++k) {
+            vals[oc * in_features + k] = ((oc * 7 + k * 3) % 3) - 1;
+        }
+    }
+
+    auto packed = pack_ternary_values_lane_major(vals, out_features, in_features);
+    auto scale = mx::array(0.25f, mx::bfloat16);
+
+    auto model_dequant = mx::astype(dequantize_bitnet_weight(packed, scale, out_features), mx::float32);
+    auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
+    auto q_dequant = mx::astype(mx::dequantize(wq, scales, biases, 128, 2), mx::float32);
+    mx::eval({model_dequant, q_dequant});
+
+    auto max_diff = mx::max(mx::abs(mx::subtract(model_dequant, q_dequant)));
     mx::eval(max_diff);
 
     REQUIRE(max_diff.item<float>() < 1e-5f);
@@ -173,7 +223,7 @@ TEST_CASE("bitnet_repack_weights: mixed codes", "[bitnet_quant]") {
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
     mx::eval({wq, scales, biases});
 
-    auto dequant = mx::dequantize(wq, scales, biases, 64, 2);
+    auto dequant = mx::dequantize(wq, scales, biases, 128, 2);
     mx::eval(dequant);
 
     // Verify each value matches expected: dequant = (code - 1) * scale = (vals[i] + 1 - 1) * scale = vals[i] * scale
@@ -212,12 +262,12 @@ TEST_CASE("quantized_matmul matches dequantize-then-matmul (bit-exact)", "[bitne
     mx::eval({x, wq, scales, biases});
 
     // Reference: dequantize then matmul
-    auto w_dequant = mx::dequantize(wq, scales, biases, 64, 2);
+    auto w_dequant = mx::dequantize(wq, scales, biases, 128, 2);
     auto ref = mx::matmul(x, mx::transpose(w_dequant));
     mx::eval(ref);
 
     // GPU path: quantized_matmul (transpose=true since weight is [out, in])
-    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 64, 2);
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 128, 2);
     mx::eval(gpu);
 
     // Should be bit-exact (same accumulation precision, no quantization error)
@@ -252,12 +302,12 @@ TEST_CASE("quantized_matmul with scale=1.0: max error < 1e-5", "[bitnet_quant]")
     mx::eval({x, wq, scales, biases});
 
     // Reference: dequantize then matmul
-    auto w_dequant = mx::dequantize(wq, scales, biases, 64, 2);
+    auto w_dequant = mx::dequantize(wq, scales, biases, 128, 2);
     auto ref = mx::matmul(x, mx::transpose(w_dequant));
     mx::eval(ref);
 
     // GPU path
-    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 64, 2);
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 128, 2);
     mx::eval(gpu);
 
     // Bit-exact: both should produce exactly 0 for each output
@@ -268,6 +318,82 @@ TEST_CASE("quantized_matmul with scale=1.0: max error < 1e-5", "[bitnet_quant]")
     auto match = mx::all(mx::equal(ref_f, gpu_f));
     mx::eval(match);
     REQUIRE(match.item<bool>());
+}
+
+TEST_CASE("linear_forward uses registered BitNet 2-bit weights", "[bitnet_quant]") {
+    int out_features = 8;
+    int in_features = 128;
+    int batch_size = 1;
+
+    std::vector<int> vals(out_features * in_features);
+    for (int oc = 0; oc < out_features; ++oc) {
+        for (int k = 0; k < in_features; ++k) {
+            vals[oc * in_features + k] = ((oc * 11 + k * 5) % 3) - 1;
+        }
+    }
+
+    auto packed = pack_ternary_values_lane_major(vals, out_features, in_features);
+    auto scale = mx::array(0.25f, mx::bfloat16);
+    auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
+
+    std::vector<float> x_data(in_features);
+    for (int k = 0; k < in_features; ++k) {
+        x_data[k] = static_cast<float>(((k * 7 + 3) % 17) - 8) / 8.0f;
+    }
+    auto x = mx::astype(mx::array(x_data.data(), {batch_size, in_features}, mx::float32), mx::bfloat16);
+    mx::eval({x, wq, scales, biases});
+
+    auto& reg = QuantizedWeightRegistry::instance();
+    reg.clear();
+    reg.register_weight(&wq, scales, biases, /*group_size=*/128, /*bits=*/2, "affine");
+
+    auto ref_w = dequantize_bitnet_weight(packed, scale, out_features);
+    auto ref = mx::matmul(x, mx::transpose(ref_w));
+    auto got = linear_forward(x, wq);
+    mx::eval({ref, got});
+
+    auto max_diff = mx::max(mx::abs(mx::subtract(mx::astype(ref, mx::float32), mx::astype(got, mx::float32))));
+    mx::eval(max_diff);
+    reg.clear();
+
+    REQUIRE(max_diff.item<float>() < 1e-4f);
+}
+
+TEST_CASE("quantized_matmul matches model dequant for real BitNet decode shape", "[bitnet_quant]") {
+    int out_features = 2560;
+    int in_features = 2560;
+    int batch_size = 1;  // decode path (QMV)
+
+    std::vector<int> vals(out_features * in_features);
+    for (int oc = 0; oc < out_features; ++oc) {
+        for (int k = 0; k < in_features; ++k) {
+            vals[oc * in_features + k] = ((oc * 131 + k * 17) % 3) - 1;
+        }
+    }
+
+    auto packed = pack_ternary_values_lane_major(vals, out_features, in_features);
+    auto scale = mx::array(0.25f, mx::bfloat16);
+    auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
+
+    std::vector<float> x_data(in_features);
+    for (int k = 0; k < in_features; ++k) {
+        x_data[k] = static_cast<float>(((k * 13 + 7) % 31) - 15) / 16.0f;
+    }
+    auto x = mx::astype(mx::array(x_data.data(), {batch_size, in_features}, mx::float32), mx::bfloat16);
+    mx::eval({x, wq, scales, biases});
+
+    auto w_ref = dequantize_bitnet_weight(packed, scale, out_features);
+    auto ref = mx::matmul(x, mx::transpose(w_ref));
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, /*transpose=*/true, 128, 2);
+    mx::eval({ref, gpu});
+
+    auto diff = mx::abs(mx::subtract(mx::astype(ref, mx::float32), mx::astype(gpu, mx::float32)));
+    auto max_diff = mx::max(diff);
+    mx::eval(max_diff);
+
+    // Fused qmv and dequant+matmul accumulate in different orders, but should
+    // agree closely enough. Layout or bias bugs show errors orders of magnitude larger.
+    REQUIRE(max_diff.item<float>() < 5.0f);
 }
 
 TEST_CASE("bitnet_repack_weights rejects in_features not divisible by 128", "[bitnet_quant]") {
@@ -288,9 +414,9 @@ TEST_CASE("bitnet_repack_weights with larger shape", "[bitnet_quant]") {
 
     std::vector<int> vals(out_features * in_features);
     for (int i = 0; i < static_cast<int>(vals.size()); ++i) {
-        vals[i] = (i % 5) - 2; // cycles: -2, -1, 0, 1, 2
+        vals[i] = (i % 3) - 1; // cycles: -1, 0, 1
     }
-    auto packed = pack_ternary_values(vals, out_features, in_features);
+    auto packed = pack_ternary_values_lane_major(vals, out_features, in_features);
     auto scale = mx::array(0.1f, mx::bfloat16);
 
     auto [wq, scales, biases] = bitnet_repack_weights(packed, scale);
@@ -304,7 +430,7 @@ TEST_CASE("bitnet_repack_weights with larger shape", "[bitnet_quant]") {
 
     // Quick dequant + matmul to verify no crash
     auto x = mx::full({1, in_features}, 1.0f, mx::bfloat16);
-    auto gpu = mx::quantized_matmul(x, wq, scales, biases, true, 64, 2);
+    auto gpu = mx::quantized_matmul(x, wq, scales, biases, true, 128, 2);
     mx::eval(gpu);
 
     REQUIRE(gpu.shape(0) == 1);

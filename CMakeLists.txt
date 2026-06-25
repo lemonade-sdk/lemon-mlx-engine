@@ -37,34 +37,52 @@ FetchContent_Declare(
     GIT_TAG 6abf0b7e # rocm-support (pinned working ExecUpdate commit)
     GIT_SHALLOW    FALSE
 )
-FetchContent_MakeAvailable(mlx)
-
-# Apply local patches to the fetched MLX source
-FetchContent_GetProperties(mlx SOURCE_DIR MLX_SOURCE_DIR)
-if(MLX_SOURCE_DIR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-skip-graph.patch")
-    execute_process(
-        COMMAND git apply --check "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-skip-graph.patch"
-        WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
-        RESULT_VARIABLE PATCH_CHECK_RESULT
-        ERROR_QUIET
-        OUTPUT_QUIET
-    )
-    if(PATCH_CHECK_RESULT EQUAL 0)
-        message(STATUS "Applying mlx-rocm-skip-graph.patch...")
-        execute_process(
-            COMMAND git apply "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-skip-graph.patch"
-            WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
-            RESULT_VARIABLE PATCH_RESULT
-        )
-        if(PATCH_RESULT EQUAL 0)
-            message(STATUS "Patch applied successfully")
-        else()
-            message(WARNING "Failed to apply mlx-rocm-skip-graph.patch")
-        endif()
-    else()
-        message(STATUS "mlx-rocm-skip-graph.patch already applied, skipping")
-    endif()
+# Fetch MLX, apply local patches, then add it. Patching must happen before
+# add_subdirectory()/FetchContent_MakeAvailable so CMakeLists.txt changes (for
+# example removing unsupported ROCm clang flags) affect generated build files.
+FetchContent_GetProperties(mlx)
+if(NOT mlx_POPULATED)
+    FetchContent_Populate(mlx)
 endif()
+set(MLX_SOURCE_DIR "${mlx_SOURCE_DIR}")
+
+if(MLX_BUILD_ROCM AND MLX_SOURCE_DIR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch")
+        execute_process(
+            COMMAND git apply --check "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch"
+            WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
+            RESULT_VARIABLE PATCH_CHECK_RESULT
+            ERROR_QUIET
+            OUTPUT_QUIET
+        )
+        if(PATCH_CHECK_RESULT EQUAL 0)
+            message(STATUS "Applying mlx-rocm-build.patch...")
+            execute_process(
+                COMMAND git apply "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch"
+                WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
+                RESULT_VARIABLE PATCH_RESULT
+            )
+            if(PATCH_RESULT EQUAL 0)
+                message(STATUS "Patch applied successfully")
+            else()
+                message(FATAL_ERROR "Failed to apply mlx-rocm-build.patch")
+            endif()
+        else()
+            execute_process(
+                COMMAND git apply --reverse --check "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch"
+                WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
+                RESULT_VARIABLE PATCH_REVERSE_CHECK_RESULT
+                ERROR_QUIET
+                OUTPUT_QUIET
+            )
+            if(PATCH_REVERSE_CHECK_RESULT EQUAL 0)
+                message(STATUS "mlx-rocm-build.patch already applied, skipping")
+            else()
+                message(FATAL_ERROR "mlx-rocm-build.patch does not apply to fetched MLX source")
+            endif()
+        endif()
+endif()
+
+add_subdirectory("${mlx_SOURCE_DIR}" "${mlx_BINARY_DIR}")
 
 # nlohmann/json (MLX may already provide this)
 if(NOT TARGET nlohmann_json::nlohmann_json)

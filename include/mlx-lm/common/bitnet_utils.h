@@ -40,7 +40,9 @@ inline mlx::core::array dequantize_bitnet_weight(
 //
 // BitNet packs 4 ternary codes {0→-1, 1→0, 2→+1} per byte across output lanes:
 //   uint8[row, c] = lane0[1:0] | lane1[3:2] | lane2[5:4] | lane3[7:6]
-//   where row = oc/4, lane = oc%4.
+// The dequantized output order is lane-major:
+//   out[0:R]=lane0, out[R:2R]=lane1, out[2R:3R]=lane2, out[3R:4R]=lane3,
+// where R=packed_rows, so row = oc % R and lane = oc / R.
 //
 // MLX 2-bit format: uint32[out, ceil(in/16)], each uint32 = 16 codes at 2 bits
 // each, least-significant code first, padding with 0.
@@ -92,8 +94,8 @@ bitnet_repack_weights(
     auto neg_ws_h = static_cast<mx::float16_t>(-ws);
 
     for (int oc = 0; oc < out_features; ++oc) {
-        int row = oc / 4;
-        int lane = oc % 4;
+        int row = oc % packed_rows;
+        int lane = oc / packed_rows;
         int bit_shift = lane * 2;
 
         // Replicate the single BitNet scale across all groups for this output row
