@@ -177,8 +177,13 @@ mx::array Lille130mModelInner::operator()(
     const mx::array& inputs,
     std::vector<KVCache>* cache)
 {
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+
     // Embedding lookup — no scaling
-    auto h = mx::take(embed_tokens_weight_, inputs, 0);
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
 
     // Create attention mask
     auto mask = create_attention_mask(h, cache && !cache->empty() ? &(*cache)[0] : nullptr);
@@ -242,11 +247,69 @@ mx::array Lille130mModel::forward_impl(
     return transformer_.embed_as_linear(out);
 }
 
+namespace {
+
+bool ends_with(const std::string& value, const std::string& suffix) {
+    return value.size() >= suffix.size() &&
+           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+} // namespace
+
 std::unordered_map<std::string, mx::array>
 Lille130mModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Remove keys containing "rotary_emb"
     std::vector<std::string> to_remove;
+    std::vector<std::pair<std::string, mx::array>> to_add;
+
+    // Lille-130m MLX checkpoints store affine-quantized uint32 weights with
+    // .scales/.biases companions. Dequantize them during sanitization so the
+    // embedding lookup, tied output projection, and dense load path all receive
+    // real weights instead of packed integers. Infer bits/group size from the
+    // packed checkpoint shape and the model member's dense shape.
+    auto wmap = weight_map();
+    const std::string scales_suffix = ".scales";
+    for (const auto& [key, scales] : weights) {
+        if (!ends_with(key, scales_suffix)) continue;
+
+        auto prefix = key.substr(0, key.size() - scales_suffix.size());
+        auto weight_key = prefix + ".weight";
+        auto weight_it = weights.find(weight_key);
+        auto target_it = wmap.find(weight_key);
+        if (weight_it == weights.end() || target_it == wmap.end()) continue;
+
+        const auto& packed = weight_it->second;
+        const auto& target = *target_it->second;
+        if (packed.ndim() != 2 || target.ndim() != 2 || scales.ndim() != 2) continue;
+
+        int in_features = target.shape(1);
+        int packed_cols = packed.shape(1);
+        int num_groups = scales.shape(1);
+        if (in_features <= 0 || packed_cols <= 0 || num_groups <= 0) continue;
+        if ((packed_cols * 32) % in_features != 0) continue;
+        if (in_features % num_groups != 0) continue;
+
+        int bits = (packed_cols * 32) / in_features;
+        int group_size = in_features / num_groups;
+
+        std::optional<mx::array> biases;
+        auto biases_key = prefix + ".biases";
+        auto biases_it = weights.find(biases_key);
+        if (biases_it != weights.end()) {
+            biases = biases_it->second;
+            to_remove.push_back(biases_key);
+        }
+
+        to_add.emplace_back(weight_key,
+            mx::dequantize(packed, scales, biases, group_size, bits));
+        to_remove.push_back(key);
+    }
+
+    for (auto& [k, v] : to_add) {
+        weights.insert_or_assign(k, std::move(v));
+    }
+
+    // Remove unused precomputed rotary frequencies.
     for (auto& [k, v] : weights) {
         if (k.find("rotary_emb") != std::string::npos) {
             to_remove.push_back(k);
@@ -272,10 +335,11 @@ void Lille130mModel::load_weights(
 
 std::unordered_map<std::string, mx::array*> Lille130mModel::weight_map() {
     std::unordered_map<std::string, mx::array*> map;
-    // Lille130m uses "transformer" prefix in the Swift reference for the inner model,
-    // but the weight file uses bare prefixes (tok_embeddings, layers, norm) — no wrapper prefix
+    // Lille130m checkpoints store the inner model under the transformer.*
+    // prefix. Keeping the keys aligned here lets sanitization and loading bind
+    // checkpoint weights (including .scales/.biases companions) to members.
     for (auto& [k, v] : transformer_.weight_map()) {
-        map[k] = v;
+        map["transformer." + k] = v;
     }
     return map;
 }
