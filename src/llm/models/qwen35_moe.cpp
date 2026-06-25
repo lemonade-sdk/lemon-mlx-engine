@@ -422,7 +422,8 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // SSM state as a [2, …] ping-pong buffer: read slot pos&1, write (pos+1)&1
     // via dynamic slice/slice_update. Each replay's device pos advances, so it
     // reads the previous replay's write and accumulates.
-    bool gdn_dbuf = mlx_lm::graph_external_pos() && S == 1 && cache;
+    static const bool no_dbuf = std::getenv("MLX_GDN_NO_DBUF") != nullptr;
+    bool gdn_dbuf = !no_dbuf && mlx_lm::graph_external_pos() && S == 1 && cache;
     mx::array ridx(0), widx(0);
     if (gdn_dbuf) {
         auto pos2 = mlx_lm::graph_decode_pos();
@@ -467,8 +468,10 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto [conv_out, new_state] =
             gdn_conv_step(conv_state, qkv, conv1d_weight_);
         if (gdn_dbuf && (*cache)[0].has_value()) {
-            (*cache)[0] = mx::slice_update((*cache)[0].value(),
-                                           mx::expand_dims(new_state, 0), widx, {0});
+            // std::move releases the cache ref so slice_update donates (in-place
+            // write into the persistent [2,…] buffer at a fixed address).
+            auto s = std::move((*cache)[0].value());
+            (*cache)[0] = mx::slice_update(s, mx::expand_dims(new_state, 0), widx, {0});
         } else {
             (*cache)[0] = new_state;
         }
@@ -524,8 +527,8 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                     ssm_state, std::nullopt, /*inplace=*/false);
             }
             if (gdn_dbuf && (*cache)[1].has_value()) {
-                (*cache)[1] = mx::slice_update((*cache)[1].value(),
-                                               mx::expand_dims(ns, 0), widx, {0});
+                auto s = std::move((*cache)[1].value());
+                (*cache)[1] = mx::slice_update(s, mx::expand_dims(ns, 0), widx, {0});
             } else {
                 (*cache)[1] = ns;
             }

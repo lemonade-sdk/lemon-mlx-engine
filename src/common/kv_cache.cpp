@@ -146,11 +146,35 @@ std::pair<mlx::core::array, mlx::core::array> KVCacheSimple::update_at_pos(
     const mlx::core::array& pos) {
     // DynamicSliceUpdate at the device-side `pos` (axis 2). The buffer must be
     // pre-allocated to capacity; the offset advances device-side so the built
-    // graph relaunches correctly as the loop advances pos.
-    keys_ = mx::slice_update(keys_.value(), new_keys, pos, {2});
-    values_ = mx::slice_update(values_.value(), new_values, pos, {2});
+    // graph relaunches correctly as the loop advances pos. std::move releases the
+    // cache's reference so slice_update can donate (update in place) — keeping the
+    // buffer at a FIXED address, which the build-once graph's nodes bake into.
+    auto k = std::move(keys_.value());
+    auto v = std::move(values_.value());
+    keys_ = mx::slice_update(k, new_keys, pos, {2});
+    values_ = mx::slice_update(v, new_values, pos, {2});
     offset_ += new_keys.shape(2);
     return {keys_.value(), values_.value()};
+}
+
+void KVCacheSimple::reserve_to(int capacity) {
+    if (!keys_.has_value()) {
+        return;
+    }
+    auto& k = keys_.value();
+    int cur = k.shape(2);
+    if (cur >= capacity) {
+        return;
+    }
+    int pad = capacity - cur;
+    auto kpad = k.shape();
+    kpad[2] = pad;
+    auto vpad = values_.value().shape();
+    vpad[2] = pad;
+    keys_ = mx::concatenate({k, mx::zeros(kpad, k.dtype())}, 2);
+    values_ = mx::concatenate(
+        {values_.value(), mx::zeros(vpad, values_.value().dtype())}, 2);
+    mx::eval(keys_.value(), values_.value());
 }
 
 // --- RotatingKVCache ---

@@ -9,6 +9,7 @@ namespace mx = mlx::core;
 namespace mlx::core {
 void gpu_kv_pos_set(array& pos, int v);
 void gpu_kv_pos_increment(array& pos, int delta);
+void gpu_scalar_copy_i32(array& dst, array& src);
 }
 
 namespace mlx_lm {
@@ -53,6 +54,27 @@ void advance_graph_decode_pos(int delta) {
 
 bool graph_external_pos() { return g_external; }
 void set_graph_external_pos(bool on) { g_external = on; }
+
+// Fixed-address [1,1] int32 input-token buffer. Constructed lazily (after device
+// selection) and kept resident so its device address never changes.
+mx::array& graph_decode_input() {
+    static mx::array* g_input = nullptr;
+    if (g_input == nullptr) {
+        g_input = new mx::array(mx::zeros({1, 1}, mx::int32));
+        mx::eval(*g_input);
+    }
+    return *g_input;
+}
+
+void set_graph_decode_input_from(mx::array& token) {
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    auto& dst = graph_decode_input();
+    // token may be [1] or [1,1]; the kernel copies element 0 either way.
+    mx::gpu_scalar_copy_i32(dst, token);
+#else
+    (void)token;
+#endif
+}
 
 bool graph_capturing() { return g_capturing; }
 void set_graph_capturing(bool on) { g_capturing = on; }

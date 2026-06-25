@@ -16,8 +16,18 @@
 #if defined(MLX_BUILD_ROCM)
 // Decode-mode toggle (defined in mlx/backend/rocm/eval.cpp; declared here to
 // avoid pulling HIP headers into engine code).
+#include <mlx-lm/common/graph_decode.h>
 namespace mlx::core {
 void gpu_set_graph_decode_mode(bool v);
+// Build-once pure-relaunch decode + deterministic arena (rocm backend bridge).
+void decode_pure_record();
+void decode_pure_replay();
+void decode_pure_off();
+size_t decode_pure_chain_len();
+bool decode_arena_begin(size_t capacity, int device, void* stream);
+void decode_arena_reset();
+void decode_arena_end();
+bool decode_arena_overflowed();
 } // namespace mlx::core
 #endif
 
@@ -344,6 +354,112 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 
     return convert_to_token(result.logits);
 }
+
+#if defined(MLX_BUILD_ROCM)
+// Build-once pure-relaunch decode step. State machine:
+//   0 warmup  — device-pos paths run once (warms mx::compile caches), no record
+//   1 record  — arm the deterministic arena + record the per-token graph chain
+//   2 replay  — rewind arena, advance device pos, relaunch the recorded chain
+// The fixed-address input buffer feeds each token so the recorded embedding
+// gather always reads the new id without the buffer being reallocated.
+mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
+    StreamGuard sg(generation_stream());
+    namespace mc = mlx::core;
+
+    static const size_t arena_bytes = [] {
+        const char* e = std::getenv("MLX_DECODE_ARENA_MB");
+        return size_t(e ? std::atoll(e) : 1024) << 20;
+    }();
+
+    LMInput::Text in(mlx_lm::graph_decode_input());  // [1,1] int32, fixed addr
+
+    // The input-token feed and the position advance must be IMMEDIATE launches,
+    // loop-owned and sequenced between relaunches — never recorded graph nodes
+    // (a recorded copy bakes the record-token's source address and would replay
+    // the same stale token; an in-graph pos++ races the readers). Drop to eager
+    // launch mode for them, then re-enable graph mode for the recorded forward.
+    // Diagnostics: freeze pos and/or input on replay to localize injection bugs.
+    static const bool freeze = std::getenv("MLX_PURE_FREEZE") != nullptr;
+    static const bool freeze_pos = std::getenv("MLX_PURE_FREEZE_POS") != nullptr;
+    static const bool freeze_in = std::getenv("MLX_PURE_FREEZE_INPUT") != nullptr;
+    bool replaying = pure_graph_state_ == 2;
+    bool hold_in = replaying && (freeze || freeze_in);
+    bool hold_pos = replaying && (freeze || freeze_pos);
+
+    mc::gpu_set_graph_decode_mode(false);
+    mx::array prev_tok = previous.tokens;
+    if (!hold_in)
+        mlx_lm::set_graph_decode_input_from(prev_tok);  // device copy -> fixed buffer
+    if (pure_graph_state_ == 0) {
+        // Engage device-position decode: seed pos to the current sequence
+        // position and pre-grow the KV buffers so device-offset writes never
+        // realloc. This first forward warms the device-pos compile caches.
+        mlx_lm::set_graph_external_pos(true);
+        // NOTE: graph_capturing stays false (snapshot path). The model re-runs
+        // every token, so the GDN parity index is recomputed into deterministic
+        // arena addresses each token and the recorded graph reads the updated
+        // values — the lazy/device-derived index (needed only for stream capture)
+        // produces wrong slots here.
+        int off = 0;
+        for (auto& c : cache_) off = std::max(off, c.offset());
+        mlx_lm::set_graph_decode_pos(off);
+        for (auto& c : cache_) c.reserve_to(pure_graph_cap_);
+    } else if (!hold_pos) {
+        // Advance the device position to this token's slot (one per token).
+        mlx_lm::advance_graph_decode_pos(1);
+    }
+    mc::gpu_set_graph_decode_mode(true);
+
+    // Isolation flag: device-position decode only — re-run the model each token
+    // with no arena and no graph record/replay. Tests M3/M4 device-pos logic in
+    // isolation from the relaunch/address machinery.
+    static const bool noreplay = std::getenv("MLX_PURE_NOREPLAY") != nullptr;
+    if (!noreplay) {
+        if (pure_graph_state_ == 1) {
+            // Record: arm the arena and capture the chain.
+            mc::decode_arena_begin(arena_bytes, 0, nullptr);
+            mc::decode_arena_reset();
+            mc::decode_pure_record();
+        } else if (pure_graph_state_ == 2) {
+            // Replay: rewind the arena and relaunch the recorded chain.
+            mc::decode_arena_reset();
+            mc::decode_pure_replay();
+        }
+    }
+
+    auto result = context_.call_fn(
+        in, cache_.empty() ? nullptr : &cache_,
+        state_.has_value() ? &state_.value() : nullptr);
+    state_ = result.state;
+    auto token = convert_to_token(result.logits);
+    mx::eval(token);  // flush this token's commits (completes record or replay)
+
+    static const bool pure_dbg = std::getenv("MLX_PURE_DEBUG") != nullptr;
+    if (pure_dbg) {
+        auto& posb = mlx_lm::graph_decode_pos();
+        auto& inb = mlx_lm::graph_decode_input();
+        fprintf(stderr, "[pure] state=%d pos=%d in=%d sampled=%d chain=%zu\n",
+                pure_graph_state_, posb.item<int>(), inb.item<int>(),
+                token.item<int>(), mc::decode_pure_chain_len());
+    }
+
+    if (pure_graph_state_ == 0) {
+        pure_graph_state_ = 1;       // next token records
+    } else if (pure_graph_state_ == 1) {
+        if (mc::decode_arena_overflowed()) {
+            // Arena too small — abandon pure mode, revert to the normal path.
+            mc::decode_pure_off();
+            mc::decode_arena_end();
+            mlx_lm::set_graph_external_pos(false);
+            mlx_lm::set_graph_capturing(false);
+            pure_graph_state_ = 3;   // disabled
+        } else {
+            pure_graph_state_ = 2;   // chain recorded; subsequent tokens replay
+        }
+    }
+    return token;
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // TokenIterator — prepare (prompt prefill)
@@ -812,6 +928,28 @@ std::optional<int> TokenIterator::next() {
 
     // Standard path: single token generation.
     static const bool g_sync_decode = std::getenv("MLX_SYNC_DECODE") != nullptr;
+
+#if defined(MLX_BUILD_ROCM)
+    // Build-once pure-relaunch graph decode (opt-in, qwen35-moe device-pos path).
+    static const bool pure_enabled =
+        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr;
+    if (pure_enabled && pure_graph_state_ != 3 && !cache_.empty()) {
+        if (pure_graph_cap_ == 0) {
+            int off = 0;
+            for (auto& c : cache_) off = std::max(off, c.offset());
+            int remaining = max_tokens_.has_value()
+                ? std::max(0, max_tokens_.value() - token_count_) : 256;
+            pure_graph_cap_ = off + remaining + 8;
+        }
+        auto previous_y = y_;
+        auto token = step_pure_graph(previous_y);
+        y_ = LMInput::Text(token);
+        token_count_++;
+        measure_prefill_boundary_();
+        return token.item<int32_t>();
+    }
+#endif
+
     auto previous_y = y_;
     auto token = step(previous_y);
     y_ = LMInput::Text(token);

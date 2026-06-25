@@ -65,6 +65,12 @@ public:
         const mlx::core::array& new_keys, const mlx::core::array& new_values,
         const mlx::core::array& pos);
 
+    // Pre-grow the buffer to `capacity` columns (axis 2) with zeros, keeping the
+    // logical offset. Required before update_at_pos so device-offset writes never
+    // grow/realloc the buffer (which would break the build-once graph's baked
+    // pointers). No-op if not yet populated or already at capacity.
+    void reserve_to(int capacity);
+
     KVCacheSimple() = default;
     explicit KVCacheSimple(int initial_capacity) : initial_capacity_(initial_capacity) {}
     KVCacheSimple(int initial_capacity, int reserve)
@@ -314,6 +320,14 @@ public:
             }
         }, kv_);
     }
+    void reserve_to(int capacity) {
+        std::visit([&](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple>) {
+                c.reserve_to(capacity);
+            }
+        }, kv_);
+    }
     bool is_trimmable() const {
         return std::visit([](const auto& c) { return c.is_trimmable(); }, kv_);
     }
@@ -380,6 +394,16 @@ public:
             } else {
                 throw std::runtime_error(
                     "update_at_pos unsupported for this cache type");
+            }
+        }, impl_);
+    }
+
+    void reserve_to(int capacity) {
+        std::visit([&](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, CompoundCache>) {
+                c.reserve_to(capacity);
             }
         }, impl_);
     }

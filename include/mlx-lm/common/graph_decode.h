@@ -18,6 +18,16 @@ void advance_graph_decode_pos(int delta);
 bool graph_external_pos();
 void set_graph_external_pos(bool on);
 
+// Persistent device input-token buffer for build-once graph decode (fixed
+// address [1,1] int32). The recorded graph's embedding gather reads this buffer;
+// the loop feeds each new token into it (device copy) so the buffer is never
+// reallocated between relaunches.
+mlx::core::array& graph_decode_input();
+
+// Device-copy the freshly-sampled token (a [1]/[1,1] int32 array) into the
+// fixed-address input buffer. Runs on-stream, ordered after the producing step.
+void set_graph_decode_input_from(mlx::core::array& token);
+
 // Whether HIP-graph decode is active (ROCm only; false elsewhere).
 bool graph_decode_enabled();
 

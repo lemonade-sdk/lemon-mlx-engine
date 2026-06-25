@@ -328,6 +328,14 @@ private:
     std::optional<int> max_tokens_;
     int token_count_ = 0;
 
+    // --- Pure-relaunch graph decode (build-once, deterministic arena) ---
+    // 0 = not engaged; 1 = graph recorded, replaying. Engaged on the first
+    // steady single-token decode step when MLX_DECODE_GRAPH_PURE is set.
+    int pure_graph_state_ = 0;
+    int pure_graph_cap_ = 0;      // reserved KV capacity
+    // Run one decode step under the pure-graph path; returns the sampled token.
+    mlx::core::array step_pure_graph(const LMInput::Text& previous);
+
     // KV cache quantization parameters.
     std::optional<int> kv_bits_;
     int kv_group_size_ = 64;
