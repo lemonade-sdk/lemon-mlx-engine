@@ -38,6 +38,22 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
             it->second.last_access = now_ts();
             return it->second.container;
         }
+
+        // Short-name alias: when a model was loaded from a local path
+        // (e.g. /home/bcloud/models/llama-1b), requests with just the
+        // basename ("llama-1b") should resolve to it.
+        for (const auto& [loaded_id, lm] : loaded_) {
+            fs::path loaded_path(loaded_id);
+            if (loaded_path.is_absolute() && loaded_path.filename() == model_id) {
+                std::cerr << "[ModelManager] Resolved short name \"" << model_id
+                          << "\" -> \"" << loaded_id << "\"\n";
+                // Return the container for the alias match.
+                auto container = lm.container;
+                // Update last_access on the canonical entry.
+                loaded_[loaded_id].last_access = now_ts();
+                return container;
+            }
+        }
     }
 
     // Not loaded — resolve and load outside the lock (loading is slow).

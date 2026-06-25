@@ -136,6 +136,11 @@ target_link_libraries(mlx-lm-common PUBLIC
     tokenizers_cpp
 )
 target_include_directories(mlx-lm-common PUBLIC ${minja_SOURCE_DIR}/include)
+# Patched minja headers (capitalize filter, etc.) take precedence over the
+# upstream minja version fetched by FetchContent.
+target_include_directories(mlx-lm-common BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/patched
+)
 
 # Propagate ROCm flag as compile definition so C++ code can use #if defined(MLX_BUILD_ROCM)
 if(MLX_BUILD_ROCM)
