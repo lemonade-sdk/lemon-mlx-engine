@@ -122,6 +122,7 @@ add_library(mlx-lm-common
     src/common/quantize_utils.cpp
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
+    src/common/graph_decode.cpp
     src/llm/models/mtp_head.cpp
     src/llm/models/mtp_moe.cpp
 )
