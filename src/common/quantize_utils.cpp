@@ -63,6 +63,7 @@ void register_quantized_weights(
 
     int default_group_size = plq.default_quantization->group_size;
     int default_bits = plq.default_quantization->bits;
+    QuantizationMode default_mode = plq.default_quantization->mode;
 
     auto& reg = QuantizedWeightRegistry::instance();
 
@@ -87,11 +88,15 @@ void register_quantized_weights(
         // Check per-layer quantization overrides
         int group_size = default_group_size;
         int bits = default_bits;
+        QuantizationMode mode = default_mode;
         auto layer_quant = plq.quantization_for(prefix);
         if (layer_quant.has_value()) {
             group_size = layer_quant->group_size;
             bits = layer_quant->bits;
+            mode = layer_quant->mode;
         }
+
+        std::string mode_str = (mode == QuantizationMode::Mxfp4) ? "mxfp4" : "affine";
 
         // Get scales and optional biases
         auto& scales = weights.at(scales_key);
@@ -105,8 +110,11 @@ void register_quantized_weights(
         // They must be dequantized at load time (quantized_matmul won't help).
         // MLX GPU affine dequantize/quantized_matmul does not support 1-bit,
         // so 1-bit affine weights also need to become dense at load time.
+        // MXFP4 mode is not supported by the ROCm quantized_matmul/gather_qmm
+        // backends (they only support Affine), so dequantize at load time.
         bool is_embedding = (prefix.find("embed") != std::string::npos);
-        bool needs_loadtime_dequant = is_embedding || (bits == 1);
+        bool is_mxfp4 = (mode == QuantizationMode::Mxfp4);
+        bool needs_loadtime_dequant = is_embedding || (bits == 1) || is_mxfp4;
 
         if (needs_loadtime_dequant) {
             // Dequantize in-place so load_weights() gets the float weight
@@ -117,6 +125,10 @@ void register_quantized_weights(
                 }
                 int in_features = packed.shape(1) * 32;
                 packed = dequantize_1bit(packed, scales, *biases, group_size, in_features);
+            } else if (is_mxfp4) {
+                // MXFP4: no biases, uint8 scales. Dequantize using fp mode.
+                packed = mx::dequantize(packed, scales, std::nullopt,
+                                        group_size, bits, /*mode=*/"mxfp4");
             } else {
                 packed = mx::dequantize(packed, scales, biases, group_size, bits);
             }
@@ -128,7 +140,7 @@ void register_quantized_weights(
                 continue;
             }
             mx::array* member_ptr = wm_it->second;
-            reg.register_weight(member_ptr, scales, biases, group_size, bits);
+            reg.register_weight(member_ptr, scales, biases, group_size, bits, mode_str);
         }
 
         // Remove scales/biases from the weight map so they don't get
@@ -160,6 +172,7 @@ std::unordered_map<std::string, mx::array> dequantize_weights(
 
     int default_group_size = plq.default_quantization->group_size;
     int default_bits = plq.default_quantization->bits;
+    QuantizationMode default_mode = plq.default_quantization->mode;
 
     std::vector<std::string> prefixes;
     for (auto& [key, _] : weights) {
@@ -183,20 +196,24 @@ std::unordered_map<std::string, mx::array> dequantize_weights(
 
         int group_size = default_group_size;
         int bits = default_bits;
+        QuantizationMode mode = default_mode;
         auto layer_quant = plq.quantization_for(prefix);
         if (layer_quant.has_value()) {
             group_size = layer_quant->group_size;
             bits = layer_quant->bits;
+            mode = layer_quant->mode;
         }
+
+        std::string mode_str = (mode == QuantizationMode::Mxfp4) ? "mxfp4" : "affine";
 
         auto biases_it = weights.find(biases_key);
         if (biases_it != weights.end()) {
             weight = mx::dequantize(weight, scales, biases_it->second,
-                                    group_size, bits);
+                                    group_size, bits, mode_str);
             weights.erase(biases_it);
         } else {
             weight = mx::dequantize(weight, scales, std::nullopt,
-                                    group_size, bits);
+                                    group_size, bits, mode_str);
         }
 
         weights.erase(scales_key);

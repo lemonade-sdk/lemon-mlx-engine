@@ -98,7 +98,7 @@ mx::array SwitchLinear::operator()(
             /*transpose=*/true,
             /*group_size=*/qi->group_size,
             /*bits=*/qi->bits,
-            /*mode=*/"affine",
+            /*mode=*/qi->mode,
             /*sorted_indices=*/sorted_indices);
     } else {
         auto weight_t = mx::swapaxes(weight_, -1, -2);
@@ -126,11 +126,11 @@ std::unordered_map<std::string, mx::array*> SwitchLinear::weight_map() {
 
 void SwitchLinear::adopt_fused_weight(
     mx::array w, mx::array scales, std::optional<mx::array> biases,
-    int group_size, int bits)
+    int group_size, int bits, const std::string& mode)
 {
     weight_ = std::move(w);
     QuantizedWeightRegistry::instance().register_weight(
-        &weight_, std::move(scales), std::move(biases), group_size, bits);
+        &weight_, std::move(scales), std::move(biases), group_size, bits, mode);
 }
 
 void SwitchLinear::release_weight()
@@ -187,7 +187,7 @@ bool SwitchGLU::ensure_gate_up_fused() {
     if (b) mx::eval(*b);
 
     gate_up_proj_.adopt_fused_weight(std::move(w), std::move(s), std::move(b),
-                                     qg->group_size, qg->bits);
+                                     qg->group_size, qg->bits, qg->mode);
     // w/s/b are materialized (eval'd above) and no longer depend on the gate/up
     // buffers, so release the originals — keeps VRAM neutral (fused == gate+up).
     gate_proj_.release_weight();

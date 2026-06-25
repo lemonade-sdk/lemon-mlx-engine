@@ -199,7 +199,7 @@ static bool fuse_quant_projections(
 
     dst = std::move(w);
     reg.register_weight(&dst.value(), std::move(s), std::move(b),
-                        qis[0]->group_size, qis[0]->bits);
+                        qis[0]->group_size, qis[0]->bits, qis[0]->mode);
     return true;
 }
 
