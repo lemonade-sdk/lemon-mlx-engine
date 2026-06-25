@@ -56,44 +56,68 @@ void from_json(const nlohmann::json& j, OpenELMConfiguration& c) {
 
     int n = c.num_transformer_layers;
 
-    // Compute per-layer qkv multipliers via stride
+    // Compute per-layer qkv multipliers via stride (if range) or use directly (if full list)
     std::vector<float> qkv_multipliers;
-    if (n > 1) {
+    if (qkv_mult_range.size() == 2 && n > 1) {
         float step = (qkv_mult_range[1] - qkv_mult_range[0]) / static_cast<float>(n - 1);
         for (int i = 0; i < n; ++i) {
             float val = qkv_mult_range[0] + step * static_cast<float>(i);
             qkv_multipliers.push_back(std::round(val * 100.0f) / 100.0f);
         }
+    } else if (qkv_mult_range.size() == static_cast<size_t>(n)) {
+        qkv_multipliers = qkv_mult_range;
     } else {
         qkv_multipliers.push_back(qkv_mult_range[0]);
     }
 
-    // Compute per-layer num_query_heads and kv_heads
-    int head_multiple_of = num_gqa_groups;
-    c.num_query_heads.resize(n);
-    c.kv_heads.resize(n);
-    for (int i = 0; i < n; ++i) {
-        int q_dim = make_divisible(
-            static_cast<float>(c.model_dim) * qkv_multipliers[i],
-            c.head_dim * head_multiple_of);
-        c.num_query_heads[i] = compute_heads(q_dim, c.head_dim);
-        c.kv_heads[i] = c.num_query_heads[i] / num_gqa_groups;
-    }
-
-    // Compute per-layer ffn multipliers via stride
-    c.ffn_multipliers.resize(n);
-    if (n > 1) {
-        float step = (ffn_mult_range[1] - ffn_mult_range[0]) / static_cast<float>(n - 1);
-        for (int i = 0; i < n; ++i) {
-            float val = ffn_mult_range[0] + step * static_cast<float>(i);
-            c.ffn_multipliers[i] = std::round(val * 100.0f) / 100.0f;
+    // Use explicit num_query_heads from config if available — these match the
+    // actual weight shapes in the MLX-converted model. Fall back to computing
+    // from qkv_multipliers if not present.
+    if (j.contains("num_query_heads") && j["num_query_heads"].is_array() &&
+        j["num_query_heads"].size() == static_cast<size_t>(n)) {
+        c.num_query_heads = j["num_query_heads"].get<std::vector<int>>();
+        if (j.contains("num_kv_heads") && j["num_kv_heads"].is_array() &&
+            j["num_kv_heads"].size() == static_cast<size_t>(n)) {
+            c.kv_heads = j["num_kv_heads"].get<std::vector<int>>();
+        } else {
+            c.kv_heads.resize(n);
+            for (int i = 0; i < n; ++i) {
+                c.kv_heads[i] = c.num_query_heads[i] / num_gqa_groups;
+            }
         }
     } else {
-        c.ffn_multipliers[0] = ffn_mult_range[0];
+        int head_multiple_of = num_gqa_groups;
+        c.num_query_heads.resize(n);
+        c.kv_heads.resize(n);
+        for (int i = 0; i < n; ++i) {
+            int q_dim = make_divisible(
+                static_cast<float>(c.model_dim) * qkv_multipliers[i],
+                c.head_dim * head_multiple_of);
+            c.num_query_heads[i] = compute_heads(q_dim, c.head_dim);
+            c.kv_heads[i] = c.num_query_heads[i] / num_gqa_groups;
+        }
+    }
+
+    // If the config provides explicit ffn_multipliers as a full per-layer list,
+    // use them directly. Otherwise compute via stride from the [start, end] range.
+    if (ffn_mult_range.size() == static_cast<size_t>(n)) {
+        c.ffn_multipliers = ffn_mult_range;
+    } else {
+        c.ffn_multipliers.resize(n);
+        if (n > 1) {
+            float step = (ffn_mult_range[1] - ffn_mult_range[0]) / static_cast<float>(n - 1);
+            for (int i = 0; i < n; ++i) {
+                float val = ffn_mult_range[0] + step * static_cast<float>(i);
+                c.ffn_multipliers[i] = std::round(val * 100.0f) / 100.0f;
+            }
+        } else {
+            c.ffn_multipliers[0] = ffn_mult_range[0];
+        }
     }
 
     if (j.contains("rms_norm_eps")) c.rms_norm_eps = j["rms_norm_eps"].get<float>();
     if (j.contains("rope_theta")) c.rope_theta = j["rope_theta"].get<float>();
+    if (j.contains("rope_freq_constant")) c.rope_theta = j["rope_freq_constant"].get<float>();
     if (j.contains("rope_traditional")) c.rope_traditional = j["rope_traditional"].get<bool>();
 }
 
@@ -299,7 +323,7 @@ OpenELMModel::OpenELMModel(const OpenELMConfiguration& config)
       transformer_(config),
       lm_head_weight_(config.share_input_output_layers
           ? mx::array(0.0f)
-          : mx::zeros({config.vocab_size, config.num_transformer_layers})),
+          : mx::zeros({config.vocab_size, config.model_dim})),
       has_lm_head_(!config.share_input_output_layers),
       kv_heads_(config.kv_heads)
 {}
