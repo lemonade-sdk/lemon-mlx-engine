@@ -124,8 +124,15 @@ inline bool npu_try_ternary(
     }
     if (!npu_avail) return false;
 
-    // TODO: Convert uint32 2-bit format to U8 ternary for NPU dispatch
-    // and call npu::ternary_gemv(). For now, falls back to GPU quantized_matmul.
+    // NPU enabled and available, but ternary dispatch requires converting
+    // uint32 2-bit weights → U8 packed ternary format first.
+    // This is a CPU-side conversion that negates NPU benefits for now.
+    // Future work: NPU-side format conversion or direct uint32 2-bit kernel.
+    //
+    // To test NPU without real dispatch, run: NPU_ENABLE=1 ./test_npu
+    // This verifies NPU detection, init, and basic GEMM.
+    //
+    // For now, fall back to GPU quantized_matmul which is already optimal.
     return false;
 }
 } // namespace detail

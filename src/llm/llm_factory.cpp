@@ -677,8 +677,8 @@ ModelContext load_llm_from_directory(
             {"olmo", "llama"},  // OLMo-1 uses standard Llama-like architecture
             {"gemma4_unified", "gemma4"},
             {"gemma4_unified_text", "gemma4_text"},
-            {"kimi_k25", "qwen3_moe"},  // Kimi K2.5 is MoE, closest to Qwen3 MoE
-            {"kimi_k2", "qwen3_moe"},
+            {"kimi_k25", "deepseek_v3"},  // Kimi K2.5 uses DeepSeek-style MoE (routed experts)
+            {"kimi_k2", "deepseek_v3"},
             {"diffusion_gemma", "gemma4"},
             {"diffusion_gemma_text", "gemma4_text"},
             {"glm_moe_dsa", "glm4_moe"},  // GLM MoE DSA is GLM variant
@@ -808,6 +808,59 @@ ModelContext load_llm_from_directory(
                 auto nh = weights.extract(old_key);
                 nh.key() = new_key;
                 weights.insert(std::move(nh));
+            }
+        }
+    }
+
+    // OLMo weight remapping: transform fused weights to Llama format
+    if (config_json.value("model_type", "") == "olmo") {
+        std::vector<std::string> olmo_keys;
+        for (auto& [k, _] : weights)
+            if (k.find("model.transformer.") == 0) olmo_keys.push_back(k);
+        for (auto& old_key : olmo_keys) {
+            std::string new_key_base, var_name;
+            if (old_key.compare(0, 25, "model.transformer.blocks.") == 0) {
+                std::string rest = old_key.substr(25);
+                auto dot = rest.find('.');
+                std::string layer = rest.substr(0, dot);
+                var_name = rest.substr(dot + 1);
+                new_key_base = "model.layers." + layer + ".";
+            } else {
+                var_name = old_key.substr(18);
+                new_key_base = "model.";
+            }
+            // Handle fused weights and renames
+            if (var_name == "att_proj.weight") {
+                auto arr = weights.at(old_key);  // copy, not reference
+                int d = arr.shape(-1), total = arr.shape(0), h = total / 3;
+                weights.insert_or_assign(new_key_base + "self_attn.q_proj.weight", mx::slice(arr, {0,0}, {h,d}));
+                weights.insert_or_assign(new_key_base + "self_attn.k_proj.weight", mx::slice(arr, {h,0}, {2*h,d}));
+                weights.insert_or_assign(new_key_base + "self_attn.v_proj.weight", mx::slice(arr, {2*h,0}, {total,d}));
+                weights.erase(old_key);
+            } else if (var_name == "attn_out.weight") {
+                weights.insert_or_assign(new_key_base + "self_attn.o_proj.weight", std::move(weights.at(old_key)));
+                weights.erase(old_key);
+            } else if (var_name == "attn_norm.weight") {
+                weights.insert_or_assign(new_key_base + "input_layernorm.weight", std::move(weights.at(old_key)));
+                weights.erase(old_key);
+            } else if (var_name == "ff_norm.weight") {
+                weights.insert_or_assign(new_key_base + "post_attention_layernorm.weight", std::move(weights.at(old_key)));
+                weights.erase(old_key);
+            } else if (var_name == "ff_proj.weight") {
+                auto arr = weights.at(old_key);  // copy, not reference
+                int d = arr.shape(-1), total = arr.shape(0), h = total / 2;
+                weights.insert_or_assign(new_key_base + "mlp.gate_proj.weight", mx::slice(arr, {0,0}, {h,d}));
+                weights.insert_or_assign(new_key_base + "mlp.up_proj.weight", mx::slice(arr, {h,0}, {total,d}));
+                weights.erase(old_key);
+            } else if (var_name == "ff_out.weight") {
+                weights.insert_or_assign(new_key_base + "mlp.down_proj.weight", std::move(weights.at(old_key)));
+                weights.erase(old_key);
+            } else if (var_name == "ln_f.weight") {
+                weights.insert_or_assign("model.norm.weight", std::move(weights.at(old_key)));
+                weights.erase(old_key);
+            } else if (var_name == "wte.weight") {
+                weights.insert_or_assign("model.embed_tokens.weight", std::move(weights.at(old_key)));
+                weights.erase(old_key);
             }
         }
     }
