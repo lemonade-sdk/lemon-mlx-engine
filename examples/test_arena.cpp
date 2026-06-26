@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mlx/mlx.h>
+#include <mlx-lm/common/gpu_stubs.h>
 
 namespace mx = mlx::core;
 
