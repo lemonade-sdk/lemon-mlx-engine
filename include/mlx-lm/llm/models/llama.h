@@ -47,6 +47,8 @@ struct LlamaConfiguration {
     // quantization. When set, linear_fwd will quantize activations before
     // each matmul to match BitLinear's activation_quant behavior.
     int activation_bits = 0;
+    // Quantization method (aqlm, bitnet, etc.). Empty = standard floating point.
+    std::string quant_method;
 
     int resolved_head_dim() const {
         return head_dim.value_or(hidden_size / num_attention_heads);

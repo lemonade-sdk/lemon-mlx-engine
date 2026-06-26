@@ -434,6 +434,23 @@ AbstractModelRegistry& llm_model_registry() {
             "What is the capital of France?"},
         {"prism-ml/Bonsai-8B-mlx-1bit",
             "What is the capital of France?"},
+        // ── AQLM 1-bit models ──
+        {"ISTA-DASLab/Llama-2-7b-AQLM-1Bit-1x8-hf",
+            "What is the capital of France?"},
+        {"ISTA-DASLab/Meta-Llama-3-8B-AQLM-PV-1Bit-1x16",
+            "What is the capital of France?"},
+        // ── PTQTP 1.58-bit models ──
+        {"yang31210999/Qwen3-0.6B-PTQTP-1.58b",
+            "What is the capital of France?"},
+        {"yang31210999/Qwen3-1.7B-PTQTP-1.58b",
+            "What is the capital of France?"},
+        {"yang31210999/Qwen3-4B-PTQTP-1.58b",
+            "What is the capital of France?"},
+        // ── EdgeRazor 1.58-bit models ──
+        {"zhangsq-nju/Qwen3-0.6B-EdgeRazor-1.58bit",
+            "What is the capital of France?"},
+        {"zhangsq-nju/Qwen3-1.7B-EdgeRazor-1.58bit",
+            "What is the capital of France?"},
     });
     return registry;
 }
