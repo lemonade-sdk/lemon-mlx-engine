@@ -121,6 +121,8 @@ public:
 };
 
 // Llama MLP.
+enum class ActivationType { SwiGLU, GeluTanh };
+
 class LlamaMLP {
     mlx::core::array gate_weight_;
     std::optional<mlx::core::array> gate_bias_;
@@ -128,6 +130,7 @@ class LlamaMLP {
     std::optional<mlx::core::array> down_bias_;
     mlx::core::array up_weight_;
     std::optional<mlx::core::array> up_bias_;
+    ActivationType activation_type_ = ActivationType::SwiGLU;
 
     mlx::core::array linear(const mlx::core::array& x,
                             const mlx::core::array& weight,
