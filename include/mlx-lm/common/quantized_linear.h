@@ -138,7 +138,8 @@ inline bool npu_try_ternary(
     const mlx::core::array& input,  // [1, K] bf16
     const mlx::core::array& w,      // [N, ceil(K/16)] uint32 (2-bit packed)
     int N, int K,
-    const QuantizationInfo* qi)
+    const QuantizationInfo* qi,
+    mlx::core::array& output)       // [1, N] bf16 output (filled on success)
 {
     // Opt-in via NPU_ENABLE=1 (disabled by default)
     static const char* env = std::getenv("NPU_ENABLE");
@@ -157,34 +158,30 @@ inline bool npu_try_ternary(
     }
     if (!npu_avail) return false;
 
-    // Compute weight scale from quant info (first group's scale = the BitNet scale)
     mx::eval(qi->scales);
     float ws = (float)qi->scales.data<mx::float16_t>()[0];
-    bool invert = false;  // BitNet weights in registry already have correct scale
 
-    // Convert uint32 2-bit to U8 ternary format
     std::vector<uint8_t> packed_u8;
     if (!repack_2bit_to_u8(w, packed_u8, N, K)) return false;
 
-    // Get activations from GPU
     mx::eval(input);
     auto act_ptr = input.data<mx::float16_t>();
     std::vector<float> acts_f32(K);
     for (int i = 0; i < K; i++) acts_f32[i] = (float)act_ptr[i];
 
-    // Run NPU ternary GEMV
     std::vector<float> result(N);
     if (!npu::ternary_gemv(packed_u8.data(), acts_f32.data(), result.data(),
-                            ws, invert, N, K)) {
+                            ws, false, N, K)) {
         return false;
     }
 
-    // Store result back into the computation graph
-    // The caller expects an MLX array; we create one from the result
-    // But since we're inside a const function returning bool, we need
-    // the caller to handle the result. For now, write to stdout as debug.
-    std::fprintf(stderr, "[NPU] Ternary GEMV %dx%d done (first=%.2f)\n", N, K, result[0]);
-    return false;  // Fall back to GPU for now; NPU path needs MLX integration
+    std::vector<mx::float16_t> result_bf16(N);
+    for (int i = 0; i < N; i++) result_bf16[i] = (mx::float16_t)result[i];
+    output = mx::array(result_bf16.data(), {1, N}, mx::float16);
+    mx::eval(output);
+    
+    std::fprintf(stderr, "[NPU] Ternary GEMV %dx%d done ✅\n", N, K);
+    return true;
 }
 } // namespace detail
 #endif
@@ -212,9 +209,12 @@ inline mlx::core::array linear_forward(
     if (qi) {
 #ifdef MLX_BUILD_NPU
         // Try NPU dispatch for ternary (2-bit) decode path
-        if (qi->bits == 2 &&
-            detail::npu_try_ternary(input, w, (int)w.shape(0), (int)input.shape(1), qi)) {
-            // NPU would handle it — fallback to GPU for now
+        if (qi->bits == 2) {
+            mlx::core::array npu_result;
+            if (detail::npu_try_ternary(input, w, (int)w.shape(0), (int)input.shape(1), qi, npu_result)) {
+                if (bias) npu_result = mlx::core::add(npu_result, *bias);
+                return npu_result;
+            }
         }
 #endif
         // GPU path: quantized_matmul
