@@ -43,3 +43,6 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 build-ci/
+*.xclbin
+__pycache__/
+swap_npu.sh
