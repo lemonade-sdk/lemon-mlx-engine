@@ -3,6 +3,7 @@
 
 #include <mlx-lm/llm/llm_factory.h>
 #include <mlx-lm/common/chat_session.h>
+#include <mlx-lm/common/registry.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx/mlx.h>
@@ -258,6 +259,7 @@ struct CliArgs {
     int n_draft_tokens = 1;
     int device = -1;          // GPU index to use (-1 = auto / default device 0)
     bool list_devices = false;
+    std::string register_arch;  // Path to architecture registration JSON file
     bool ignore_eos = false;  // Benchmark: keep generating to --max-tokens (ignore EOS)
     bool auto_quantize = false;  // Auto-quantize unquantized bf16/fp16 models to 4-bit
 };
@@ -279,6 +281,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
                   << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
                   << "  --n-draft N             MTP draft tokens per step (default: 1)\n"
+                  << "  --register-arch FILE   Register custom architecture from JSON file\n"
                   << "  --auto-quantize        Auto-quantize unquantized bf16/fp16 models to 4-bit at load time\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
@@ -323,6 +326,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.list_devices = true;
         } else if (flag == "--ignore-eos") {
             args.ignore_eos = true;
+        } else if (flag == "--register-arch" && i + 1 < argc) {
+            args.register_arch = argv[++i];
         }
     }
     return args;
@@ -353,6 +358,12 @@ int main(int argc, char* argv[]) {
     }
 
     try {
+        // Load custom architecture registrations if specified
+        if (!args.register_arch.empty()) {
+            std::cerr << "Loading architecture registrations: " << args.register_arch << std::endl;
+            mlx_lm::ArchitectureRegistry::instance().load_from_file(args.register_arch);
+        }
+
         std::cout << "Loading model: " << args.model_path << std::endl;
 
         auto ctx = mlx_lm::load_llm(args.model_path, "", args.auto_quantize);
