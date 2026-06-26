@@ -235,6 +235,7 @@ add_library(mlx-lm-llm
     src/llm/models/gptoss.cpp
     src/llm/models/lfm2_moe.cpp
     src/llm/models/gemma3n_text.cpp
+    src/llm/models/gemma4.cpp
     src/llm/models/jamba.cpp
     src/llm/models/baichuan_m1.cpp
     src/llm/models/falcon_h1.cpp
