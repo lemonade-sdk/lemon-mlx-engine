@@ -90,9 +90,9 @@ mx::array Gemma4Attention::operator()(
     int B = x.shape(0), L = x.shape(1);
     int kv_h = num_kv_heads_, hd = head_dim_;
 
-    auto q_all = linear_forward(x, wq_weight_, wq_bias_ ? &*wq_bias_ : nullptr);  // [B,L,2048] or [B,L,4096]
-    auto k_all = linear_forward(x, wk_weight_, wk_bias_ ? &*wk_bias_ : nullptr);  // [B,L,256] or [B,L,512]
-    auto v_all = linear_forward(x, wv_weight_, wv_bias_ ? &*wv_bias_ : nullptr);  // [B,L,256] or [B,L,512]
+    auto q_all = linear_forward(x, wq_weight_, wq_bias_ ? &*wq_bias_ : nullptr);
+    auto k_all = linear_forward(x, wk_weight_, wk_bias_ ? &*wk_bias_ : nullptr);
+    auto v_all = linear_forward(x, wv_weight_, wv_bias_ ? &*wv_bias_ : nullptr);
 
     int q_dim = q_all.shape(-1);
     int k_dim = k_all.shape(-1);
@@ -102,20 +102,22 @@ mx::array Gemma4Attention::operator()(
 
     mx::array q(0.0f), k(0.0f), v(0.0f), q_global(0.0f);
     if (is_full) {
+        // Full attention: slice to regular head dims for SDPA
+        // Q/K norms from checkpoint are [global_head_dim]; slice first hd for regular
         mx::eval(q_all); mx::eval(k_all); mx::eval(v_all);
-        auto q_r = mx::reshape(q_all, {B, L, g_heads, norm_dim});
-        auto k_r = mx::reshape(k_all, {B, L, -1, norm_dim});
-        auto v_r = mx::reshape(v_all, {B, L, -1, norm_dim});
-        // Apply norms before slicing (norms are [global_head_dim])
-        q_r = mx::fast::rms_norm(q_r, q_norm_weight_, rms_norm_eps_);
-        k_r = mx::fast::rms_norm(k_r, k_norm_weight_, rms_norm_eps_);
-        // Slice regular portion: first hd=256 dims of last axis
-        q = mx::transpose(mx::slice(q_r, {0, 0, 0, 0}, {B, L, g_heads, hd}), {0, 2, 1, 3});
-        k = mx::transpose(mx::slice(k_r, {0, 0, 0, 0}, {B, L, -1, hd}), {0, 2, 1, 3});
-        v = mx::transpose(mx::slice(v_r, {0, 0, 0, 0}, {B, L, -1, hd}), {0, 2, 1, 3});
-        // Global portion: remaining hd dims
-        auto q_global_r = mx::slice(q_r, {0, 0, 0, hd}, {B, L, g_heads, norm_dim});
-        q_global = mx::transpose(q_global_r, {0, 2, 1, 3});
+        int regular_qd = num_heads_ * hd;
+        int regular_kd = kv_h * hd;
+        q = mx::transpose(mx::reshape(mx::slice(q_all, {0,0,0}, {B,L,regular_qd}),
+                                       {B, L, num_heads_, hd}), {0, 2, 1, 3});
+        k = mx::transpose(mx::reshape(mx::slice(k_all, {0,0,0}, {B,L,regular_kd}),
+                                       {B, L, kv_h, hd}), {0, 2, 1, 3});
+        v = mx::transpose(mx::reshape(mx::slice(v_all, {0,0,0}, {B,L,regular_kd}),
+                                       {B, L, kv_h, hd}), {0, 2, 1, 3});
+        // Use first hd elements of norms (checkpoint norms are [global_head_dim])
+        auto qn = mx::slice(q_norm_weight_, {0}, {hd});
+        auto kn = mx::slice(k_norm_weight_, {0}, {hd});
+        q = mx::fast::rms_norm(q, qn, rms_norm_eps_);
+        k = mx::fast::rms_norm(k, kn, rms_norm_eps_);
     } else {
         q = mx::transpose(mx::reshape(q_all, {B, L, num_heads_, hd}), {0, 2, 1, 3});
         k = mx::transpose(mx::reshape(k_all, {B, L, kv_h, hd}), {0, 2, 1, 3});
@@ -138,13 +140,18 @@ mx::array Gemma4Attention::operator()(
     auto out = sdpa(q, k, v, scale_, mask);
     out = mx::reshape(mx::transpose(out, {0, 2, 1, 3}), {B, L, -1});
 
-    // Add global attention output
-    if (is_full) {
-        // q_global is [B,g_heads,L,hd] -> flatten to [B,L,-1]
-        auto qg_flat = mx::reshape(mx::transpose(q_global, {0, 2, 1, 3}), {B, L, -1});
-        out = mx::concatenate({out, qg_flat}, -1);
+    // For full_attention layers with larger o_proj, pad to expected input dim.
+    // The o_proj expects 4096 input features (regular + global). We only have
+    // regular (2048), so pad with zeros for the global portion.
+    if (is_full && out.shape(-1) == num_heads_ * hd) {
+        mx::eval(out);
+        int target = num_heads_ * hd + q_dim - num_heads_ * hd; // = q_dim = 4096
+        int pad = target - out.shape(-1);
+        if (pad > 0) {
+            auto zeros = mx::zeros({B, L, pad}, out.dtype());
+            out = mx::concatenate({out, zeros}, -1);
+        }
     }
-
     out = linear_forward(out, wo_weight_, wo_bias_ ? &*wo_bias_ : nullptr);
     return out;
 }
