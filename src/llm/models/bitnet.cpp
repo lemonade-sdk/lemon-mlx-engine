@@ -18,9 +18,10 @@ namespace mlx_lm {
 
 static mx::array linear_fwd(
     const mx::array& x,
-    const mx::array& weight)
+    const mx::array& weight,
+    int activation_bits = 0)
 {
-    return linear_forward(x, weight, nullptr);
+    return linear_forward(x, weight, nullptr, activation_bits);
 }
 
 // --- BitNet Attention ---
@@ -29,6 +30,7 @@ BitNetAttention::BitNetAttention(const BitNetConfiguration& args)
     : args_(args),
       use_relu2_(args.hidden_act == "relu2"),
       has_sub_norm_(args.hidden_act == "relu2" || args.bitnet_has_sub_norm),
+      activation_bits_(args.activation_bits),
       scale_(std::pow(static_cast<float>(args.resolved_head_dim()), -0.5f)),
       wq_weight_(mx::zeros({args.num_attention_heads * args.resolved_head_dim(), args.hidden_size})),
       wk_weight_(mx::zeros({args.num_key_value_heads * args.resolved_head_dim(), args.hidden_size})),
@@ -54,7 +56,7 @@ BitNetAttention::BitNetAttention(const BitNetConfiguration& args)
 {}
 
 mx::array BitNetAttention::linear(const mx::array& x, const mx::array& weight) const {
-    return linear_fwd(x, weight);
+    return linear_fwd(x, weight, activation_bits_);
 }
 
 mx::array BitNetAttention::operator()(
@@ -114,6 +116,7 @@ std::unordered_map<std::string, mx::array*> BitNetAttention::weight_map() {
 BitNetMLP::BitNetMLP(const BitNetConfiguration& args)
     : use_relu2_(args.hidden_act == "relu2"),
       has_sub_norm_(args.hidden_act == "relu2" || args.bitnet_has_sub_norm),
+      activation_bits_(args.activation_bits),
       gate_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),
       down_weight_(mx::zeros({args.hidden_size, args.intermediate_size})),
       up_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),
@@ -122,7 +125,7 @@ BitNetMLP::BitNetMLP(const BitNetConfiguration& args)
 {}
 
 mx::array BitNetMLP::linear(const mx::array& x, const mx::array& weight) const {
-    return linear_fwd(x, weight);
+    return linear_fwd(x, weight, activation_bits_);
 }
 
 mx::array BitNetMLP::rms_norm(const mx::array& x, const mx::array& weight) const {

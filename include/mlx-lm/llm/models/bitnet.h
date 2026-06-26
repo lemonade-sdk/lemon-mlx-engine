@@ -27,6 +27,7 @@ class BitNetAttention {
     LlamaDynamicNTKScalingRoPE rope_;
     bool use_relu2_;  // false for Falcon-E (silu)
     bool has_sub_norm_;
+    int activation_bits_ = 0;
 
     mlx::core::array wq_weight_;
     mlx::core::array wk_weight_;
@@ -53,6 +54,7 @@ public:
 class BitNetMLP {
     bool use_relu2_;
     bool has_sub_norm_;
+    int activation_bits_ = 0;
     mlx::core::array gate_weight_;
     mlx::core::array down_weight_;
     mlx::core::array up_weight_;
