@@ -256,11 +256,14 @@ if(MLX_LM_BUILD_EXAMPLES)
     add_executable(test_dynslice examples/test_dynslice.cpp)
     target_link_libraries(test_dynslice PRIVATE mlx)
 
-    add_executable(test_donate examples/test_donate.cpp)
-    target_link_libraries(test_donate PRIVATE mlx)
+    if(MLX_BUILD_ROCM)
+        # ROCm-only: link the decode-arena bridge (undefined on CPU/Metal).
+        add_executable(test_donate examples/test_donate.cpp)
+        target_link_libraries(test_donate PRIVATE mlx)
 
-    add_executable(test_arena examples/test_arena.cpp)
-    target_link_libraries(test_arena PRIVATE mlx)
+        add_executable(test_arena examples/test_arena.cpp)
+        target_link_libraries(test_arena PRIVATE mlx)
+    endif()
 
     add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)
     target_link_libraries(test_sdpa_ref PRIVATE mlx)
