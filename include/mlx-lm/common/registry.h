@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -81,6 +82,58 @@ public:
 
 private:
     std::unordered_map<std::string, ModelConfiguration> configs_;
+};
+
+// Architecture registration for custom/unknown model types.
+// Users can register new architectures at runtime via JSON files
+// without modifying C++ code.
+struct ArchitectureRegistration {
+    std::string model_type;           // e.g. "my_new_model"
+    std::string base_model;           // e.g. "llama" (must match llm_loaders key)
+    std::vector<std::pair<std::string, std::string>> key_remaps;  // old_prefix -> new_prefix
+    std::unordered_map<std::string, std::string> config_defaults; // injected config values
+    std::vector<std::string> skip_keys;  // weight keys to remove
+    int activation_bits = 0;
+    bool has_sub_norm = false;
+};
+
+// Architecture registry — maps model_type to runtime architecture registration.
+// Populated by ArchitectureRegistrar or loaded from a JSON file.
+// Consulted by llm_factory when a model_type is not in the hardcoded loaders.
+class ArchitectureRegistry {
+public:
+    static ArchitectureRegistry& instance() {
+        static ArchitectureRegistry reg;
+        return reg;
+    }
+
+    void register_architecture(const ArchitectureRegistration& arch) {
+        arches_[arch.model_type] = arch;
+    }
+
+    const ArchitectureRegistration* find(const std::string& model_type) const {
+        auto it = arches_.find(model_type);
+        return (it != arches_.end()) ? &it->second : nullptr;
+    }
+
+    // Load architectures from a JSON file.
+    // Format:
+    // [{"model_type": "foo", "base_model": "llama",
+    //   "key_remaps": [["old", "new"], ...],
+    //   "config_defaults": {"hidden_act": "gelu"},
+    //   "skip_keys": ["rotary_emb.inv_freq"],
+    //   "activation_bits": 8,
+    //   "has_sub_norm": true}]
+    void load_from_file(const std::string& path);
+
+    // Get all registered architectures.
+    const std::unordered_map<std::string, ArchitectureRegistration>& all() const {
+        return arches_;
+    }
+
+private:
+    ArchitectureRegistry() = default;
+    std::unordered_map<std::string, ArchitectureRegistration> arches_;
 };
 
 } // namespace mlx_lm

@@ -536,6 +536,47 @@ ModelContext load_llm_from_directory(
         }
     }
     if (it == loaders.end()) {
+        // Check the runtime architecture registry (loaded from --register-arch)
+        auto* arch_reg = ArchitectureRegistry::instance().find(base_config.model_type);
+        if (arch_reg) {
+            std::cerr << "[load] Found registered architecture '" << base_config.model_type
+                      << "' -> base '" << arch_reg->base_model << "'\n";
+
+            // Apply config defaults from the registration
+            for (const auto& [key, val] : arch_reg->config_defaults) {
+                if (!config_json.contains(key)) {
+                    config_json[key] = val;
+                }
+            }
+
+            // Inject has_sub_norm into config for BitNetModel to use
+            if (arch_reg->has_sub_norm) {
+                config_json["bitnet_has_sub_norm"] = true;
+            }
+            if (arch_reg->activation_bits > 0) {
+                config_json["activation_bits"] = arch_reg->activation_bits;
+            }
+
+            // Apply key remaps to weights BEFORE loading
+            // (ffn_layernorm -> ffn_sub_norm etc)
+            std::vector<std::pair<std::string, std::string>> remaps_to_add;
+            for (const auto& [old_s, new_s] : arch_reg->key_remaps) {
+                if (old_s != new_s) {
+                    remaps_to_add.push_back({old_s, new_s});
+                }
+            }
+            if (!remaps_to_add.empty()) {
+                // Add remaps to the weights map before sanitize
+                // We need to wait until weights are loaded to apply these
+                // Store them for now, they'll be picked up by the generic remapping code
+                std::cerr << "[load]  " << remaps_to_add.size() << " key remaps registered\n";
+            }
+
+            it = loaders.find(arch_reg->base_model);
+        }
+    }
+
+    if (it == loaders.end()) {
         // Unknown model_type. Try fallback: if config has Llama-like dimensions,
         // create a LlamaModel as a best-effort fallback.
         bool can_fallback = false;

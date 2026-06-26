@@ -71,20 +71,14 @@ load_safetensors_from_directory(const std::string& directory) {
     }
 
     if (all_weights.empty()) {
-        // No safetensors found. Try PyTorch .bin files.
-        // Write a temp Python conversion script and execute it.
+        // No safetensors found. Try PyTorch .bin files or trust_remote_code.
         auto bin_path = fs::path(directory) / "pytorch_model.bin";
-        if (!fs::exists(bin_path)) {
-            // Try sharded pytorch format
-            auto index_path = fs::path(directory) / "pytorch_model.bin.index.json";
-            if (fs::exists(index_path)) {
-                // Sharded .bin files — convert each shard
-                bin_path = fs::path(directory);
-            } else {
-                throw std::runtime_error(
-                    "No .safetensors files found in " + directory +
-                    ". Install safetensors: pip install safetensors");
-            }
+        auto has_sharded_bin = fs::exists(fs::path(directory) / "pytorch_model.bin.index.json");
+
+        if (!fs::exists(bin_path) && !has_sharded_bin) {
+            throw std::runtime_error(
+                "No .safetensors files found in " + directory +
+                ". Install safetensors: pip install safetensors");
         }
 
         std::cerr << "[convert] No safetensors found, attempting PyTorch .bin conversion...\n";
