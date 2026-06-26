@@ -292,39 +292,82 @@ mx::array BitNetModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Remap Qwen3-format weight names to BitNet format
-    // (used by Qwen3-8B-BitNet and similar HuggingFace BitNet checkpoints)
+    // Remap 1bitLLM-specific weight names to standard BitNet format.
+    // 1bitLLM uses ffn_layernorm and inner_attn_ln instead of ffn_sub_norm
+    // and attn_sub_norm. Apply this GLOBALLY before other remaps.
     {
-        static const std::vector<std::pair<std::string, std::string>> qwen3_to_bitnet = {
-            {"self_attn.q_proj",      "attention.wq"},
-            {"self_attn.k_proj",      "attention.wk"},
-            {"self_attn.v_proj",      "attention.wv"},
-            {"self_attn.o_proj",      "attention.wo"},
-            {"self_attn.q_norm",      "attention.q_norm"},
-            {"self_attn.k_norm",      "attention.k_norm"},
-            {"mlp.gate_proj",         "feed_forward.gate"},
-            {"mlp.up_proj",           "feed_forward.up"},
-            {"mlp.down_proj",         "feed_forward.down"},
-            {"input_layernorm",       "attention_norm"},
-            {"post_attention_layernorm", "ffn_norm"},
-            {"embed_tokens",          "tok_embeddings"},
+        static const std::vector<std::pair<std::string, std::string>> norm_remaps = {
+            {"ffn_layernorm",          "ffn_sub_norm"},
+            {"inner_attn_ln",          "attn_sub_norm"},
         };
-
-        std::vector<std::pair<std::string, std::string>> renames;
-        for (auto& [key, _] : weights) {
-            for (auto& [old_p, new_p] : qwen3_to_bitnet) {
+        for (auto& [old_p, new_p] : norm_remaps) {
+            std::vector<std::pair<std::string, std::string>> renames;
+            for (auto& [key, _] : weights) {
                 if (key.find(old_p) != std::string::npos) {
                     std::string new_key = key;
                     size_t pos = new_key.find(old_p);
                     new_key.replace(pos, old_p.size(), new_p);
                     renames.emplace_back(key, new_key);
-                    break;
                 }
             }
+            for (auto& [old_k, new_k] : renames) {
+                weights.emplace(new_k, std::move(weights.at(old_k)));
+                weights.erase(old_k);
+            }
         }
-        for (auto& [old_k, new_k] : renames) {
-            weights.emplace(new_k, std::move(weights.at(old_k)));
-            weights.erase(old_k);
+    }
+
+    // Remap legacy MLX BitNet format to standard HF/LLaMA format.
+    // The original MLX Python BitNet port uses keys like:
+    //   attention.wq.weight, feed_forward.gate.weight, tok_embeddings.weight
+    // Standard HuggingFace checkpoints use:
+    //   self_attn.q_proj.weight, mlp.gate_proj.weight, embed_tokens.weight
+    // weight_map() already produces HF format keys, so we only remap if the
+    // checkpoint actually uses legacy (MLX Python) format.
+    {
+        // Detect legacy format: presence of "attention.wq" or "feed_forward" keys
+        bool is_legacy_format = false;
+        for (auto& [key, _] : weights) {
+            if (key.find("attention.wq") != std::string::npos ||
+                key.find("feed_forward") != std::string::npos ||
+                key.find("tok_embeddings") != std::string::npos) {
+                is_legacy_format = true;
+                break;
+            }
+        }
+
+        if (is_legacy_format) {
+            static const std::vector<std::pair<std::string, std::string>> legacy_to_hf = {
+                {"attention.wq",        "self_attn.q_proj"},
+                {"attention.wk",        "self_attn.k_proj"},
+                {"attention.wv",        "self_attn.v_proj"},
+                {"attention.wo",        "self_attn.o_proj"},
+                {"attention.q_norm",    "self_attn.q_norm"},
+                {"attention.k_norm",    "self_attn.k_norm"},
+                {"feed_forward.gate",   "mlp.gate_proj"},
+                {"feed_forward.up",     "mlp.up_proj"},
+                {"feed_forward.down",   "mlp.down_proj"},
+                {"attention_norm",      "input_layernorm"},
+                {"ffn_norm",            "post_attention_layernorm"},
+                {"tok_embeddings",      "embed_tokens"},
+            };
+
+            std::vector<std::pair<std::string, std::string>> renames;
+            for (auto& [key, _] : weights) {
+                for (auto& [old_p, new_p] : legacy_to_hf) {
+                    if (key.find(old_p) != std::string::npos) {
+                        std::string new_key = key;
+                        size_t pos = new_key.find(old_p);
+                        new_key.replace(pos, old_p.size(), new_p);
+                        renames.emplace_back(key, new_key);
+                        break;
+                    }
+                }
+            }
+            for (auto& [old_k, new_k] : renames) {
+                weights.emplace(new_k, std::move(weights.at(old_k)));
+                weights.erase(old_k);
+            }
         }
     }
 

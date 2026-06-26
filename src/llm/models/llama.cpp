@@ -274,6 +274,23 @@ mx::array LlamaAttention::operator()(
     auto keys = linear(x, wk_weight_, wk_bias_);
     auto values = linear(x, wv_weight_, wv_bias_);
 
+    // Gemma 4 compatibility: some layers have BOTH regular (head_dim) AND
+    // global (global_head_dim) projections in q/k/v. Slice to regular only.
+    int expected_q = args_.num_attention_heads * head_dim;
+    int expected_kv = args_.num_key_value_heads * head_dim;
+    if (queries.shape(-1) != expected_q) {
+        mx::eval(queries);
+        queries = mx::slice(queries, {0, 0, 0}, {B, L, expected_q});
+    }
+    if (keys.shape(-1) != expected_kv) {
+        mx::eval(keys);
+        keys = mx::slice(keys, {0, 0, 0}, {B, L, expected_kv});
+    }
+    if (values.shape(-1) != expected_kv) {
+        mx::eval(values);
+        values = mx::slice(values, {0, 0, 0}, {B, L, expected_kv});
+    }
+
     // Reshape: [B, L, heads*head_dim] -> [B, heads, L, head_dim]
     queries = mx::transpose(mx::reshape(queries, {B, L, args_.num_attention_heads, head_dim}), {0, 2, 1, 3});
     keys = mx::transpose(mx::reshape(keys, {B, L, args_.num_key_value_heads, head_dim}), {0, 2, 1, 3});
@@ -327,6 +344,9 @@ LlamaMLP::LlamaMLP(const LlamaConfiguration& args)
         down_bias_ = mx::zeros({args.hidden_size});
         up_bias_ = mx::zeros({args.intermediate_size});
     }
+    if (args.hidden_act == "gelu_pytorch_tanh") {
+        activation_type_ = ActivationType::GeluTanh;
+    }
 }
 
 mx::array LlamaMLP::linear(const mx::array& x, const mx::array& weight,
@@ -335,9 +355,14 @@ mx::array LlamaMLP::linear(const mx::array& x, const mx::array& weight,
 }
 
 mx::array LlamaMLP::operator()(const mx::array& x) {
-    // swiglu(gate(x), up(x)) -> down
+    auto gate_out = linear(x, gate_weight_, gate_bias_);
     auto up_out = linear(x, up_weight_, up_bias_);
-    return linear(swiglu(linear(x, gate_weight_, gate_bias_), up_out), down_weight_, down_bias_);
+    // GELU tanh gating (GEGLU) for Gemma 4 / compatible models
+    if (activation_type_ == ActivationType::GeluTanh) {
+        return linear(mx::multiply(gelu_tanh(gate_out), up_out), down_weight_, down_bias_);
+    }
+    // Default: SiLU gating (SwiGLU) for Llama / most models
+    return linear(swiglu(gate_out, up_out), down_weight_, down_bias_);
 }
 
 std::unordered_map<std::string, mx::array*> LlamaMLP::weight_map() {

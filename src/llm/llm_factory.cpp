@@ -186,6 +186,7 @@ static ModelContext load_typed_model(
                     {"model.", "gpt_neox."},
                     {"model.", "llama."},
                     {"model.", ""},
+                    {"language_model.model.", "model."},  // Gemma 4
                 };
                 for (auto& [old_pref, new_pref] : alt_remaps) {
                     if (name.find(new_pref) == 0) {
@@ -479,6 +480,31 @@ ModelContext load_llm_from_directory(
     std::ifstream config_file(config_path);
     config_file >> config_json;
 
+    // Strip multi-modal prefix from weight keys (Gemma 4 uses
+    // "language_model.model.layers..." instead of "model.layers...")
+    {
+        std::vector<std::pair<std::string, std::string>> prefix_strips = {
+            {"language_model.model.", "model."},
+        };
+        // We apply this AFTER loading weights, in the weight loading path.
+        // For now, mark it for the remapping system.
+    }
+
+    // Merge text_config fields into top-level for multi-modal models
+    // (Gemma 4, Qwen2.5-VL, etc.) that nest LM params under text_config.
+    if (config_json.contains("text_config") && config_json["text_config"].is_object()) {
+        auto& tc = config_json["text_config"];
+        for (auto it = tc.begin(); it != tc.end(); ++it) {
+            if (!config_json.contains(it.key())) {
+                config_json[it.key()] = it.value();
+            }
+        }
+        // Override model_type with the text-specific type if available
+        if (tc.contains("model_type")) {
+            config_json["model_type"] = tc["model_type"];
+        }
+    }
+
     // Detect MTP delta models (model_type="qwen3_5_mtp") and redirect
     // to the delta loading path which merges with the base model.
     // MTP delta models contain only the MTP head weights (single decoder
@@ -700,6 +726,27 @@ ModelContext load_llm_from_directory(
 
     // Load weights from safetensors
     auto weights = load_safetensors_from_directory(model_directory);
+
+    // Strip multi-modal prefixes from weight keys (Gemma 4 uses
+    // "language_model.model.xxx" instead of "model.xxx")
+    {
+        static const std::vector<std::pair<std::string, std::string>> prefix_strips = {
+            {"language_model.model.", "model."},
+        };
+        for (auto& [old_p, new_p] : prefix_strips) {
+            std::vector<std::string> keys_to_rename;
+            for (auto& [key, _] : weights) {
+                if (key.compare(0, old_p.size(), old_p) == 0)
+                    keys_to_rename.push_back(key);
+            }
+            for (auto& old_key : keys_to_rename) {
+                std::string new_key = new_p + old_key.substr(old_p.size());
+                auto nh = weights.extract(old_key);
+                nh.key() = new_key;
+                weights.insert(std::move(nh));
+            }
+        }
+    }
 
     // Create model, sanitize weights, register quantized weights, load them.
     // Quantized weights stay packed (uint32) and use quantized_matmul at runtime.
