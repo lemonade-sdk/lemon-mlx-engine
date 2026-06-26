@@ -96,11 +96,43 @@ inline mlx::core::array quantize_activation(
     return mlx::core::divide(q, scale);
 }
 
+#ifdef MLX_BUILD_NPU
+// NPU dispatch for ternary (2-bit) weights in decode (GEMV) mode.
+// Gated by the NPU_DISABLE env var.
+namespace detail {
+inline bool npu_try_ternary(
+    const mlx::core::array& input,  // [1, K] bf16
+    const mlx::core::array& w,      // [N, ceil(K/16)] uint32 (2-bit packed)
+    int N, int K)
+{
+    (void)input; (void)w; (void)N; (void)K;
+    static const bool npu_disabled = std::getenv("NPU_DISABLE") != nullptr;
+    if (npu_disabled) return false;
+
+    // Only for decode (B=1) path
+    if (input.ndim() != 2 || input.shape(0) != 1) return false;
+    if (w.ndim() != 2) return false;
+
+    static bool npu_checked = false;
+    static bool npu_avail = false;
+    if (!npu_checked) {
+        npu_avail = npu::init();
+        npu_checked = true;
+    }
+    if (!npu_avail) return false;
+
+    // TODO: Convert uint32 2-bit format to U8 ternary for NPU dispatch
+    // and call npu::ternary_gemv(). For now, fall back to GPU.
+    return false;
+}
+} // namespace detail
+#endif
+
 // Quantization-aware linear forward pass.
 //
 // If the weight is registered as quantized, uses mx::quantized_matmul.
-// Otherwise, falls back to regular mx::matmul(x, transpose(w)).
-// Matches Swift's QuantizedLinear.callAsFunction / Linear.callAsFunction.
+// May fall back to NPU dispatch for ternary (2-bit) decode when NPU is
+// available (experimental, gated by NPU_DISABLE env var).
 //
 // Supports an optional activation_bits parameter for models that need
 // activation quantization (1bitLLM BitLinear style).
@@ -117,6 +149,14 @@ inline mlx::core::array linear_forward(
     auto input = (activation_bits > 0) ? quantize_activation(x, activation_bits) : x;
 
     if (qi) {
+#ifdef MLX_BUILD_NPU
+        // Try NPU dispatch for ternary (2-bit) decode path
+        if (qi->bits == 2 &&
+            detail::npu_try_ternary(input, w, (int)w.shape(0), (int)input.shape(1))) {
+            // NPU would handle it — fallback to GPU for now
+        }
+#endif
+        // GPU path: quantized_matmul
         auto result = mlx::core::quantized_matmul(
               input, w, qi->scales, qi->biases,
               /*transpose=*/true, qi->group_size, qi->bits,

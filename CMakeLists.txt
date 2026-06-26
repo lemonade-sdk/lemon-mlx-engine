@@ -282,14 +282,38 @@ target_include_directories(mlx-lm-common PUBLIC ${stb_SOURCE_DIR})
 if(MLX_LM_BUILD_NPU)
     # The NPU backend uses the IRON JIT via Python subprocess.
     # Install IRON: pip install mlir-aie
-    # Set NPU_INSTALL_DIR to the mlir-aie installation prefix.
     
-    # Copy JIT helper to build directory
+    # MLIR-AIE venv path for IRON JIT
+    set(NPU_VENV_DIR "${CMAKE_SOURCE_DIR}/../mlir-aie/.venv")
+    
+    # Copy JIT helpers to build directory
     configure_file(
-        src/npu/npu_jit.py
-        ${CMAKE_BINARY_DIR}/bin/npu_jit.py
+        src/npu/kernels/ternary_gemv.py
+        ${CMAKE_BINARY_DIR}/bin/ternary_gemv.py
         COPYONLY
     )
+    
+    # Find LLVM-AIE compiler
+    find_program(AIE2_CLANG clang++
+        PATHS "${NPU_VENV_DIR}/lib/python3.14/site-packages/llvm-aie/bin"
+        NO_DEFAULT_PATH
+    )
+    if(NOT AIE2_CLANG)
+        message(STATUS "NPU: LLVM-AIE clang not found, kernel will be JIT-compiled at runtime")
+    else()
+        # Compile the AIE kernel at build time
+        set(AIE_KERNEL_SRC "${CMAKE_SOURCE_DIR}/src/npu/kernels/ternary_gemv_aie.cpp")
+        set(AIE_KERNEL_OBJ "${CMAKE_BINARY_DIR}/kernels/ternary_gemv_aie.o")
+        add_custom_command(
+            OUTPUT ${AIE_KERNEL_OBJ}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/kernels"
+            COMMAND ${AIE2_CLANG} --target=aie2-none-unknown-elf -O2 -std=c++20
+                -c "${AIE_KERNEL_SRC}" -o "${AIE_KERNEL_OBJ}"
+            DEPENDS ${AIE_KERNEL_SRC}
+            COMMENT "Compiling AIE2 kernel: ternary_gemv_aie"
+        )
+        add_custom_target(aie_kernels ALL DEPENDS ${AIE_KERNEL_OBJ})
+    endif()
     
     add_library(mlx-lm-npu STATIC
         src/npu/npu_backend.cpp
@@ -301,7 +325,13 @@ if(MLX_LM_BUILD_NPU)
         MLX_BUILD_NPU
         NPU_INSTALL_DIR="${CMAKE_BINARY_DIR}"
     )
+    if(AIE2_CLANG)
+        add_dependencies(mlx-lm-npu aie_kernels)
+    endif()
     message(STATUS "NPU backend enabled (JIT path)")
+    if(AIE2_CLANG)
+        message(STATUS "  AIE2 compiler: ${AIE2_CLANG}")
+    endif()
 endif()
 
 if(MLX_LM_BUILD_EXAMPLES)

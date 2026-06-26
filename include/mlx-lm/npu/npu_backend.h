@@ -1,31 +1,38 @@
+// NPU backend — AMD XDNA NPU acceleration
 #pragma once
 
 #include <cstdint>
 
-// Path to NPU JIT helper (set at build time)
-#ifndef NPU_INSTALL_DIR
-#define NPU_INSTALL_DIR "/usr/local"
-#endif
-
 namespace npu {
 
-/// Initialize the NPU device. Returns true if NPU is available.
+// Initialize NPU. Returns true if NPU is available.
 bool init();
 
-/// Check if NPU is initialized and available.
+// Check if NPU is initialized and accessible
 bool is_available();
 
-/// Get NPU device name (e.g. "RyzenAI-npu5").
+// Get NPU device name
 const char* device_name();
 
-/// Perform GEMM: C[M][N] = A[M][K] * B[K][N]
-/// All matrices are row-major int32.
-/// Returns true on success, false on failure (falls back to CPU/GPU).
-bool matmul(
-    const int32_t* A, const int32_t* B, int32_t* C,
-    int M, int K, int N);
-
-/// Get total NPU compute in TFLOPS (peak theoretical).
+// Get peak TFLOPS of the NPU
 float peak_tflops();
+
+// Run ternary GEMV on NPU:
+//   result[oc] = scale * Σ_k ternary(weights[oc,k]) * activations[k]
+// where weights are packed U8 with 4 ternary codes per byte (lane-major).
+// Returns true on success.
+bool ternary_gemv(
+    const uint8_t* packed_weights,  // [ceil(N/4), K] packed ternary codes
+    const float* activations,       // [K] float32 activations
+    float* result,                  // [N] output (float32, will be scaled)
+    float weight_scale,             // scale factor
+    bool invert_scale,              // use 1/weight_scale if true
+    int N,                          // number of output rows
+    int K                           // input dimension
+);
+
+// Run int32 GEMM on NPU (legacy, for basic testing)
+bool matmul(const int32_t* A, const int32_t* B, int32_t* C,
+            int M, int K, int N);
 
 } // namespace npu
