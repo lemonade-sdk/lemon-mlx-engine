@@ -250,6 +250,8 @@ int main(int argc, char* argv[]) {
         }
         params.use_mtp = args.use_mtp;
         params.n_draft_tokens = args.n_draft_tokens;
+        if (const char* e = std::getenv("MLX_PREFILL_STEP"))
+            params.prefill_step_size = std::atoi(e);
         if (args.use_mtp) {
             std::cerr << "MTP enabled (scaffolding): n_draft="
                       << args.n_draft_tokens << "\n";
