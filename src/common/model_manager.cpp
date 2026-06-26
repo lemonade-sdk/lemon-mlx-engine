@@ -97,9 +97,9 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
     ModelContext ctx;
     if (is_mtp_delta) {
         std::cerr << "[ModelManager] MTP delta model detected, loading with base model merge\n";
-        ctx = load_mtp_delta_model(model_id);
+        ctx = load_mtp_delta_model(model_id, "", auto_quantize_);
     } else {
-        ctx = load_llm(model_id);
+        ctx = load_llm(model_id, "", auto_quantize_);
     }
 
     // Apply no-think if configured.

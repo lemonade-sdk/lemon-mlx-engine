@@ -54,6 +54,7 @@ public:
     void set_default_params(const GenerateParameters& p) { default_params_ = p; }
     void set_no_download(bool v) { no_download_ = v; }
     void set_no_think(bool v) { no_think_ = v; }
+    void set_auto_quantize(bool v) { auto_quantize_ = v; }
 
 private:
     struct LoadedModel {
@@ -68,6 +69,7 @@ private:
     GenerateParameters default_params_;
     bool no_download_ = false;
     bool no_think_ = false;
+    bool auto_quantize_ = false;
 
     void evict_lru_if_needed();
     static int64_t now_ts();

@@ -382,7 +382,7 @@ ModelContext load_llm_from_directory(
     if (model_type == "qwen3_5_mtp") {
         std::string model_id = config.id.empty() ? model_directory : config.id;
         std::cerr << "[MTP] Delta model detected via load_llm, redirecting to load_mtp_delta_model\n";
-        auto ctx = load_mtp_delta_model(model_id);
+        auto ctx = load_mtp_delta_model(model_id, "", config.auto_quantize);
         ctx.model_id = model_id;
 
         if (!ctx.eos_token_ids.has_value()) {
@@ -539,7 +539,8 @@ static std::string repo_id_from_cache_path(const std::string& path_str) {
 
 ModelContext load_mtp_delta_model(
     const std::string& delta_model_id,
-    const std::string& cache_dir)
+    const std::string& cache_dir,
+    bool auto_quantize)
 {
     auto& hub = HubApi::shared();
     if (!cache_dir.empty()) {
@@ -662,6 +663,11 @@ ModelContext load_mtp_delta_model(
     weights = model->sanitize(std::move(weights));
 
     auto wmap = model->weight_map();
+
+    if (auto_quantize) {
+        auto_quantize_weights(weights, wmap, base_config);
+    }
+
     register_quantized_weights(weights, base_config, wmap);
 
     materialize_weights(weights);
