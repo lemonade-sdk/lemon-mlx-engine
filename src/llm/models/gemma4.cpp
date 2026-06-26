@@ -102,22 +102,23 @@ mx::array Gemma4Attention::operator()(
 
     mx::array q(0.0f), k(0.0f), v(0.0f), q_global(0.0f);
     if (is_full) {
-        // Full attention: slice to regular head dims for SDPA
-        // Q/K norms from checkpoint are [global_head_dim]; slice first hd for regular
-        mx::eval(q_all); mx::eval(k_all); mx::eval(v_all);
-        int regular_qd = num_heads_ * hd;
-        int regular_kd = kv_h * hd;
-        q = mx::transpose(mx::reshape(mx::slice(q_all, {0,0,0}, {B,L,regular_qd}),
-                                       {B, L, num_heads_, hd}), {0, 2, 1, 3});
-        k = mx::transpose(mx::reshape(mx::slice(k_all, {0,0,0}, {B,L,regular_kd}),
-                                       {B, L, kv_h, hd}), {0, 2, 1, 3});
-        v = mx::transpose(mx::reshape(mx::slice(v_all, {0,0,0}, {B,L,regular_kd}),
-                                       {B, L, kv_h, hd}), {0, 2, 1, 3});
-        // Use first hd elements of norms (checkpoint norms are [global_head_dim])
-        auto qn = mx::slice(q_norm_weight_, {0}, {hd});
-        auto kn = mx::slice(k_norm_weight_, {0}, {hd});
-        q = mx::fast::rms_norm(q, qn, rms_norm_eps_);
-        k = mx::fast::rms_norm(k, kn, rms_norm_eps_);
+        // Full attention: project to global_head_dim, apply norms, slice, SDPA
+        // q_proj: [B,L,num_heads*global_hd] → reshape to [B,L,num_heads,global_hd]
+        // Apply q/k norms at global_hd=512, slice first hd=256 for RoPE+SDPA
+        int g_hd = global_head_dim_;
+        // Reshape with global_head_dim
+        auto q_r = mx::reshape(q_all, {B, L, num_heads_, g_hd});
+        auto k_r = mx::reshape(k_all, {B, L, kv_h, g_hd});
+        auto v_r = mx::reshape(v_all, {B, L, kv_h, g_hd});
+        // Apply norms at global_head_dim
+        q_r = mx::fast::rms_norm(q_r, q_norm_weight_, rms_norm_eps_);
+        k_r = mx::fast::rms_norm(k_r, k_norm_weight_, rms_norm_eps_);
+        // Slice: first hd dims → regular, rest → global
+        q = mx::transpose(mx::slice(q_r, {0,0,0,0}, {B,L,num_heads_,hd}), {0,2,1,3});
+        k = mx::transpose(mx::slice(k_r, {0,0,0,0}, {B,L,kv_h,hd}), {0,2,1,3});
+        v = mx::transpose(mx::slice(v_r, {0,0,0,0}, {B,L,kv_h,hd}), {0,2,1,3});
+        // Global portion: remaining dims after hd
+        q_global = mx::slice(q_r, {0,0,0,hd}, {B,L,num_heads_,g_hd});  // [B,L,num_heads,256]
     } else {
         q = mx::transpose(mx::reshape(q_all, {B, L, num_heads_, hd}), {0, 2, 1, 3});
         k = mx::transpose(mx::reshape(k_all, {B, L, kv_h, hd}), {0, 2, 1, 3});
@@ -140,17 +141,11 @@ mx::array Gemma4Attention::operator()(
     auto out = sdpa(q, k, v, scale_, mask);
     out = mx::reshape(mx::transpose(out, {0, 2, 1, 3}), {B, L, -1});
 
-    // For full_attention layers with larger o_proj, pad to expected input dim.
-    // The o_proj expects 4096 input features (regular + global). We only have
-    // regular (2048), so pad with zeros for the global portion.
-    if (is_full && out.shape(-1) == num_heads_ * hd) {
-        mx::eval(out);
-        int target = num_heads_ * hd + q_dim - num_heads_ * hd; // = q_dim = 4096
-        int pad = target - out.shape(-1);
-        if (pad > 0) {
-            auto zeros = mx::zeros({B, L, pad}, out.dtype());
-            out = mx::concatenate({out, zeros}, -1);
-        }
+    // Full attention: concatenate global portion with regular SDPA output
+    if (is_full) {
+        // q_global is [B,L,num_heads,256] → flatten to [B,L,num_heads*256]
+        auto qg = mx::reshape(q_global, {B, L, -1});
+        out = mx::concatenate({out, qg}, -1);
     }
     out = linear_forward(out, wo_weight_, wo_bias_ ? &*wo_bias_ : nullptr);
     return out;
