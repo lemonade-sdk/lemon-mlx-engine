@@ -677,6 +677,14 @@ ModelContext load_llm_from_directory(
             {"olmo", "llama"},  // OLMo-1 uses standard Llama-like architecture
             {"gemma4_unified", "gemma4"},
             {"gemma4_unified_text", "gemma4_text"},
+            {"kimi_k25", "qwen3_moe"},  // Kimi K2.5 is MoE, closest to Qwen3 MoE
+            {"kimi_k2", "qwen3_moe"},
+            {"diffusion_gemma", "gemma4"},
+            {"diffusion_gemma_text", "gemma4_text"},
+            {"glm_moe_dsa", "glm4_moe"},  // GLM MoE DSA is GLM variant
+            {"deepseek_v4", "deepseek_v3"},  // DeepSeek V4 compatible with V3
+            {"qwen3_vl", "qwen3"},  // Qwen3 VLM text backbone
+            {"qwen3_vl_text", "qwen3"},
         };
         if (auto ait = aliases.find(base_config.model_type); ait != aliases.end()) {
             it = loaders.find(ait->second);
