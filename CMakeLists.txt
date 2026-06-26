@@ -33,8 +33,8 @@ endif()
 FetchContent_Declare(
     mlx
     # Repo + branch — always build against the latest ROCm backend work.
-    GIT_REPOSITORY https://github.com/1bit-systems/mlx.git
-    GIT_TAG 7749c945 # rocm-support (1bit.systems fork — onebit.cpp branding)
+    GIT_REPOSITORY https://github.com/NripeshN/mlx.git
+    GIT_TAG 6abf0b7e # rocm-support (pinned working ExecUpdate commit)
     GIT_SHALLOW    FALSE
 )
 # Fetch MLX, apply local patches, then add it. Patching must happen before

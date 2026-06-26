@@ -1,5 +1,5 @@
 // GPU stub implementations for ROCm/GPU primitives not yet exposed by the
-// 1bit-systems/mlx fork at the pinned commit. These are forward-declared in
+// NripeshN/mlx fork at the pinned commit. These are forward-declared in
 // graph_decode.cpp and generate.cpp but the underlying MLX library does not
 // (yet) export them. The stubs let the engine link cleanly on ROCm.
 //
