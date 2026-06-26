@@ -101,20 +101,53 @@ inline mlx::core::array quantize_activation(
 // The NPU path is useful for testing compute-constrained scenarios
 // and for running two models in parallel (NPU + GPU).
 namespace detail {
+
+// Convert MLX uint32 2-bit packed weights to BitNet U8 ternary format.
+// MLX: each uint32 packs 16 × 2-bit codes (code 0,1,2,3)
+// BitNet: each uint8 packs 4 × 2-bit codes (code 0→-1, 1→0, 2→+1)
+// This is a straight repack since both use the same code→ternary mapping.
+static bool repack_2bit_to_u8(
+    const mlx::core::array& w_uint32,  // [N, ceil(K/16)] uint32
+    std::vector<uint8_t>& out_u8,      // [ceil(N/4), K] uint8
+    int N, int K)
+{
+    mx::eval(w_uint32);
+    auto data = w_uint32.data<uint32_t>();
+    int cols = w_uint32.shape(1);
+    
+    int packed_rows = (N + 3) / 4;
+    out_u8.assign(packed_rows * K, 0);
+    
+    for (int oc = 0; oc < N; oc++) {
+        int row = oc / 4;
+        int lane = oc % 4;
+        for (int k = 0; k < K; k++) {
+            int word_idx = k / 16;
+            int bit_offset = (k % 16) * 2;
+            if (word_idx >= cols) continue;
+            uint32_t word = data[oc * cols + word_idx];
+            int code = (word >> bit_offset) & 0x03;
+            if (code > 2) code = 1; // clamp invalid codes (code 3 = 2*scale+bias, shouldn't occur)
+            out_u8[row * K + k] |= (code << (lane * 2));
+        }
+    }
+    return true;
+}
+
 inline bool npu_try_ternary(
     const mlx::core::array& input,  // [1, K] bf16
     const mlx::core::array& w,      // [N, ceil(K/16)] uint32 (2-bit packed)
-    int N, int K)
+    int N, int K,
+    const QuantizationInfo* qi)
 {
-    (void)input; (void)w; (void)N; (void)K;
     // Opt-in via NPU_ENABLE=1 (disabled by default)
     static const char* env = std::getenv("NPU_ENABLE");
     static const bool npu_enabled = env && std::string(env) == "1";
     if (!npu_enabled) return false;
 
-    // Only for decode (B=1) path
+    // Only for decode (B=1) path with 2-bit weights
     if (input.ndim() != 2 || input.shape(0) != 1) return false;
-    if (w.ndim() != 2) return false;
+    if (w.ndim() != 2 || qi == nullptr || qi->bits != 2) return false;
 
     static bool npu_checked = false;
     static bool npu_avail = false;
@@ -124,9 +157,34 @@ inline bool npu_try_ternary(
     }
     if (!npu_avail) return false;
 
-    // TODO: Convert uint32 2-bit format to U8 ternary for NPU dispatch
-    // and call npu::ternary_gemv(). For now, falls back to GPU quantized_matmul.
-    return false;
+    // Compute weight scale from quant info (first group's scale = the BitNet scale)
+    mx::eval(qi->scales);
+    float ws = (float)qi->scales.data<mx::float16_t>()[0];
+    bool invert = false;  // BitNet weights in registry already have correct scale
+
+    // Convert uint32 2-bit to U8 ternary format
+    std::vector<uint8_t> packed_u8;
+    if (!repack_2bit_to_u8(w, packed_u8, N, K)) return false;
+
+    // Get activations from GPU
+    mx::eval(input);
+    auto act_ptr = input.data<mx::float16_t>();
+    std::vector<float> acts_f32(K);
+    for (int i = 0; i < K; i++) acts_f32[i] = (float)act_ptr[i];
+
+    // Run NPU ternary GEMV
+    std::vector<float> result(N);
+    if (!npu::ternary_gemv(packed_u8.data(), acts_f32.data(), result.data(),
+                            ws, invert, N, K)) {
+        return false;
+    }
+
+    // Store result back into the computation graph
+    // The caller expects an MLX array; we create one from the result
+    // But since we're inside a const function returning bool, we need
+    // the caller to handle the result. For now, write to stdout as debug.
+    std::fprintf(stderr, "[NPU] Ternary GEMV %dx%d done (first=%.2f)\n", N, K, result[0]);
+    return false;  // Fall back to GPU for now; NPU path needs MLX integration
 }
 } // namespace detail
 #endif
@@ -155,7 +213,7 @@ inline mlx::core::array linear_forward(
 #ifdef MLX_BUILD_NPU
         // Try NPU dispatch for ternary (2-bit) decode path
         if (qi->bits == 2 &&
-            detail::npu_try_ternary(input, w, (int)w.shape(0), (int)input.shape(1))) {
+            detail::npu_try_ternary(input, w, (int)w.shape(0), (int)input.shape(1), qi)) {
             // NPU would handle it — fallback to GPU for now
         }
 #endif
