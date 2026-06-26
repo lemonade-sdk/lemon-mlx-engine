@@ -137,7 +137,7 @@ static ModelContext load_typed_model(
         if (missing > 0) {
             std::cerr << "[load] WARNING: " << missing << " weight(s) not found in checkpoint"
                       << " (first: " << first_missing << ")."
-                      << " Weights will be zero-filled."
+                      << " Weights will be left unset (may cause inference errors)."
                       << " This usually means the checkpoint uses a different key naming convention."
                       << std::endl;
         }
@@ -347,10 +347,8 @@ ModelContext load_llm_from_directory(
             }
         }
 
-        // Load tokenizer from delta model directory
         std::shared_ptr<Tokenizer> tokenizer;
-        auto tokenizer_json_path = fs::path(model_directory) / "tokenizer.json";
-        if (fs::exists(tokenizer_json_path)) {
+        try {
             tokenizer = Tokenizer::from_directory(model_directory);
             ctx.encode_fn = [tokenizer](const std::string& text) {
                 return tokenizer->encode(text);
@@ -358,6 +356,8 @@ ModelContext load_llm_from_directory(
             ctx.decode_fn = [tokenizer](const std::vector<int>& ids) {
                 return tokenizer->decode(ids);
             };
+        } catch (const std::exception& e) {
+            std::cerr << "[load] tokenizer load failed: " << e.what() << std::endl;
         }
 
         // Load chat template
@@ -419,10 +419,8 @@ ModelContext load_llm_from_directory(
         ctx.eos_token_ids = base_config.eos_token_ids->values;
     }
 
-    // Load tokenizer from model directory
     std::shared_ptr<Tokenizer> tokenizer;
-    auto tokenizer_json_path = fs::path(model_directory) / "tokenizer.json";
-    if (fs::exists(tokenizer_json_path)) {
+    try {
         tokenizer = Tokenizer::from_directory(model_directory);
         ctx.encode_fn = [tokenizer](const std::string& text) {
             return tokenizer->encode(text);
@@ -430,6 +428,8 @@ ModelContext load_llm_from_directory(
         ctx.decode_fn = [tokenizer](const std::vector<int>& ids) {
             return tokenizer->decode(ids);
         };
+    } catch (const std::exception& e) {
+        std::cerr << "[load] tokenizer load failed: " << e.what() << std::endl;
     }
 
     // Load chat template from tokenizer_config.json
@@ -630,10 +630,8 @@ ModelContext load_mtp_delta_model(
         ctx.eos_token_ids = base_config.eos_token_ids->values;
     }
 
-    // Load tokenizer from delta model directory (shared with base model).
     std::shared_ptr<Tokenizer> tokenizer;
-    auto tokenizer_json_path = fs::path(delta_dir) / "tokenizer.json";
-    if (fs::exists(tokenizer_json_path)) {
+    try {
         tokenizer = Tokenizer::from_directory(delta_dir);
         ctx.encode_fn = [tokenizer](const std::string& text) {
             return tokenizer->encode(text);
@@ -641,6 +639,8 @@ ModelContext load_mtp_delta_model(
         ctx.decode_fn = [tokenizer](const std::vector<int>& ids) {
             return tokenizer->decode(ids);
         };
+    } catch (const std::exception& e) {
+        std::cerr << "[load] tokenizer load failed: " << e.what() << std::endl;
     }
 
     // Load chat template from delta model directory.

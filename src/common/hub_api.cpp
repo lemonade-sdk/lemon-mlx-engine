@@ -247,9 +247,20 @@ std::string HubApi::snapshot_download(
 {
     auto cache_path = resolve_cache_path(repo_id, revision);
 
-    // Check if already cached
+    // Check if already cached (config + at least one safetensors or its index)
     if (fs::exists(cache_path + "/config.json")) {
-        return cache_path;
+        bool has_weights = false;
+        for (const auto& e : fs::directory_iterator(cache_path)) {
+            auto name = e.path().filename().string();
+            if (name.size() >= 11 && name.compare(name.size()-11, 11, ".safetensors") == 0) {
+                has_weights = true; break;
+            }
+        }
+        if (!has_weights && fs::exists(cache_path + "/model.safetensors.index.json")) {
+            has_weights = true;
+        }
+        if (has_weights) return cache_path;
+        // config.json present but no weights — partial download; continue below to refill
     }
 
     // Fetch file list from the HF API
@@ -283,6 +294,10 @@ std::string HubApi::snapshot_download(
         for (const auto& skip : {".bin", ".pt", ".h5", ".msgpack", ".safetensors.index.json.bak"}) {
             if (ends_with(fname, skip)) return false;
         }
+        // Skip PyTorch-specific metadata/index files we never use
+        if (fname.find("pytorch_model") == 0) return false;
+        if (fname.find("flax_model") == 0) return false;
+        if (fname.find("tf_model") == 0) return false;
         // Download these useful formats
         for (const auto& good : {".json", ".safetensors", ".model", ".txt", ".jinja", ".token"}) {
             if (ends_with(fname, good)) return true;
@@ -307,14 +322,24 @@ std::string HubApi::snapshot_download(
 
     if (api_ok) {
         // Universal: download every relevant file the repo actually has
+        bool found_weights = false;
+        std::string weights_err;
         for (const auto& f : files_to_download) {
             if (!should_download(f) || !matches_allow(f)) continue;
-            bool is_large = f.find(".safetensors") != std::string::npos;
+            bool is_weights = (f.find(".safetensors") != std::string::npos);
             try {
-                download_file(repo_id, f, revision, is_large ? progress : nullptr);
-            } catch (...) {
-                // Skip files that fail (optional or temporarily unavailable)
+                download_file(repo_id, f, revision, is_weights ? progress : nullptr);
+                if (is_weights) found_weights = true;
+            } catch (const std::exception& e) {
+                if (is_weights) {
+                    weights_err = e.what();
+                    std::cerr << "[hub] failed to download " << f << ": " << e.what() << std::endl;
+                }
             }
+        }
+        if (!found_weights && !weights_err.empty()) {
+            throw std::runtime_error("Could not download model weights for " + repo_id +
+                                     " (" + weights_err + ")");
         }
     } else {
         // Fallback: hardcoded list (preserves old behavior on API failure)
