@@ -137,14 +137,39 @@ static ModelContext load_typed_model(
     // that linear_fwd() uses mx::quantized_matmul at inference time.
     register_quantized_weights(weights, base_config, wmap);
 
-    // Warn about missing weight keys before loading (catches HF naming mismatches)
+    // Remap missing weight keys by trying common HF naming alternatives.
+    // This allows loading checkpoints that use different naming conventions
+    // (e.g., 'model.model.layers...' vs 'model.layers...', 'transformer.' prefix, etc.)
     {
         int missing = 0;
         std::string first_missing;
         for (auto& [name, target] : wmap) {
             if (weights.find(name) == weights.end()) {
-                if (missing == 0) first_missing = name;
-                missing++;
+                // Try alternative common HF naming conventions
+                bool found_alt = false;
+                for (auto& [old_pref, new_pref] : {
+                    std::pair{"model.", "model.model."},
+                    std::pair{"model.", "model.model.model."},
+                    std::pair{"model.", "transformer."},
+                    std::pair{"model.", "gpt_neox."},
+                    std::pair{"model.", "llama."},
+                    std::pair{"model.", ""},
+                }) {
+                    if (name.find(new_pref) == 0) {
+                        std::string alt_key = old_pref + name.substr(new_pref.size());
+                        auto ait = weights.find(alt_key);
+                        if (ait != weights.end()) {
+                            weights.insert_or_assign(name, ait->second);
+                            weights.erase(ait);
+                            found_alt = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found_alt) {
+                    if (missing == 0) first_missing = name;
+                    missing++;
+                }
             }
         }
         if (missing > 0) {
