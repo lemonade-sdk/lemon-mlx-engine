@@ -133,6 +133,15 @@ static ModelContext load_typed_model(
         auto_quantize_weights(weights, wmap, base_config);
     }
 
+    // For 1-bit models (1bitLLM style), pre-quantize F32 weights to ternary
+    // before loading. Call the helper for this.
+    int model_input_bits = j.value("input_bits", 0);
+    if (model_input_bits > 0 && !auto_quantize) {
+        std::cerr << "[load] Pre-quantizing F32 weights to 1-bit ternary (input_bits="
+                  << model_input_bits << ")\n";
+        quantize_weights_to_ternary(weights);
+    }
+
     // Register quantized weights in the QuantizedWeightRegistry.
     // This maps model member array addresses → quantization metadata so
     // that linear_fwd() uses mx::quantized_matmul at inference time.

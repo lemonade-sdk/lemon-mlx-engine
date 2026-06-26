@@ -221,6 +221,43 @@ void auto_quantize_weights(
               << "(group_size=" << group_size << ")\n";
 }
 
+void quantize_weights_to_ternary(
+    std::unordered_map<std::string, mx::array>& weights)
+{
+    // Pre-quantize 2D F32 weights to ternary {-1, 0, +1} * scale
+    // Formula: scale = mean(abs(w)), ternary = round(w/scale) clamped to [-1,1]
+    // This matches 1bitLLM's weight_quant() at inference time.
+    // After quantization, values are approx {-scale, 0, +scale}.
+    for (auto& [key, arr] : weights) {
+        if (arr.ndim() != 2) continue;
+        auto dt = arr.dtype();
+        if (dt != mx::float32 && dt != mx::bfloat16 && dt != mx::float16) continue;
+
+        auto w_f32 = mx::astype(mx::contiguous(arr), mx::float32);
+        mx::eval(w_f32);
+        auto abs_w = mx::abs(w_f32);
+        auto scale_val = mx::mean(abs_w);
+        mx::eval(scale_val);
+        float s = scale_val.data<float>()[0];
+        if (s < 1e-10f) continue;  // skip zero weights
+
+        // Compute mean(abs(w)) scale, then round(w/scale) to {-1,0,+1}
+        auto divided = mx::divide(w_f32, scale_val);
+        auto rounded = mx::round(divided);  // round to nearest int
+        // Clip to [-1, 1]
+        auto clipped = mx::clip(rounded,
+            std::make_optional(mx::array(-1.0f)),
+            std::make_optional(mx::array(1.0f)));
+        // Multiply back by scale
+        auto quantized = mx::multiply(clipped, scale_val);
+        auto result = mx::astype(quantized, dt);
+        mx::eval(result);
+
+        // Use insert_or_assign to avoid default construction
+        weights.insert_or_assign(key, std::move(result));
+    }
+}
+
 // Legacy dequantize-at-load-time (kept for reference/fallback)
 std::unordered_map<std::string, mx::array> dequantize_weights(
     std::unordered_map<std::string, mx::array> weights,

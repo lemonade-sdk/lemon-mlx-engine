@@ -43,6 +43,10 @@ struct LlamaConfiguration {
     // (1bitLLM style). Setting this to true enables attn_sub_norm and
     // ffn_sub_norm even when hidden_act != "relu2".
     bool bitnet_has_sub_norm = false;
+    // Activation quantization bits (0 = off). 1bitLLM uses 8-bit activation
+    // quantization. When set, linear_fwd will quantize activations before
+    // each matmul to match BitLinear's activation_quant behavior.
+    int activation_bits = 0;
 
     int resolved_head_dim() const {
         return head_dim.value_or(hidden_size / num_attention_heads);

@@ -39,6 +39,11 @@ void auto_quantize_weights(
     const std::unordered_map<std::string, mlx::core::array*>& weight_map,
     const BaseConfiguration& base_config);
 
+// Pre-quantize 2D F32 weights to 1-bit ternary {-1,0,+1} * scale.
+// Matches 1bitLLM weight_quant() for runtime quantization.
+void quantize_weights_to_ternary(
+    std::unordered_map<std::string, mlx::core::array>& weights);
+
 // Legacy: dequantize weights at load time (uses more memory).
 // Kept for models that haven't been updated to use quantized_linear.h yet.
 std::unordered_map<std::string, mlx::core::array> dequantize_weights(
