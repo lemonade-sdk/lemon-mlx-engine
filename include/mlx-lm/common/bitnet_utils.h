@@ -39,23 +39,18 @@ inline mlx::core::array dequantize_bitnet_weight(
 }
 
 // Repack BitNet uint8 packed ternary weights into standard MLX uint32 2-bit
-// quantized format. Returns {wq_uint32, scales_fp16, biases_fp16}.
+// quantized format. Writes to output references (avoids std::tuple issues
+// with mx::array which has no default constructor).
 //
-// BitNet packs 4 ternary codes {0→-1, 1→0, 2→+1} per byte across output lanes:
-//   uint8[row, c] = lane0[1:0] | lane1[3:2] | lane2[5:4] | lane3[7:6]
-// The dequantized output order is lane-major:
-//   out[0:R]=lane0, out[R:2R]=lane1, out[2R:3R]=lane2, out[3R:4R]=lane3,
-// where R=packed_rows, so row = oc % R and lane = oc / R.
-//
-// MLX 2-bit format: uint32[out, ceil(in/16)], each uint32 = 16 codes at 2 bits
-// each, least-significant code first, padding with 0.
-//
-// MLX uses per-group quantization: scales/biases have shape [out_features, num_groups]
-// where num_groups = in_features / group_size. For group_size = 128.
-inline std::tuple<mlx::core::array, mlx::core::array, mlx::core::array>
+// BitNet packs 4 ternary codes {0→-1, 1→0, 2→+1} per byte across output lanes.
+// MLX 2-bit format: uint32[out, ceil(in/16)], each uint32 = 16 codes at 2 bits.
+inline void
 bitnet_repack_weights(
     const mlx::core::array& packed_weight,  // uint8 [out/4, in]
     const mlx::core::array& weight_scale,  // scalar (bf16 or fp16)
+    mlx::core::array& out_weight,          // output: uint32 [out, cols]
+    mlx::core::array& out_scales,          // output: fp16 [out, num_groups]
+    mlx::core::array& out_biases,          // output: fp16 [out, num_groups]
     bool invert_weight_scale = false)
 {
     namespace mx = mlx::core;
@@ -85,14 +80,9 @@ bitnet_repack_weights(
         ws = 1.0f / ws;
     }
 
-    // Materialize packed weight and read uint8 data
     mx::eval(packed_weight);
     auto w_data = packed_weight.data<uint8_t>();
 
-    // Allocate outputs:
-    // wq: [out_features, cols_uint32]
-    // scales: [out_features, num_groups] - per-group quantization
-    // biases: [out_features, num_groups]
     std::vector<uint32_t> wq(out_features * cols_uint32, 0);
     std::vector<mx::float16_t> scales(out_features * num_groups);
     std::vector<mx::float16_t> biases(out_features * num_groups);
@@ -105,13 +95,11 @@ bitnet_repack_weights(
         int lane = oc / packed_rows;
         int bit_shift = lane * 2;
 
-        // Replicate the single BitNet scale across all groups for this output row
         for (int g = 0; g < num_groups; ++g) {
             scales[oc * num_groups + g] = ws_h;
             biases[oc * num_groups + g] = neg_ws_h;
         }
 
-        // Pack 16 input values per uint32
         for (int g = 0; g < cols_uint32; ++g) {
             uint32_t packed = 0;
             for (int i = 0; i < 16; ++i) {
@@ -126,12 +114,13 @@ bitnet_repack_weights(
         }
     }
 
-    auto wq_arr = mx::array(wq.data(), {out_features, cols_uint32}, mx::uint32);
-    // Scales and biases: [out_features, num_groups] for per-group quantization
-    auto scales_arr = mx::array(scales.data(), {out_features, num_groups}, mx::float16);
-    auto biases_arr = mx::array(biases.data(), {out_features, num_groups}, mx::float16);
-
-    return {std::move(wq_arr), std::move(scales_arr), std::move(biases_arr)};
+    // Create arrays and EVAL them to detach from temporary vectors
+    out_weight = mx::array(wq.data(), {out_features, cols_uint32}, mx::uint32);
+    mx::eval(out_weight);
+    out_scales = mx::array(scales.data(), {out_features, num_groups}, mx::float16);
+    mx::eval(out_scales);
+    out_biases = mx::array(biases.data(), {out_features, num_groups}, mx::float16);
+    mx::eval(out_biases);
 }
 
 } // namespace mlx_lm

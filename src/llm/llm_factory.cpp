@@ -510,12 +510,32 @@ ModelContext load_llm_from_directory(
 
     // Check for 1-bit / weight-bits models that need BitNet architecture
     // (they have sub-norms like ffn_layernorm, inner_attn_ln which LlamaModel lacks)
-    if (config_json.value("weight_bits", 0) == 1 ||
-        config_json.value("input_bits", 0) == 8) {
-        std::cerr << "[load] Detected 1-bit weight model, routing through BitNetModel\n";
-        config_json["model_type"] = "bitnet";
-        if (!config_json.contains("hidden_act")) {
-            config_json["hidden_act"] = config_json.value("hidden_act", "silu");
+    {
+        std::string quant_method;
+        auto check_quant = [&](const std::string& key) {
+            if (config_json.contains(key) && config_json[key].contains("quant_method"))
+                quant_method = config_json[key]["quant_method"].get<std::string>();
+        };
+        check_quant("quantization");
+        check_quant("quantization_config");
+
+        bool is_bitnet = (config_json.value("weight_bits", 0) == 1 ||
+                          config_json.value("input_bits", 0) == 8 ||
+                          quant_method == "bitnet");
+
+        if (is_bitnet) {
+            std::string orig_type = config_json.value("model_type", "");
+            if (orig_type == "qwen3" || orig_type == "qwen2") {
+                std::cerr << "[load] Detected Qwen3+BitNet model, enabling per-projection norms\n";
+                config_json["bitnet_has_sub_norm"] = true;
+                config_json["has_pre_norms"] = true;
+            } else {
+                std::cerr << "[load] Detected 1-bit weight model, routing through BitNetModel\n";
+                config_json["model_type"] = "bitnet";
+            }
+            if (!config_json.contains("hidden_act")) {
+                config_json["hidden_act"] = config_json.value("hidden_act", "silu");
+            }
         }
     }
 
