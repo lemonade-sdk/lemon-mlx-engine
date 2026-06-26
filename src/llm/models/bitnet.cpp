@@ -292,6 +292,42 @@ mx::array BitNetModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
+    // Remap Qwen3-format weight names to BitNet format
+    // (used by Qwen3-8B-BitNet and similar HuggingFace BitNet checkpoints)
+    {
+        static const std::vector<std::pair<std::string, std::string>> qwen3_to_bitnet = {
+            {"self_attn.q_proj",      "attention.wq"},
+            {"self_attn.k_proj",      "attention.wk"},
+            {"self_attn.v_proj",      "attention.wv"},
+            {"self_attn.o_proj",      "attention.wo"},
+            {"self_attn.q_norm",      "attention.q_norm"},
+            {"self_attn.k_norm",      "attention.k_norm"},
+            {"mlp.gate_proj",         "feed_forward.gate"},
+            {"mlp.up_proj",           "feed_forward.up"},
+            {"mlp.down_proj",         "feed_forward.down"},
+            {"input_layernorm",       "attention_norm"},
+            {"post_attention_layernorm", "ffn_norm"},
+            {"embed_tokens",          "tok_embeddings"},
+        };
+
+        std::vector<std::pair<std::string, std::string>> renames;
+        for (auto& [key, _] : weights) {
+            for (auto& [old_p, new_p] : qwen3_to_bitnet) {
+                if (key.find(old_p) != std::string::npos) {
+                    std::string new_key = key;
+                    size_t pos = new_key.find(old_p);
+                    new_key.replace(pos, old_p.size(), new_p);
+                    renames.emplace_back(key, new_key);
+                    break;
+                }
+            }
+        }
+        for (auto& [old_k, new_k] : renames) {
+            weights.emplace(new_k, std::move(weights.at(old_k)));
+            weights.erase(old_k);
+        }
+    }
+
     // Repack uint8 packed ternary weights into standard MLX uint32 2-bit
     // quantized format and register directly in QuantizedWeightRegistry.
     //
@@ -326,8 +362,10 @@ BitNetModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
                 // format. Codes {0,1,2} with bias=-scale exactly represent
                 // {-scale,0,+scale}; bitnet_repack_weights() preserves the
                 // model's lane-major output layout used by dequantize_bitnet_weight().
-                auto [wq, scales, biases] = bitnet_repack_weights(
-                    w_it->second, val, config_.bitnet_invert_weight_scales);
+                mx::array wq(0), scales(0.0f), biases(0.0f);
+                bitnet_repack_weights(
+                    w_it->second, val, wq, scales, biases,
+                    config_.bitnet_invert_weight_scales);
                 to_add.emplace_back(weight_key, std::move(wq));
                 to_remove.push_back(key);
 
