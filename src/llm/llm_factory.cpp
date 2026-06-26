@@ -451,6 +451,9 @@ AbstractModelRegistry& llm_model_registry() {
             "What is the capital of France?"},
         {"zhangsq-nju/Qwen3-1.7B-EdgeRazor-1.58bit",
             "What is the capital of France?"},
+        // ── OLMo Bitnet ──
+        {"NousResearch/OLMo-Bitnet-1B",
+            "What is the capital of France?"},
     });
     return registry;
 }
@@ -577,6 +580,36 @@ ModelContext load_llm_from_directory(
         return ctx;
     }
 
+    // Normalize OLMo-style config keys to standard Llama naming
+    if (config_json.value("model_type", "") == "olmo" || config_json.value("model_type", "") == "OLMo") {
+        if (config_json.contains("d_model") && !config_json.contains("hidden_size"))
+            config_json["hidden_size"] = config_json["d_model"];
+        if (config_json.contains("n_layers") && !config_json.contains("num_hidden_layers"))
+            config_json["num_hidden_layers"] = config_json["n_layers"];
+        if (config_json.contains("n_heads") && !config_json.contains("num_attention_heads"))
+            config_json["num_attention_heads"] = config_json["n_heads"];
+        if (!config_json.contains("intermediate_size") && config_json.contains("ffn_hidden_size"))
+            config_json["intermediate_size"] = config_json["ffn_hidden_size"];
+        if (config_json.contains("embedding_size") && !config_json.contains("vocab_size"))
+            config_json["vocab_size"] = config_json["embedding_size"];
+        if (!config_json.contains("intermediate_size") && config_json.contains("hidden_size"))
+            config_json["intermediate_size"] = config_json["hidden_size"].get<int>() * 4;
+        if (config_json.contains("n_heads") && !config_json.contains("num_attention_heads"))
+            config_json["num_attention_heads"] = config_json["n_heads"];
+        if (!config_json.contains("num_key_value_heads"))
+            config_json["num_key_value_heads"] = config_json["num_attention_heads"];
+        if (!config_json.contains("head_dim"))
+            config_json["head_dim"] = config_json["hidden_size"].get<int>() / config_json["num_attention_heads"].get<int>();
+        if (!config_json.contains("rms_norm_eps"))
+            config_json["rms_norm_eps"] = 1e-5;
+        if (!config_json.contains("rope_theta"))
+            config_json["rope_theta"] = 10000.0;
+        if (!config_json.contains("max_position_embeddings"))
+            config_json["max_position_embeddings"] = 2048;
+        if (!config_json.contains("tie_word_embeddings"))
+            config_json["tie_word_embeddings"] = true;
+    }
+
     // Check for 1-bit / weight-bits models that need BitNet architecture
     // (they have sub-norms like ffn_layernorm, inner_attn_ln which LlamaModel lacks)
     {
@@ -641,6 +674,7 @@ ModelContext load_llm_from_directory(
             {"llama3", "llama"},
             {"qwen3_moe_base", "qwen3_moe"},
             {"gemma3", "gemma3_text"},
+            {"olmo", "llama"},  // OLMo-1 uses standard Llama-like architecture
         };
         if (auto ait = aliases.find(base_config.model_type); ait != aliases.end()) {
             it = loaders.find(ait->second);
