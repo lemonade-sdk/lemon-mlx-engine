@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mlx-lm/common/bitnet_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/common/quantize_utils.h>
 #include <mlx-lm/llm/models/llama.h>
 #include <mlx/mlx.h>
 #include <nlohmann/json.hpp>
@@ -521,6 +522,34 @@ TEST_CASE("bitnet_repack_weights with larger shape", "[bitnet_quant]") {
 
     REQUIRE(gpu.shape(0) == 1);
     REQUIRE(gpu.shape(1) == out_features);
+}
+
+TEST_CASE("auto_quantize quantizes bf16 weight and registers", "[autoquant]") {
+    using namespace mx;
+
+    auto w = astype(random::normal({4, 128}), bfloat16);
+    eval(w);
+
+    std::unordered_map<std::string, array> weights;
+    weights.insert({std::string("test.weight"), w});
+
+    std::unordered_map<std::string, array*> wmap;
+    wmap.insert({std::string("test.weight"), &weights.at(std::string("test.weight"))});
+
+    // Use default BaseConfiguration (per_layer_quantization not set)
+    BaseConfiguration base_cfg;
+    auto_quantize_weights(weights, wmap, base_cfg);
+
+    auto& qw = weights.at(std::string("test.weight"));
+    REQUIRE(qw.dtype() == uint32);
+    REQUIRE(qw.ndim() == 2);
+
+    auto* qi = QuantizedWeightRegistry::instance().find(&qw);
+    REQUIRE(qi != nullptr);
+    REQUIRE(qi->bits == 4);
+    REQUIRE(qi->group_size == 64);
+
+    QuantizedWeightRegistry::instance().clear();
 }
 
 } // namespace mlx_lm
