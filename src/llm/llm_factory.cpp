@@ -387,6 +387,7 @@ ModelTypeRegistry& llm_type_registry() {
 
 AbstractModelRegistry& llm_model_registry() {
     static AbstractModelRegistry registry({
+        // ── Established 4-bit models ──
         {"mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
             "What is the difference between a fruit and a vegetable?"},
         {"mlx-community/Llama-3.2-1B-Instruct-4bit",
@@ -407,6 +408,27 @@ AbstractModelRegistry& llm_model_registry() {
             "Write a Python function to sort a list."},
         {"mlx-community/c4ai-command-r-08-2024-4bit",
             "Explain quantum computing."},
+        // ── Newly added 4-bit models ──
+        {"mlx-community/gemma-3-4b-it-qat-4bit",
+            "What is the Gemma architecture?"},
+        {"mlx-community/gemma-4-e2b-it-4bit",
+            "Describe the Gemma 4 model architecture."},
+        // ── 1-bit / BitNet models ──
+        {"mlx-community/Falcon-E-3B-Instruct-1.58bit",
+            "What is the capital of France?"},
+        {"microsoft/bitnet-b1.58-2B-4T",
+            "Why is the sky blue?"},
+        {"1bitLLM/bitnet_b1_58-3B",
+            "Explain quantum computing."},
+        {"tiiuae/Falcon3-7B-Instruct-1.58bit",
+            "What is the capital of France?"},
+        // ── Bonsai 1-bit MLX models ──
+        {"prism-ml/Bonsai-1.7B-mlx-1bit",
+            "What is the capital of France?"},
+        {"prism-ml/Bonsai-4B-mlx-1bit",
+            "What is the capital of France?"},
+        {"prism-ml/Bonsai-8B-mlx-1bit",
+            "What is the capital of France?"},
     });
     return registry;
 }
@@ -513,23 +535,45 @@ ModelContext load_llm_from_directory(
     {
         std::string quant_method;
         auto check_quant = [&](const std::string& key) {
-            if (config_json.contains(key) && config_json[key].contains("quant_method"))
-                quant_method = config_json[key]["quant_method"].get<std::string>();
+            if (config_json.contains(key) && config_json[key].is_object()) {
+                auto& obj = config_json[key];
+                if (obj.contains("quant_method"))
+                    quant_method = obj["quant_method"].get<std::string>();
+            }
         };
         check_quant("quantization");
         check_quant("quantization_config");
 
+        // Also check nested quantization.bits for 1-bit MLX format (Bonsai style)
+        int quant_bits = 0;
+        {
+            // Check config_json["quantization"]["bits"]
+            if (config_json.contains("quantization") && config_json["quantization"].is_object())
+                quant_bits = config_json["quantization"].value("bits", 0);
+        }
+
         bool is_bitnet = (config_json.value("weight_bits", 0) == 1 ||
                           config_json.value("input_bits", 0) == 8 ||
-                          quant_method == "bitnet");
+                          quant_method == "bitnet" ||
+                          quant_bits == 1);
 
         if (is_bitnet) {
             std::string orig_type = config_json.value("model_type", "");
-            if (orig_type == "qwen3" || orig_type == "qwen2") {
+            // Qwen3+BitNet: has per-projection RMS norms (from HuggingFace BitNetForCausalLM)
+            if ((orig_type == "qwen3" || orig_type == "qwen2") &&
+                (quant_method == "bitnet" || config_json.value("weight_bits", 0) == 1)) {
                 std::cerr << "[load] Detected Qwen3+BitNet model, enabling per-projection norms\n";
                 config_json["bitnet_has_sub_norm"] = true;
                 config_json["has_pre_norms"] = true;
-            } else {
+            }
+            // Bonsai-style: 1-bit MLX affine quantization via quantization.bits=1
+            // These use standard Qwen3 architecture with MLX's quantized_matmul
+            else if (orig_type == "qwen3" && quant_bits == 1) {
+                std::cerr << "[load] Detected Qwen3+1bit model (Bonsai), using standard Qwen3\n";
+                // No per-projection norms needed — standard MLX 1-bit format
+            }
+            // Other 1-bit models route through BitNetModel
+            else {
                 std::cerr << "[load] Detected 1-bit weight model, routing through BitNetModel\n";
                 config_json["model_type"] = "bitnet";
             }
@@ -550,6 +594,7 @@ ModelContext load_llm_from_directory(
             {"llama3", "llama"},
             {"qwen3_moe_base", "qwen3_moe"},
             {"gemma3", "gemma3_text"},
+            {"gemma4", "llama"},  // Best-effort fallback; proper Gemma4 impl TBD
         };
         if (auto ait = aliases.find(base_config.model_type); ait != aliases.end()) {
             it = loaders.find(ait->second);
