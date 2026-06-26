@@ -328,6 +328,15 @@ private:
     std::optional<int> max_tokens_;
     int token_count_ = 0;
 
+    // --- Pure-relaunch graph decode (build-once, deterministic arena) ---
+    // State machine: 0 warmup, 1 record parity A, 2 record parity B, 3 replay,
+    // 9 disabled. Two graphs (one per pos&1) bake the GDN ping-pong state slots.
+    int pure_graph_state_ = 0;
+    int pure_graph_cap_ = 0;      // reserved KV capacity
+    int pure_pos_ = 0;            // host mirror of the device decode position
+    // Run one decode step under the pure-graph path; returns the sampled token.
+    mlx::core::array step_pure_graph(const LMInput::Text& previous);
+
     // KV cache quantization parameters.
     std::optional<int> kv_bits_;
     int kv_group_size_ = 64;

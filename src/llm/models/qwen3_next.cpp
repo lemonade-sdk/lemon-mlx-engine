@@ -9,6 +9,7 @@
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/common/gated_delta.h>
 #include <algorithm>
 #include <cmath>
 
@@ -76,12 +77,11 @@ Qwen3NextRMSNormGated::Qwen3NextRMSNormGated(int dimensions, float eps)
 
 mx::array Qwen3NextRMSNormGated::operator()(const mx::array& x,
                                               const std::optional<mx::array>& gate) {
-    auto result = mx::fast::rms_norm(x, weight_, eps_);
     if (gate.has_value()) {
-        // Swift: silu(gate) * result
-        result = swiglu(*gate, result);
+        // silu(gate) * rmsnorm(x) * weight, fused into one kernel on ROCm.
+        return gated_rms_norm(x, *gate, weight_, eps_);
     }
-    return result;
+    return mx::fast::rms_norm(x, weight_, eps_);
 }
 
 std::unordered_map<std::string, mx::array*> Qwen3NextRMSNormGated::weight_map() {
