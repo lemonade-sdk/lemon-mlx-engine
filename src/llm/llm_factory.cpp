@@ -527,6 +527,53 @@ ModelContext load_llm_from_directory(
         }
     }
     if (it == loaders.end()) {
+        // Unknown model_type. Try fallback: if config has Llama-like dimensions,
+        // create a LlamaModel as a best-effort fallback.
+        bool can_fallback = false;
+        if (config_json.contains("hidden_size") &&
+            config_json.contains("num_hidden_layers") &&
+            config_json.contains("num_attention_heads")) {
+            can_fallback = true;
+            // Detect if it's a Qwen/Gemma-style model by checking for specific config keys
+            if (config_json.contains("num_key_value_heads")) {
+                can_fallback = true;
+            }
+        }
+
+        if (can_fallback) {
+            // Check for Gemma-like config (uses hidden_activation, not hidden_act)
+            if (config_json.contains("hidden_activation") &&
+                !config_json.contains("hidden_act")) {
+                config_json["hidden_act"] = config_json["hidden_activation"];
+            }
+            // Default to silu if no activation specified
+            if (!config_json.contains("hidden_act")) {
+                config_json["hidden_act"] = "silu";
+            }
+            // Ensure rms_norm_eps
+            if (!config_json.contains("rms_norm_eps")) {
+                config_json["rms_norm_eps"] = 1e-6;
+            }
+            // Default to tied embeddings
+            if (!config_json.contains("tie_word_embeddings")) {
+                config_json["tie_word_embeddings"] = true;
+            }
+            // Default to 2048 max context
+            if (!config_json.contains("max_position_embeddings")) {
+                config_json["max_position_embeddings"] = 2048;
+            }
+
+            std::cerr << "[load] Unknown model_type '" << base_config.model_type
+                      << "' but config has Llama-compatible dimensions."
+                      << " Attempting fallback LlamaModel."
+                      << " (hidden_size=" << config_json["hidden_size"]
+                      << ", layers=" << config_json["num_hidden_layers"]
+                      << ", heads=" << config_json["num_attention_heads"]
+                      << ")\n";
+            it = loaders.find("llama");
+        }
+    }
+    if (it == loaders.end()) {
         std::string supported;
         for (auto& [k, _] : loaders) supported += "  - " + k + "\n";
         throw std::runtime_error(
