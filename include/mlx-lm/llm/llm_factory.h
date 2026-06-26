@@ -48,6 +48,7 @@ ModelContext load_llm(
 //   mlx-community/Qwen3.5-4B-MTP-4bit -> mlx-community/Qwen3.5-4B-4bit
 ModelContext load_mtp_delta_model(
     const std::string& delta_model_id,
-    const std::string& cache_dir = "");
+    const std::string& cache_dir = "",
+    bool auto_quantize = false);
 
 } // namespace mlx_lm
