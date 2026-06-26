@@ -14,6 +14,7 @@
 #include <mlx-lm/common/attention_utils.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/common/graph_decode.h>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -279,17 +280,38 @@ mx::array Qwen35MoEAttention::operator()(const mx::array& x,
 
     // RoPE with partial rotary factor.
     int offset = cache ? cache->offset() : 0;
-    queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
-    keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
 
-    // KV cache update + SDPA.
+    // Device-position decode path (build-once HIP graph): RoPE offset, KV write
+    // slot, and causal mask all read a fixed-address [1] int32 device buffer so
+    // the same graph relaunches correctly as the loop advances pos device-side.
+    static const bool devpos_env = std::getenv("MLX_DECODE_DEVICE_POS") != nullptr;
+    bool gmode = (mlx_lm::graph_external_pos() || devpos_env) && L == 1 && cache;
+
     mx::array output(0.0f);
-    if (cache) {
-        auto [k, v] = cache->update(keys, values);
-        keys = k;
-        values = v;
+    if (gmode) {
+        auto& pos = mlx_lm::graph_decode_pos();          // fixed-address [1] int32
+        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, pos);
+        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, pos);
+        auto [k, v] = cache->update_at_pos(keys, values, pos);
+        int CAP = k.shape(2);
+        auto cols = mx::arange(0, CAP, mx::int32);
+        float ninf = -std::numeric_limits<float>::infinity();
+        auto addmask = mx::astype(
+            mx::reshape(mx::where(mx::less_equal(cols, pos),
+                                  mx::array(0.0f), mx::array(ninf)),
+                        {1, 1, 1, CAP}),
+            x.dtype());
+        output = sdpa(queries, k, v, scale_, AttentionMask::from_array(addmask));
+    } else {
+        queries = mx::fast::rope(queries, rope_dims_, false, rope_theta_, 1.0f, offset);
+        keys = mx::fast::rope(keys, rope_dims_, false, rope_theta_, 1.0f, offset);
+        if (cache) {
+            auto [k, v] = cache->update(keys, values);
+            keys = k;
+            values = v;
+        }
+        output = sdpa(queries, keys, values, scale_, mask);
     }
-    output = sdpa(queries, keys, values, scale_, mask);
     output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {B, L, -1});
 
     // Swift: oProj(sigmoidMultiply(output, gate))
@@ -360,6 +382,16 @@ void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
                            in_proj_fused_weight_);
 }
 
+// In-place overwrite of dst with src via native slice_update donation (start=0).
+static mlx::core::array gdn_state_overwrite_(mlx::core::array dst,
+                                             const mlx::core::array& src) {
+    int nd = dst.ndim();
+    std::vector<int> axes(nd);
+    for (int i = 0; i < nd; ++i) axes[i] = i;
+    return mx::slice_update(std::move(dst), src,
+                            mx::zeros({nd}, mx::int32), axes);
+}
+
 mx::array Qwen35MoEGatedDeltaNet::operator()(
     const mx::array& inputs,
     const std::optional<mx::array>& mask,
@@ -393,6 +425,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // Conv1d processing.
     auto dtype = inputs.dtype();
 
+    // Build-once HIP-graph decode: keep the conv + SSM recurrent state in a SINGLE
+    // static buffer updated IN PLACE (inplace_write). The recorded graph reads the
+    // fixed-address state, computes the new state, and writes it back into the same
+    // buffer — one kernel's read-before-write is safe within a launch, and the
+    // in-place write accumulates across relaunches. No double buffer / parity is
+    // needed (only stream capture required ping-pong; build+relaunch does not).
+    bool gdn_inplace = mlx_lm::graph_external_pos() && S == 1 && cache;
+
     mx::array conv_state(0.0f);
     if (cache && (*cache)[0].has_value()) {
         conv_state = (*cache)[0].value();
@@ -410,7 +450,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     if (S == 1 && cache) {
         auto [conv_out, new_state] =
             gdn_conv_step(conv_state, qkv, conv1d_weight_);
-        (*cache)[0] = new_state;
+        if (gdn_inplace && (*cache)[0].has_value()) {
+            // Read [0], write new state to scratch [2]; loop copies [2]->[0].
+            if (!(*cache)[2].has_value())
+                (*cache)[2] = mx::zeros_like((*cache)[0].value());
+            (*cache)[2] = gdn_state_overwrite_(std::move((*cache)[2].value()), new_state);
+        } else {
+            (*cache)[0] = new_state;
+        }
 
         // Split into q, k, v
         auto q_out = mx::reshape(mx::slice(conv_out, {0, 0, 0}, {B, 1, key_dim_}),
@@ -426,11 +473,20 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
             k_norm_w_ = mx::full({head_k_dim_}, inv_scale, dtype);
         }
-        q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
-        k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
+        // GDN decode step. MLX_GDN_NO_FUSED=1 -> inline mx::compile recurrence.
+        // MLX_GDN_NO_FUSED2=1 -> the per-op fused path (rms_norm + beta/g +
+        // gated_delta_step). Default: the FlashQLA-style gdn_fused_decode kernel
+        // that folds q/k-RMSNorm + beta/g + recurrence into one launch.
+        static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        const bool use_fused2 =
+            use_fused_gdn && std::getenv("MLX_GDN_NO_FUSED2") == nullptr;
 
-        // GDN decode step via the fused HIP kernel (gated_delta_update).
-        // MLX_GDN_NO_FUSED=1 falls back to the inline mx::compile recurrence.
+        // The fused kernel folds the q/k norm; only normalize here otherwise.
+        if (!use_fused2) {
+            q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
+            k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
+        }
+
         mx::array ssm_state(0.0f);
         if ((*cache)[1].has_value()) {
             ssm_state = (*cache)[1].value();
@@ -438,12 +494,32 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             ssm_state = mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
         }
 
-        static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        static const bool st_ck = std::getenv("MLX_STATE_CKSUM") != nullptr;
+        if (st_ck) {
+            auto c = mx::sum(mx::abs(mx::astype(ssm_state, mx::float32)));
+            mx::eval(c);
+            fprintf(stderr, "[st] read_ssm %.6e\n", c.item<float>());
+        }
+
         if (use_fused_gdn) {
-            auto [o, ns] = gated_delta_update(
-                q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state,
-                std::nullopt, /*inplace=*/false);
-            (*cache)[1] = ns;
+            mx::array o(0.0f), ns(0.0f);
+            if (use_fused2) {
+                std::tie(o, ns) = gdn_fused_decode(
+                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
+                    *q_norm_w_, *k_norm_w_, ssm_state);
+            } else {
+                std::tie(o, ns) = gated_delta_update(
+                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
+                    ssm_state, std::nullopt, /*inplace=*/false);
+            }
+            if (gdn_inplace && (*cache)[1].has_value()) {
+                // Read [1], write new state to scratch [3]; loop copies [3]->[1].
+                if (!(*cache)[3].has_value())
+                    (*cache)[3] = mx::zeros_like((*cache)[1].value());
+                (*cache)[3] = gdn_state_overwrite_(std::move((*cache)[3].value()), ns);
+            } else {
+                (*cache)[1] = ns;
+            }
             auto normalized = norm_(o, z);
             return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
         }
@@ -786,10 +862,17 @@ mx::array Qwen35MoEModelInner::operator()(const mx::array& inputs, std::vector<K
     // SSM mask: always nullopt (no left padding support)
     std::optional<mx::array> ssm_mask;
 
+    static const bool cksum = std::getenv("MLX_PURE_CKSUM") != nullptr;
     for (size_t i = 0; i < layers_.size(); ++i) {
         KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
         auto attn_mask = layers_[i].is_linear() ? AttentionMask{} : fa_mask;
         h = layers_[i](h, attn_mask, ssm_mask, lc);
+        if (cksum) {
+            auto c = mx::sum(mx::abs(mx::astype(h, mx::float32)));
+            mx::eval(c);
+            fprintf(stderr, "[ck] L%02zu %s %.7e\n", i,
+                    layers_[i].is_linear() ? "gdn " : "attn", c.item<float>());
+        }
     }
 
     return mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
@@ -867,10 +950,17 @@ mx::array Qwen35MoEModelInner::forward_prenorm(const mx::array& inputs, std::vec
 
     std::optional<mx::array> ssm_mask;
 
+    static const bool cksum = std::getenv("MLX_PURE_CKSUM") != nullptr;
     for (size_t i = 0; i < layers_.size(); ++i) {
         KVCache* lc = (cache && i < cache->size()) ? &(*cache)[i] : nullptr;
         auto attn_mask = layers_[i].is_linear() ? AttentionMask{} : fa_mask;
         h = layers_[i](h, attn_mask, ssm_mask, lc);
+        if (cksum) {
+            auto c = mx::sum(mx::abs(mx::astype(h, mx::float32)));
+            mx::eval(c);
+            fprintf(stderr, "[ck] L%02zu %s %.7e\n", i,
+                    layers_[i].is_linear() ? "gdn " : "attn", c.item<float>());
+        }
     }
 
     return h;  // pre-norm
