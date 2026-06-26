@@ -53,6 +53,7 @@
 #include <mlx-lm/common/chat_template.h>
 #include <mlx-lm/common/quantize_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/common/gguf_loader.h>
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
@@ -333,14 +334,44 @@ ModelContext load_llm_from_directory(
     const std::string& model_directory,
     const ModelConfiguration& config)
 {
-    // Read config.json
+    nlohmann::json config_json;
+
+    // Check for GGUF file first (single-file format, no config.json)
+    // If config.json exists, use the standard safetensors path.
     auto config_path = fs::path(model_directory) / "config.json";
     if (!fs::exists(config_path)) {
+        // No config.json. Check if the directory contains a .gguf file.
+        std::string gguf_file;
+        for (const auto& e : fs::directory_iterator(model_directory)) {
+            if (e.path().extension() == ".gguf") {
+                gguf_file = e.path().string();
+                break;
+            }
+        }
+        if (!gguf_file.empty()) {
+            // Synthesize config from GGUF metadata
+            auto meta = mlx::core::load_gguf(gguf_file).second;
+            config_json = gguf_config_from_metadata(meta);
+
+            auto base_config = parse_base_configuration(config_json);
+            auto& loaders = llm_loaders();
+            auto it = loaders.find(base_config.model_type);
+            if (it == loaders.end()) {
+                throw std::runtime_error("Unsupported GGUF architecture: '" +
+                    base_config.model_type + "'");
+            }
+
+            auto weights = load_gguf_weights(gguf_file);
+            // Materialize and load the model
+            auto ctx = it->second(config_json.dump(), std::move(weights),
+                                 base_config, config.auto_quantize);
+            ctx.model_id = config.id.empty() ? model_directory : config.id;
+            return ctx;
+        }
         throw std::runtime_error("config.json not found in " + model_directory);
     }
 
     std::ifstream config_file(config_path);
-    nlohmann::json config_json;
     config_file >> config_json;
 
     // Detect MTP delta models (model_type="qwen3_5_mtp") and redirect
@@ -684,6 +715,17 @@ ModelContext load_llm(
     const std::string& model_id,
     const std::string& cache_dir)
 {
+    // If model_id is a local .gguf file, handle it directly
+    if (fs::exists(fs::path(model_id)) &&
+        fs::path(model_id).extension() == ".gguf") {
+        // Wrap in a temporary directory and delegate
+        auto parent = fs::path(model_id).parent_path();
+        if (parent.empty()) parent = ".";
+        ModelConfiguration config;
+        config.id = model_id;
+        return load_llm_from_directory(parent, config);
+    }
+
     // If model_id is a local directory with config.json, use it directly
     if (fs::exists(fs::path(model_id) / "config.json")) {
         ModelConfiguration config;
@@ -731,6 +773,17 @@ ModelContext load_llm(
     const std::string& cache_dir,
     bool auto_quantize)
 {
+    // If model_id is a local .gguf file, handle it directly
+    if (fs::exists(fs::path(model_id)) &&
+        fs::path(model_id).extension() == ".gguf") {
+        auto parent = fs::path(model_id).parent_path();
+        if (parent.empty()) parent = ".";
+        ModelConfiguration config;
+        config.id = model_id;
+        config.auto_quantize = auto_quantize;
+        return load_llm_from_directory(parent, config);
+    }
+
     // If model_id is a local directory with config.json, use it directly
     if (fs::exists(fs::path(model_id) / "config.json")) {
         ModelConfiguration config;
