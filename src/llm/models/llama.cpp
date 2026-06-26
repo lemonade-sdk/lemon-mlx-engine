@@ -8,6 +8,7 @@
 #include <mlx-lm/llm/models/llama.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/attention_utils.h>
+#include <mlx-lm/common/bitnet_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
 #include <cmath>
@@ -43,6 +44,29 @@ void from_json(const nlohmann::json& j, LlamaConfiguration& c) {
         c.attention_bias = j["attention_bias"].get<bool>();
     if (j.contains("mlp_bias"))
         c.mlp_bias = j["mlp_bias"].get<bool>();
+    if (j.contains("hidden_act"))
+        c.hidden_act = j["hidden_act"].get<std::string>();
+
+    if (j.contains("quantization_config") && j["quantization_config"].is_object()) {
+        const auto& qc = j["quantization_config"];
+        if (qc.value("quant_method", std::string()) == "bitnet") {
+            if (qc.contains("linear_class")) {
+                c.bitnet_invert_weight_scales =
+                    qc.value("linear_class", std::string()) != "autobitlinear";
+            } else {
+                // Falcon-E-style MLX BitLinear checkpoints omit linear_class and
+                // use scale = 1 / weight_scale. True relu2 BitNet checkpoints use
+                // direct scales unless marked otherwise.
+                c.bitnet_invert_weight_scales = (c.hidden_act != "relu2");
+            }
+        }
+    }
+
+    // 1-bit models (1bitLLM style) have sub-norms even with silu activation
+    if (j.value("weight_bits", 0) == 1 || j.value("input_bits", 0) > 0) {
+        c.bitnet_has_sub_norm = true;
+        c.activation_bits = j.value("input_bits", 0);
+    }
 
     if (j.contains("rope_scaling") && !j["rope_scaling"].is_null()) {
         std::unordered_map<std::string, StringOrNumber> scaling;
@@ -411,7 +435,7 @@ mx::array LlamaModelInner::operator()(
 
 mx::array LlamaModelInner::embed_as_linear(const mx::array& x) const {
     // Use embedding weights as a linear layer (for tied embeddings)
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> LlamaModelInner::weight_map() {
@@ -433,7 +457,7 @@ std::unordered_map<std::string, mx::array*> LlamaModelInner::weight_map() {
 // --- LlamaModel ---
 
 LlamaModel::LlamaModel(const LlamaConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
 
@@ -463,7 +487,7 @@ mx::array LlamaModel::forward_impl(
 {
     auto out = model_(inputs, cache);
     if (lm_head_weight_.has_value()) {
-        return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+        return linear_forward(out, lm_head_weight_.value());
     } else {
         return model_.embed_as_linear(out);
     }
@@ -472,8 +496,40 @@ mx::array LlamaModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 LlamaModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Remove unused precomputed rotary frequencies
+    // Dequantize BitNet-style uint8 packed ternary weights at load time.
+    // Each *.weight (uint8, shape [out/4, in]) is paired with a *.weight_scale.
+    // Normal Llama weights do not have this pair and are left unchanged.
     std::vector<std::string> to_remove;
+    std::vector<std::pair<std::string, mx::array>> to_add;
+
+    const std::string scale_suffix = ".weight_scale";
+
+    for (auto& [key, val] : weights) {
+        if (key.size() > scale_suffix.size() &&
+            key.compare(key.size() - scale_suffix.size(), scale_suffix.size(), scale_suffix) == 0) {
+
+            auto prefix = key.substr(0, key.size() - scale_suffix.size());
+            auto weight_key = prefix + ".weight";
+
+            auto w_it = weights.find(weight_key);
+            if (w_it != weights.end() && w_it->second.dtype() == mx::uint8) {
+                int packed_rows = w_it->second.shape(0);
+                int out_features = packed_rows * 4;
+
+                to_add.emplace_back(weight_key,
+                    dequantize_bitnet_weight(
+                        w_it->second, val, out_features,
+                        config_.bitnet_invert_weight_scales));
+                to_remove.push_back(key);
+            }
+        }
+    }
+
+    for (auto& [k, v] : to_add) {
+        weights.insert_or_assign(k, std::move(v));
+    }
+
+    // Remove unused precomputed rotary frequencies
     for (auto& [k, v] : weights) {
         if (k.find("self_attn.rotary_emb.inv_freq") != std::string::npos) {
             to_remove.push_back(k);

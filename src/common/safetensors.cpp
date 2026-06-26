@@ -6,7 +6,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <cstdlib>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -69,8 +71,108 @@ load_safetensors_from_directory(const std::string& directory) {
     }
 
     if (all_weights.empty()) {
+        // No safetensors found. Try PyTorch .bin files or trust_remote_code.
+        auto bin_path = fs::path(directory) / "pytorch_model.bin";
+        auto has_sharded_bin = fs::exists(fs::path(directory) / "pytorch_model.bin.index.json");
+
+        if (!fs::exists(bin_path) && !has_sharded_bin) {
+            throw std::runtime_error(
+                "No .safetensors files found in " + directory +
+                ". Install safetensors: pip install safetensors");
+        }
+
+        std::cerr << "[convert] No safetensors found, attempting PyTorch .bin conversion...\n";
+
+        // Write a conversion Python script
+        std::string script_path = (fs::temp_directory_path() / "_mlx_convert_bin.py").string();
+        std::string out_path = (fs::path(directory) / "model.safetensors").string();
+
+        std::ofstream out(script_path);
+        out << R"PY(
+import json, os, sys
+
+# Determine input: single .bin file or sharded index
+input_dir = sys.argv[1]
+single_bin = os.path.join(input_dir, "pytorch_model.bin")
+sharded_index = os.path.join(input_dir, "pytorch_model.bin.index.json")
+out_dir = sys.argv[1]
+
+try:
+    from safetensors.torch import save_file as st_save
+except ImportError:
+    import subprocess
+    subprocess.run([sys.executable, "-m", "pip", "install", "safetensors", "-q", "--quiet"], check=True)
+    from safetensors.torch import save_file as st_save
+
+try:
+    import torch
+except ImportError:
+    print("torch not available, trying to load from file...")
+    # Some .bin files are just pickle dictionaries without requiring torch
+    import pickle
+    torch_load = lambda f: pickle.load(open(f, "rb"), encoding="bytes")
+else:
+    torch_load = lambda f: torch.load(f, map_location="cpu", weights_only=True)
+
+if os.path.exists(sharded_index):
+    with open(sharded_index) as f:
+        idx = json.load(f)
+    shard_files = set()
+    for k, v in idx["weight_map"].items():
+        shard_files.add(v)
+    all_state = {}
+    for sf in sorted(shard_files):
+        sf_path = os.path.join(input_dir, sf)
+        if os.path.exists(sf_path):
+            state = torch_load(sf_path)
+            # Handle both bytes and str keys
+            clean = {}
+            for k, v in state.items():
+                if isinstance(k, bytes):
+                    k = k.decode('utf-8')
+                if hasattr(v, 'numpy') or hasattr(v, 'shape'):
+                    clean[k] = v
+                elif isinstance(v, dict):
+                    # Some checkpoints have nested dicts
+                    for k2, v2 in v.items():
+                        final_k = f"{k}.{k2}" if isinstance(k, str) else k
+                        if hasattr(v2, 'shape'):
+                            clean[final_k] = v2
+            all_state.update(clean)
+    st_save(all_state, out_dir + "/converted_model.safetensors")
+    print(f"OK converted from {len(shard_files)} shards, {len(all_state)} tensors")
+else:
+    state = torch_load(single_bin)
+    print(f"OK loaded {len(state)} tensors from {single_bin}")
+    # Write as safetensors
+    st_save(state, out_dir + "/converted_model.safetensors")
+    print("OK converted to safetensors")
+)PY";
+        out.close();
+
+        std::string cmd = "python3 " + script_path + " " + directory;
+        int ret = std::system(cmd.c_str());
+        std::error_code ec;
+        fs::remove(script_path, ec);
+
+        if (ret != 0) {
+            throw std::runtime_error(
+                "Failed to convert PyTorch .bin to safetensors in " + directory +
+                ". Try: pip install torch safetensors " +
+                "&& python -c 'from safetensors.torch import save_file; " +
+                "import torch; state=torch.load(\"" + bin_path.string() + "\", map_location=\"cpu\"); " +
+                "save_file(state, \"" + out_path + "\")\n");
+        }
+
+        // Retry loading the converted safetensors
+        auto conv_path = fs::path(directory) / "converted_model.safetensors";
+        if (fs::exists(conv_path)) {
+            std::cerr << "[convert] Loaded converted safetensors\n";
+            return load_safetensors(conv_path.string());
+        }
+
         throw std::runtime_error(
-            "No .safetensors files found in " + directory);
+            "Conversion completed but converted_model.safetensors not found in " + directory);
     }
 
     return all_weights;

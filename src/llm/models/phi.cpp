@@ -177,7 +177,7 @@ std::unordered_map<std::string, mx::array*> PhiModelInner::weight_map() {
 // --- PhiModel ---
 
 PhiModel::PhiModel(const PhiConfiguration& args)
-    : config_(args), model_(args),
+    : config_(args), model_(config_),
       lm_head_weight_(mx::zeros({args.vocab_size, args.hidden_size})),
       lm_head_bias_(mx::zeros({args.vocab_size}))
 {

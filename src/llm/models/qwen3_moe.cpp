@@ -248,7 +248,7 @@ mx::array Qwen3MoEModelInner::operator()(const mx::array& inputs, std::vector<KV
 }
 
 mx::array Qwen3MoEModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Qwen3MoEModelInner::weight_map() {
@@ -265,7 +265,7 @@ std::unordered_map<std::string, mx::array*> Qwen3MoEModelInner::weight_map() {
 // --- Qwen3MoEModel ---
 
 Qwen3MoEModel::Qwen3MoEModel(const Qwen3MoEConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {
@@ -283,7 +283,7 @@ LMOutput Qwen3MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCach
 
 mx::array Qwen3MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    if (lm_head_weight_.has_value()) return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+    if (lm_head_weight_.has_value()) return linear_forward(out, lm_head_weight_.value());
     return model_.embed_as_linear(out);
 }
 

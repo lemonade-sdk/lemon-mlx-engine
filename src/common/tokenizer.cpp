@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -18,19 +19,69 @@ struct Tokenizer::Impl {
 Tokenizer::~Tokenizer() = default;
 
 std::shared_ptr<Tokenizer> Tokenizer::from_directory(const std::string& model_dir) {
+    // 1. Try tokenizer.json (HuggingFace fast tokenizer — preferred)
     auto json_path = fs::path(model_dir) / "tokenizer.json";
-    if (!fs::exists(json_path)) {
-        throw std::runtime_error("tokenizer.json not found in " + model_dir);
+    if (fs::exists(json_path)) {
+        std::ifstream f(json_path);
+        if (f) {
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            try {
+                return from_json_blob(ss.str());
+            } catch (const std::exception& e) {
+                std::cerr << "[tokenizer] tokenizer.json failed: " << e.what()
+                          << " — falling back" << std::endl;
+            }
+        }
     }
 
-    std::ifstream f(json_path);
-    if (!f) {
-        throw std::runtime_error("Failed to open " + json_path.string());
+    // 2. Try tokenizer.model (SentencePiece — used by Llama, T5, many HF models)
+    auto sp_path = fs::path(model_dir) / "tokenizer.model";
+    if (fs::exists(sp_path)) {
+        std::ifstream f(sp_path, std::ios::binary);
+        if (f) {
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            auto blob = ss.str();
+            try {
+                auto tokenizer = std::shared_ptr<Tokenizer>(new Tokenizer());
+                tokenizer->impl_ = std::make_unique<Impl>();
+                tokenizer->impl_->tok = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
+                if (tokenizer->impl_->tok) {
+                    return tokenizer;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[tokenizer] tokenizer.model (SentencePiece) failed: "
+                          << e.what() << std::endl;
+            }
+        }
     }
 
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return from_json_blob(ss.str());
+    // 3. Try vocab.json + merges.txt (GPT-style BPE)
+    auto vocab_path = fs::path(model_dir) / "vocab.json";
+    auto merges_path = fs::path(model_dir) / "merges.txt";
+    if (fs::exists(vocab_path) && fs::exists(merges_path)) {
+        try {
+            auto tokenizer = std::shared_ptr<Tokenizer>(new Tokenizer());
+            tokenizer->impl_ = std::make_unique<Impl>();
+            std::ifstream vf(vocab_path), mf(merges_path);
+            std::ostringstream vs, ms;
+            vs << vf.rdbuf();
+            ms << mf.rdbuf();
+            tokenizer->impl_->tok = tokenizers::Tokenizer::FromBlobByteLevelBPE(
+                vs.str(), ms.str());
+            if (tokenizer->impl_->tok) {
+                return tokenizer;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[tokenizer] vocab.json+merges.txt BPE failed: "
+                      << e.what() << std::endl;
+        }
+    }
+
+    throw std::runtime_error(
+        "No usable tokenizer found in " + model_dir +
+        " (tried tokenizer.json, tokenizer.model, vocab.json+merges.txt)");
 }
 
 std::shared_ptr<Tokenizer> Tokenizer::from_json_blob(const std::string& json_blob) {

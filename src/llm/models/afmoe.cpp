@@ -311,7 +311,7 @@ mx::array AfMoEModelInner::operator()(const mx::array& inputs, std::vector<KVCac
 }
 
 mx::array AfMoEModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> AfMoEModelInner::weight_map() {
@@ -328,7 +328,7 @@ std::unordered_map<std::string, mx::array*> AfMoEModelInner::weight_map() {
 // --- AfMoEModel ---
 
 AfMoEModel::AfMoEModel(const AfMoEConfiguration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
     for (const auto& lt : config.layer_types) {
@@ -349,7 +349,7 @@ LMOutput AfMoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>*
 
 mx::array AfMoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    if (lm_head_weight_.has_value()) return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+    if (lm_head_weight_.has_value()) return linear_forward(out, lm_head_weight_.value());
     return model_.embed_as_linear(out);
 }
 

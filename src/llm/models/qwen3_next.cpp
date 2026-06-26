@@ -617,11 +617,11 @@ mx::array Qwen3NextModelInner::operator()(const mx::array& inputs, std::vector<K
 }
 
 mx::array Qwen3NextModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 mx::array Qwen3NextModelInner::apply_lm_head(const mx::array& hidden) const {
-    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+    return linear_forward(hidden, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Qwen3NextModelInner::weight_map() {
@@ -639,7 +639,7 @@ std::unordered_map<std::string, mx::array*> Qwen3NextModelInner::weight_map() {
 // Swift: Qwen3NextModel
 
 Qwen3NextModel::Qwen3NextModel(const Qwen3NextConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {

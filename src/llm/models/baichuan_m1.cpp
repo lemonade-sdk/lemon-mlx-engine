@@ -250,7 +250,7 @@ mx::array BaichuanM1ModelInner::operator()(const mx::array& inputs, std::vector<
 }
 
 mx::array BaichuanM1ModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> BaichuanM1ModelInner::weight_map() {
@@ -267,7 +267,7 @@ std::unordered_map<std::string, mx::array*> BaichuanM1ModelInner::weight_map() {
 // --- BaichuanM1Model ---
 
 BaichuanM1Model::BaichuanM1Model(const BaichuanM1Configuration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     if (!config.tie_word_embeddings) {
         lm_head_weight_ = mx::zeros({config.vocab_size, config.hidden_size});

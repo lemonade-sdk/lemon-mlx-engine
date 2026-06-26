@@ -715,7 +715,7 @@ mx::array Gemma3nModelInner::forward_embeds(
     auto out = mx::fast::rms_norm(h, norm_weight_, rms_norm_eps_);
 
     // Tied embeddings (embed_tokens as linear)
-    out = mx::matmul(out, mx::transpose(embed_tokens_weight_));
+    out = linear_forward(out, embed_tokens_weight_);
 
     // Logit softcapping (compiled)
     if (final_logit_softcapping_.has_value()) {
@@ -768,7 +768,7 @@ std::unordered_map<std::string, mx::array*> Gemma3nModelInner::weight_map() {
 
 Gemma3nTextModel::Gemma3nTextModel(const Gemma3nTextConfiguration& config)
     : config_(config),
-      language_model_(config)
+      language_model_(config_)
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
 }
