@@ -170,6 +170,7 @@ add_library(mlx-lm-common
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
     src/common/graph_decode.cpp
+    src/common/gpu_stubs.cpp
     src/llm/models/mtp_head.cpp
     src/llm/models/mtp_moe.cpp
 )
@@ -377,7 +378,7 @@ if(MLX_LM_BUILD_EXAMPLES)
         target_link_libraries(test_donate PRIVATE mlx)
 
         add_executable(test_arena examples/test_arena.cpp)
-        target_link_libraries(test_arena PRIVATE mlx)
+        target_link_libraries(test_arena PRIVATE mlx-lm-common)
     endif()
 
     add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)

@@ -7,15 +7,6 @@
 
 namespace mx = mlx::core;
 
-// Stub implementations until MLX provides these primitives
-namespace mlx::core {
-bool decode_arena_begin(size_t, int, void*) { return true; }
-void decode_arena_reset() {}
-void decode_arena_end() {}
-size_t decode_arena_high_water() { return 0; }
-bool decode_arena_overflowed() { return false; }
-}
-
 int main() {
   fprintf(stderr, "[arena] start\n");
   mx::set_default_device(mx::Device::gpu);
