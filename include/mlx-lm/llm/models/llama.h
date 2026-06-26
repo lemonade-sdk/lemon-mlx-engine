@@ -39,6 +39,10 @@ struct LlamaConfiguration {
     // (scale = 1 / weight_scale). True BitNet/autobitlinear checkpoints store
     // the direct multiplier.
     bool bitnet_invert_weight_scales = false;
+    // For 1-bit models with silu activation that still have sub-norms
+    // (1bitLLM style). Setting this to true enables attn_sub_norm and
+    // ffn_sub_norm even when hidden_act != "relu2".
+    bool bitnet_has_sub_norm = false;
 
     int resolved_head_dim() const {
         return head_dim.value_or(hidden_size / num_attention_heads);

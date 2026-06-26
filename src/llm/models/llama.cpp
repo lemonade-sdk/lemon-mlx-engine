@@ -62,6 +62,11 @@ void from_json(const nlohmann::json& j, LlamaConfiguration& c) {
         }
     }
 
+    // 1-bit models (1bitLLM style) have sub-norms even with silu activation
+    if (j.value("weight_bits", 0) == 1 || j.value("input_bits", 0) > 0) {
+        c.bitnet_has_sub_norm = true;
+    }
+
     if (j.contains("rope_scaling") && !j["rope_scaling"].is_null()) {
         std::unordered_map<std::string, StringOrNumber> scaling;
         for (auto& [key, val] : j["rope_scaling"].items()) {

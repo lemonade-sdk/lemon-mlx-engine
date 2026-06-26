@@ -28,7 +28,7 @@ static mx::array linear_fwd(
 BitNetAttention::BitNetAttention(const BitNetConfiguration& args)
     : args_(args),
       use_relu2_(args.hidden_act == "relu2"),
-      has_sub_norm_(args.hidden_act == "relu2"),
+      has_sub_norm_(args.hidden_act == "relu2" || args.bitnet_has_sub_norm),
       scale_(std::pow(static_cast<float>(args.resolved_head_dim()), -0.5f)),
       wq_weight_(mx::zeros({args.num_attention_heads * args.resolved_head_dim(), args.hidden_size})),
       wk_weight_(mx::zeros({args.num_key_value_heads * args.resolved_head_dim(), args.hidden_size})),
@@ -113,7 +113,7 @@ std::unordered_map<std::string, mx::array*> BitNetAttention::weight_map() {
 
 BitNetMLP::BitNetMLP(const BitNetConfiguration& args)
     : use_relu2_(args.hidden_act == "relu2"),
-      has_sub_norm_(args.hidden_act == "relu2"),
+      has_sub_norm_(args.hidden_act == "relu2" || args.bitnet_has_sub_norm),
       gate_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),
       down_weight_(mx::zeros({args.hidden_size, args.intermediate_size})),
       up_weight_(mx::zeros({args.intermediate_size, args.hidden_size})),

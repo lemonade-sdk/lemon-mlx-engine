@@ -142,6 +142,28 @@ static ModelContext load_typed_model(
     // This allows loading checkpoints that use different naming conventions
     // (e.g., 'model.model.layers...' vs 'model.layers...', 'transformer.' prefix, etc.)
     {
+        // First, remap 1-bit specific key names in the weights themselves
+        // (ffn_layernorm -> ffn_sub_norm, inner_attn_ln -> attn_sub_norm)
+        std::vector<std::pair<std::string, std::string>> bitnet_remaps = {
+            {"ffn_layernorm", "ffn_sub_norm"},
+            {"inner_attn_ln", "attn_sub_norm"},
+        };
+        for (auto& [old_suffix, new_suffix] : bitnet_remaps) {
+            std::vector<std::string> keys_to_rename;
+            for (auto& [key, _] : weights) {
+                if (key.find(old_suffix) != std::string::npos) {
+                    keys_to_rename.push_back(key);
+                }
+            }
+            for (const auto& key : keys_to_rename) {
+                std::string new_key = key;
+                size_t p = new_key.find(old_suffix);
+                new_key.replace(p, old_suffix.size(), new_suffix);
+                weights.emplace(new_key, std::move(weights.at(key)));
+                weights.erase(key);
+            }
+        }
+
         int missing = 0;
         std::string first_missing;
         for (auto& [name, target] : wmap) {
@@ -165,6 +187,31 @@ static ModelContext load_typed_model(
                             weights.erase(ait);
                             found_alt = true;
                             break;
+                        }
+                    }
+                }
+                // Try 1-bit model specific sub-norm key remapping
+                if (!found_alt && !first_missing.empty()) {
+                    // ffn_layernorm -> ffn_sub_norm (BitNetModel naming)
+                    if (name.find("ffn_layernorm") != std::string::npos) {
+                        std::string alt_key = name;
+                        size_t p = alt_key.find("ffn_layernorm");
+                        alt_key.replace(p, 13, "ffn_sub_norm");
+                        if (weights.find(alt_key) != weights.end()) {
+                            weights.insert_or_assign(name, weights.at(alt_key));
+                            weights.erase(alt_key);
+                            found_alt = true;
+                        }
+                    }
+                    // inner_attn_ln -> attn_sub_norm
+                    if (name.find("inner_attn_ln") != std::string::npos) {
+                        std::string alt_key = name;
+                        size_t p = alt_key.find("inner_attn_ln");
+                        alt_key.replace(p, 14, "attn_sub_norm");
+                        if (weights.find(alt_key) != weights.end()) {
+                            weights.insert_or_assign(name, weights.at(alt_key));
+                            weights.erase(alt_key);
+                            found_alt = true;
                         }
                     }
                 }
@@ -450,6 +497,17 @@ ModelContext load_llm_from_directory(
             };
         }
         return ctx;
+    }
+
+    // Check for 1-bit / weight-bits models that need BitNet architecture
+    // (they have sub-norms like ffn_layernorm, inner_attn_ln which LlamaModel lacks)
+    if (config_json.value("weight_bits", 0) == 1 ||
+        config_json.value("input_bits", 0) == 8) {
+        std::cerr << "[load] Detected 1-bit weight model, routing through BitNetModel\n";
+        config_json["model_type"] = "bitnet";
+        if (!config_json.contains("hidden_act")) {
+            config_json["hidden_act"] = config_json.value("hidden_act", "silu");
+        }
     }
 
     auto base_config = parse_base_configuration(config_json);
