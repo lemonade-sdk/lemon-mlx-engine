@@ -60,6 +60,7 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -147,14 +148,15 @@ static ModelContext load_typed_model(
             if (weights.find(name) == weights.end()) {
                 // Try alternative common HF naming conventions
                 bool found_alt = false;
-                for (auto& [old_pref, new_pref] : {
-                    std::pair{"model.", "model.model."},
-                    std::pair{"model.", "model.model.model."},
-                    std::pair{"model.", "transformer."},
-                    std::pair{"model.", "gpt_neox."},
-                    std::pair{"model.", "llama."},
-                    std::pair{"model.", ""},
-                }) {
+                std::vector<std::pair<std::string, std::string>> alt_remaps = {
+                    {"model.", "model.model."},
+                    {"model.", "model.model.model."},
+                    {"model.", "transformer."},
+                    {"model.", "gpt_neox."},
+                    {"model.", "llama."},
+                    {"model.", ""},
+                };
+                for (auto& [old_pref, new_pref] : alt_remaps) {
                     if (name.find(new_pref) == 0) {
                         std::string alt_key = old_pref + name.substr(new_pref.size());
                         auto ait = weights.find(alt_key);
@@ -375,8 +377,8 @@ ModelContext load_llm_from_directory(
         }
         if (!gguf_file.empty()) {
             // Synthesize config from GGUF metadata
-            auto meta = mlx::core::load_gguf(gguf_file).second;
-            config_json = gguf_config_from_metadata(meta);
+            auto gguf_meta = gguf_read_metadata(gguf_file);
+            config_json = gguf_config_from_metadata(gguf_meta);
 
             auto base_config = parse_base_configuration(config_json);
             auto& loaders = llm_loaders();
