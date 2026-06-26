@@ -189,6 +189,10 @@ void auto_quantize_weights(
         if (arr.ndim() != 2) continue;
         auto dtype = arr.dtype();
         if (dtype != mx::float16 && dtype != mx::bfloat16) continue;
+        // Skip embedding and lm_head weights (used with mx::take or special paths)
+        if (key.find("embed") != std::string::npos || key.find("lm_head") != std::string::npos) continue;
+        // Skip norm/gate/scalar weights (1D in practice but check key for safety)
+        if (key.find("norm") != std::string::npos || key.find("layernorm") != std::string::npos) continue;
         quantizable_keys.push_back(key);
     }
 
