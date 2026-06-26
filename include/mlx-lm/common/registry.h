@@ -55,6 +55,7 @@ struct ModelConfiguration {
     std::optional<std::string> override_tokenizer;
     std::vector<std::string> extra_eos_tokens;
     std::optional<std::vector<int>> eos_token_ids;
+    bool auto_quantize = false; // Auto-quantize unquantized bf16/fp16 weights to 4-bit at load time
 };
 
 // AbstractModelRegistry maps model IDs to ModelConfiguration.

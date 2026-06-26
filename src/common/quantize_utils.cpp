@@ -160,6 +160,67 @@ void register_quantized_weights(
     }
 }
 
+void auto_quantize_weights(
+    std::unordered_map<std::string, mx::array>& weights,
+    const std::unordered_map<std::string, mx::array*>& weight_map,
+    const BaseConfiguration& base_config)
+{
+    static const bool dbg = std::getenv("MLX_DEBUG_QUANT") != nullptr;
+
+    // Skip if already quantized
+    if (base_config.per_layer_quantization.has_value()) {
+        if (dbg) std::cerr << "[autoquant] model already has per_layer_quantization, skipping\n";
+        return;
+    }
+
+    auto& reg = QuantizedWeightRegistry::instance();
+
+    const int group_size = 64;
+    const int bits = 4;
+
+    // Collect qualifying keys first (avoid modifying map while iterating)
+    std::vector<std::string> quantizable_keys;
+    for (const auto& [key, arr] : weights) {
+        // Only process keys ending in '.weight'
+        const std::string suffix = ".weight";
+        if (key.size() <= suffix.size()) continue;
+        if (key.compare(key.size() - suffix.size(), suffix.size(), suffix) != 0) continue;
+        // Only quantize 2D float/bfloat16 weights
+        if (arr.ndim() != 2) continue;
+        auto dtype = arr.dtype();
+        if (dtype != mx::float16 && dtype != mx::bfloat16) continue;
+        quantizable_keys.push_back(key);
+    }
+
+    int nquantized = 0;
+    for (const auto& key : quantizable_keys) {
+        auto& arr = weights.at(key);
+        auto dtype = arr.dtype();
+        if (dbg) std::cerr << "[autoquant] quantizing " << key
+                           << " shape=" << arr.shape(0) << "x" << arr.shape(1)
+                           << " dtype=" << (dtype == mx::float16 ? "fp16" : "bf16")
+                           << "\n";
+
+        auto qr = mx::quantize(mx::contiguous(arr), group_size, bits);
+        // qr[0] = packed uint32 weights, qr[1] = scales (bfloat16), qr[2] = biases (float16)
+
+        // Replace the weight with the quantized packed version
+        weights.insert_or_assign(key, qr[0]);
+
+        // Find model's member array address and register in registry
+        auto wm_it = weight_map.find(key);
+        if (wm_it != weight_map.end()) {
+            mx::array* member_ptr = wm_it->second;
+            reg.register_weight(member_ptr, qr[1], qr[2], group_size, bits, "affine");
+        }
+
+        nquantized++;
+    }
+
+    std::cerr << "[autoquant] auto-quantized " << nquantized << " weights to 4-bit "
+              << "(group_size=" << group_size << ")\n";
+}
+
 // Legacy dequantize-at-load-time (kept for reference/fallback)
 std::unordered_map<std::string, mx::array> dequantize_weights(
     std::unordered_map<std::string, mx::array> weights,

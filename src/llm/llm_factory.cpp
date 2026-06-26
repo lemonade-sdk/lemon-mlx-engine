@@ -62,6 +62,8 @@
 
 namespace fs = std::filesystem;
 
+namespace mx = mlx::core;
+
 namespace mlx_lm {
 
 // Helper: create a typed model from JSON config data (for ModelTypeRegistry).
@@ -86,7 +88,8 @@ static void* create_bitnet_model(const std::string& config_json) {
 using LLMLoaderFn = std::function<ModelContext(
     const std::string& config_json,
     std::unordered_map<std::string, mlx::core::array> weights,
-    const BaseConfiguration& base_config)>;
+    const BaseConfiguration& base_config,
+    bool auto_quantize)>;
 
 // Force every weight resident in device memory NOW. MLX loads weights lazily
 // (mmap-backed, materialized to VRAM on first use during a forward pass). That
@@ -110,7 +113,8 @@ template <typename Config, typename Model>
 static ModelContext load_typed_model(
     const std::string& config_json,
     std::unordered_map<std::string, mlx::core::array> weights,
-    const BaseConfiguration& base_config)
+    const BaseConfiguration& base_config,
+    bool auto_quantize)
 {
     auto j = nlohmann::json::parse(config_json);
     Config config = j.get<Config>();
@@ -118,10 +122,18 @@ static ModelContext load_typed_model(
 
     weights = model->sanitize(std::move(weights));
 
+    auto wmap = model->weight_map();
+
+    // Auto-quantize unquantized bf16/fp16 weights to 4-bit on-the-fly.
+    // Runs before register_quantized_weights so the model loads from
+    // already-quantized weight entries and registry metadata.
+    if (auto_quantize) {
+        auto_quantize_weights(weights, wmap, base_config);
+    }
+
     // Register quantized weights in the QuantizedWeightRegistry.
     // This maps model member array addresses → quantization metadata so
     // that linear_fwd() uses mx::quantized_matmul at inference time.
-    auto wmap = model->weight_map();
     register_quantized_weights(weights, base_config, wmap);
 
     // Warn about missing weight keys before loading (catches HF naming mismatches)
@@ -156,14 +168,15 @@ static ModelContext load_typed_model(
 static ModelContext load_bitnet_model(
     const std::string& config_json,
     std::unordered_map<std::string, mlx::core::array> weights,
-    const BaseConfiguration& base_config)
+    const BaseConfiguration& base_config,
+    bool auto_quantize)
 {
     auto j = nlohmann::json::parse(config_json);
     if (!j.contains("hidden_act")) {
         j["hidden_act"] = "relu2";
     }
     return load_typed_model<BitNetConfiguration, BitNetModel>(
-        j.dump(), std::move(weights), base_config);
+        j.dump(), std::move(weights), base_config, auto_quantize);
 }
 
 // Internal loader registry — maps model_type to a function that creates,
@@ -412,7 +425,7 @@ ModelContext load_llm_from_directory(
 
     // Create model, sanitize weights, register quantized weights, load them.
     // Quantized weights stay packed (uint32) and use quantized_matmul at runtime.
-    auto ctx = it->second(config_json.dump(), std::move(weights), base_config);
+    auto ctx = it->second(config_json.dump(), std::move(weights), base_config, config.auto_quantize);
     ctx.model_id = config.id.empty() ? model_directory : config.id;
 
     if (base_config.eos_token_ids.has_value()) {
@@ -694,6 +707,56 @@ ModelContext load_llm(
     auto known = model_registry.find(model_id);
     if (known.has_value()) {
         config = known.value();
+    }
+
+    return load_llm_from_directory(model_dir, config);
+}
+
+
+// --- Load from directory (with auto_quantize flag) ---
+
+ModelContext load_llm_from_directory(
+    const std::string& model_directory,
+    bool auto_quantize)
+{
+    ModelConfiguration config;
+    config.id = model_directory;
+    config.auto_quantize = auto_quantize;
+    return load_llm_from_directory(model_directory, config);
+}
+
+
+ModelContext load_llm(
+    const std::string& model_id,
+    const std::string& cache_dir,
+    bool auto_quantize)
+{
+    // If model_id is a local directory with config.json, use it directly
+    if (fs::exists(fs::path(model_id) / "config.json")) {
+        ModelConfiguration config;
+        config.id = model_id;
+        config.auto_quantize = auto_quantize;
+        return load_llm_from_directory(model_id, config);
+    }
+
+    auto& hub = HubApi::shared();
+    if (!cache_dir.empty()) {
+        hub.set_cache_dir(cache_dir);
+    }
+
+    // Download model
+    auto model_dir = hub.snapshot_download(model_id);
+
+    ModelConfiguration config;
+    config.id = model_id;
+    config.auto_quantize = auto_quantize;
+
+    // Check registry for known configuration
+    auto& model_registry = llm_model_registry();
+    auto known = model_registry.find(model_id);
+    if (known.has_value()) {
+        config = known.value();
+        config.auto_quantize = auto_quantize;  // CLI flag overrides registry default
     }
 
     return load_llm_from_directory(model_dir, config);

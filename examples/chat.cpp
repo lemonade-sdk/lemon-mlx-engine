@@ -259,6 +259,7 @@ struct CliArgs {
     int device = -1;          // GPU index to use (-1 = auto / default device 0)
     bool list_devices = false;
     bool ignore_eos = false;  // Benchmark: keep generating to --max-tokens (ignore EOS)
+    bool auto_quantize = false;  // Auto-quantize unquantized bf16/fp16 models to 4-bit
 };
 
 static CliArgs parse_args(int argc, char* argv[]) {
@@ -278,6 +279,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
                   << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
                   << "  --n-draft N             MTP draft tokens per step (default: 1)\n"
+                  << "  --auto-quantize        Auto-quantize unquantized bf16/fp16 models to 4-bit at load time\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
         std::exit(1);
@@ -315,6 +317,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.n_draft_tokens = std::stoi(argv[++i]);
         } else if (flag == "--device" && i + 1 < argc) {
             args.device = std::stoi(argv[++i]);
+        } else if (flag == "--auto-quantize") {
+            args.auto_quantize = true;
         } else if (flag == "--list-devices") {
             args.list_devices = true;
         } else if (flag == "--ignore-eos") {
@@ -351,7 +355,7 @@ int main(int argc, char* argv[]) {
     try {
         std::cout << "Loading model: " << args.model_path << std::endl;
 
-        auto ctx = mlx_lm::load_llm(args.model_path);
+        auto ctx = mlx_lm::load_llm(args.model_path, "", args.auto_quantize);
 
         // Warmup: run a dummy forward pass to prime the GPU allocator cache.
         // Without this, the first real prompt pays ~2s of hipExtMallocWithFlags

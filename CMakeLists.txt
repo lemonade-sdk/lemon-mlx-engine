@@ -158,6 +158,7 @@ add_library(mlx-lm-common
     src/common/base_config.cpp
     src/common/hub_api.cpp
     src/common/safetensors.cpp
+    src/common/gguf_loader.cpp
     src/common/switch_layers.cpp
     src/common/ssm_utils.cpp
     src/common/rope_utils.cpp
