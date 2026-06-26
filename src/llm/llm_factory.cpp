@@ -906,7 +906,6 @@ ModelContext load_llm(
     // If model_id is a local .gguf file, handle it directly
     if (fs::exists(fs::path(model_id)) &&
         fs::path(model_id).extension() == ".gguf") {
-        // Wrap in a temporary directory and delegate
         auto parent = fs::path(model_id).parent_path();
         if (parent.empty()) parent = ".";
         ModelConfiguration config;
@@ -914,8 +913,19 @@ ModelContext load_llm(
         return load_llm_from_directory(parent, config);
     }
 
-    // If model_id is a local directory with config.json, use it directly
-    if (fs::exists(fs::path(model_id) / "config.json")) {
+    // If model_id is a local path, validate and load
+    if (fs::exists(fs::path(model_id))) {
+        if (fs::is_directory(fs::path(model_id))) {
+            if (!fs::exists(fs::path(model_id) / "config.json")) {
+                throw std::runtime_error(
+                    "Model directory found but missing config.json: " + model_id +
+                    ". A valid model directory must contain config.json and model.safetensors files.");
+            }
+        } else {
+            throw std::runtime_error(
+                "Model path is a file, not a directory: " + model_id +
+                ". Expected a directory with config.json and .safetensors, or a .gguf file.");
+        }
         ModelConfiguration config;
         config.id = model_id;
         return load_llm_from_directory(model_id, config);
@@ -972,8 +982,19 @@ ModelContext load_llm(
         return load_llm_from_directory(parent, config);
     }
 
-    // If model_id is a local directory with config.json, use it directly
-    if (fs::exists(fs::path(model_id) / "config.json")) {
+    // If model_id is a local path, validate and load
+    if (fs::exists(fs::path(model_id))) {
+        if (fs::is_directory(fs::path(model_id))) {
+            if (!fs::exists(fs::path(model_id) / "config.json")) {
+                throw std::runtime_error(
+                    "Model directory found but missing config.json: " + model_id +
+                    ". A valid model directory must contain config.json and model.safetensors files.");
+            }
+        } else {
+            throw std::runtime_error(
+                "Model path is a file, not a directory: " + model_id +
+                ". Expected a directory with config.json and .safetensors, or a .gguf file.");
+        }
         ModelConfiguration config;
         config.id = model_id;
         config.auto_quantize = auto_quantize;
