@@ -49,7 +49,8 @@ void from_json(const nlohmann::json& j, LlamaConfiguration& c) {
 
     if (j.contains("quantization_config") && j["quantization_config"].is_object()) {
         const auto& qc = j["quantization_config"];
-        if (qc.value("quant_method", std::string()) == "bitnet") {
+        c.quant_method = qc.value("quant_method", std::string());
+        if (c.quant_method == "bitnet") {
             if (qc.contains("linear_class")) {
                 c.bitnet_invert_weight_scales =
                     qc.value("linear_class", std::string()) != "autobitlinear";
@@ -552,6 +553,64 @@ LlamaModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 
     for (auto& [k, v] : to_add) {
         weights.insert_or_assign(k, std::move(v));
+    }
+
+    // AQLM dequantization: codebook-based 1-bit format
+    // Each weight has *.codebooks (F16 [1,256,1,8]), *.codes (I8 [out, in/8, 1]), *.scales
+    // Dequant: w[oc,in] = codebook[0, codes[oc,in/8,0], 0, in%8] * scales[oc,0,0,0]
+    if (config_.quant_method == "aqlm") {
+        const std::string cb_suffix = ".codebooks";
+        for (auto& [key, codebook] : weights) {
+            if (key.size() <= cb_suffix.size() ||
+                key.compare(key.size() - cb_suffix.size(), cb_suffix.size(), cb_suffix) != 0) {
+                continue;
+            }
+            std::string prefix = key.substr(0, key.size() - cb_suffix.size());
+            std::string codes_key = prefix + ".codes";
+            std::string scales_key = prefix + ".scales";
+
+            auto codes_it = weights.find(codes_key);
+            auto scales_it = weights.find(scales_key);
+            if (codes_it == weights.end() || scales_it == weights.end()) continue;
+
+            auto& codes = codes_it->second;
+            auto& scales = scales_it->second;
+
+            // codes shape: [out, in/8, 1], codebook shape: [1, 256, 1, 8]
+            int out_f = codes.shape(0);
+            int in_groups = codes.shape(1);
+            int in_f = in_groups * 8;
+
+            // Materialize codebook and scales
+            mx::eval(codes);
+            mx::eval(codebook);
+            mx::eval(scales);
+
+            auto codes_data = codes.data<int8_t>();
+            auto cb_data = codebook.data<mx::float16_t>();  // [1,256,1,8]
+            auto sc_data = scales.data<mx::float16_t>();    // [out,1,1,1]
+
+            // scales shape: [out, 1, 1, 1] — stride is 1 for contiguous
+            std::vector<mx::float16_t> result(out_f * in_f);
+            for (int oc = 0; oc < out_f; oc++) {
+                float s = (float)sc_data[oc];  // scales[oc,0,0,0]
+                for (int g = 0; g < in_groups; g++) {
+                    int code_idx = (int)codes_data[oc * in_groups + g];
+                    if (code_idx < 0) code_idx = 0;
+                    if (code_idx >= 256) code_idx = 255;
+                    for (int v = 0; v < 8; v++) {
+                        float val = (float)cb_data[code_idx * 8 + v] * s;
+                        result[oc * in_f + g * 8 + v] = (mx::float16_t)val;
+                    }
+                }
+            }
+
+            weights.insert_or_assign(prefix + ".weight",
+                mx::array(result.data(), {out_f, in_f}, mx::float16));
+            to_remove.push_back(key);        // codebooks
+            to_remove.push_back(codes_key);   // codes
+            to_remove.push_back(scales_key);  // scales
+        }
     }
 
     // Remove unused precomputed rotary frequencies
