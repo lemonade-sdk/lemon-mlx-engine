@@ -675,6 +675,8 @@ ModelContext load_llm_from_directory(
             {"qwen3_moe_base", "qwen3_moe"},
             {"gemma3", "gemma3_text"},
             {"olmo", "llama"},  // OLMo-1 uses standard Llama-like architecture
+            {"gemma4_unified", "gemma4"},
+            {"gemma4_unified_text", "gemma4_text"},
         };
         if (auto ait = aliases.find(base_config.model_type); ait != aliases.end()) {
             it = loaders.find(ait->second);

@@ -97,8 +97,9 @@ inline mlx::core::array quantize_activation(
 }
 
 #ifdef MLX_BUILD_NPU
-// NPU dispatch for ternary (2-bit) weights in decode (GEMV) mode.
-// Gated by the NPU_DISABLE env var.
+// NPU dispatch for experimental use. Opt-in via NPU_ENABLE=1 env var.
+// The NPU path is useful for testing compute-constrained scenarios
+// and for running two models in parallel (NPU + GPU).
 namespace detail {
 inline bool npu_try_ternary(
     const mlx::core::array& input,  // [1, K] bf16
@@ -106,8 +107,10 @@ inline bool npu_try_ternary(
     int N, int K)
 {
     (void)input; (void)w; (void)N; (void)K;
-    static const bool npu_disabled = std::getenv("NPU_DISABLE") != nullptr;
-    if (npu_disabled) return false;
+    // Opt-in via NPU_ENABLE=1 (disabled by default)
+    static const char* env = std::getenv("NPU_ENABLE");
+    static const bool npu_enabled = env && std::string(env) == "1";
+    if (!npu_enabled) return false;
 
     // Only for decode (B=1) path
     if (input.ndim() != 2 || input.shape(0) != 1) return false;
@@ -122,7 +125,7 @@ inline bool npu_try_ternary(
     if (!npu_avail) return false;
 
     // TODO: Convert uint32 2-bit format to U8 ternary for NPU dispatch
-    // and call npu::ternary_gemv(). For now, fall back to GPU.
+    // and call npu::ternary_gemv(). For now, falls back to GPU quantized_matmul.
     return false;
 }
 } // namespace detail
