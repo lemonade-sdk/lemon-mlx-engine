@@ -124,6 +124,25 @@ static ModelContext load_typed_model(
     auto wmap = model->weight_map();
     register_quantized_weights(weights, base_config, wmap);
 
+    // Warn about missing weight keys before loading (catches HF naming mismatches)
+    {
+        int missing = 0;
+        std::string first_missing;
+        for (auto& [name, target] : wmap) {
+            if (weights.find(name) == weights.end()) {
+                if (missing == 0) first_missing = name;
+                missing++;
+            }
+        }
+        if (missing > 0) {
+            std::cerr << "[load] WARNING: " << missing << " weight(s) not found in checkpoint"
+                      << " (first: " << first_missing << ")."
+                      << " Weights will be zero-filled."
+                      << " This usually means the checkpoint uses a different key naming convention."
+                      << std::endl;
+        }
+    }
+
     materialize_weights(weights);
     model->load_weights(weights);
 
@@ -368,7 +387,24 @@ ModelContext load_llm_from_directory(
     auto& loaders = llm_loaders();
     auto it = loaders.find(base_config.model_type);
     if (it == loaders.end()) {
-        throw std::runtime_error("Unsupported model type: " + base_config.model_type);
+        // Try common HF architecture aliases before giving up
+        static const std::unordered_map<std::string, std::string> aliases = {
+            {"llama3", "llama"},
+            {"qwen3_moe_base", "qwen3_moe"},
+            {"gemma3", "gemma3_text"},
+        };
+        if (auto ait = aliases.find(base_config.model_type); ait != aliases.end()) {
+            it = loaders.find(ait->second);
+        }
+    }
+    if (it == loaders.end()) {
+        std::string supported;
+        for (auto& [k, _] : loaders) supported += "  - " + k + "\n";
+        throw std::runtime_error(
+            "Unsupported model type: '" + base_config.model_type + "'.\n"
+            "Supported types:\n" + supported +
+            "\nIf this is a standard Llama-family model, try converting it to MLX format first:\n"
+            "  pip install mlx-lm && mlx_lm.convert --hf-model <hf-repo-id> --out-dir <output-dir>");
     }
 
     // Load weights from safetensors
