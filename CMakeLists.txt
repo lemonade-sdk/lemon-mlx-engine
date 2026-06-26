@@ -277,6 +277,33 @@ target_link_libraries(mlx-lm-vlm PUBLIC mlx-lm-common)
 # stb include path (header-only)
 target_include_directories(mlx-lm-common PUBLIC ${stb_SOURCE_DIR})
 
+# NPU backend (optional, requires XRT)
+# NPU backend (optional, requires IRON Python stack + XRT)
+if(MLX_LM_BUILD_NPU)
+    # The NPU backend uses the IRON JIT via Python subprocess.
+    # Install IRON: pip install mlir-aie
+    # Set NPU_INSTALL_DIR to the mlir-aie installation prefix.
+    
+    # Copy JIT helper to build directory
+    configure_file(
+        src/npu/npu_jit.py
+        ${CMAKE_BINARY_DIR}/bin/npu_jit.py
+        COPYONLY
+    )
+    
+    add_library(mlx-lm-npu STATIC
+        src/npu/npu_backend.cpp
+    )
+    target_include_directories(mlx-lm-npu PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    )
+    target_compile_definitions(mlx-lm-npu PUBLIC
+        MLX_BUILD_NPU
+        NPU_INSTALL_DIR="${CMAKE_BINARY_DIR}"
+    )
+    message(STATUS "NPU backend enabled (JIT path)")
+endif()
+
 if(MLX_LM_BUILD_EXAMPLES)
     add_executable(chat examples/chat.cpp)
     target_link_libraries(chat PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
@@ -284,6 +311,10 @@ if(MLX_LM_BUILD_EXAMPLES)
         find_package(hip QUIET)
         target_compile_definitions(chat PRIVATE MLX_BUILD_ROCM)
         target_link_libraries(chat PRIVATE hip::host)
+    endif()
+    if(MLX_LM_BUILD_NPU AND TARGET mlx-lm-npu)
+        target_link_libraries(chat PRIVATE mlx-lm-npu)
+        target_compile_definitions(chat PRIVATE MLX_BUILD_NPU)
     endif()
 
     add_executable(diagnose examples/diagnose.cpp)
@@ -320,6 +351,11 @@ if(MLX_LM_BUILD_EXAMPLES)
 
     add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)
     target_link_libraries(test_sdpa_ref PRIVATE mlx)
+
+    if(MLX_LM_BUILD_NPU AND TARGET mlx-lm-npu)
+        add_executable(test_npu examples/test_npu.cpp)
+        target_link_libraries(test_npu PRIVATE mlx-lm-npu)
+    endif()
 
     add_executable(server
         examples/server.cpp
