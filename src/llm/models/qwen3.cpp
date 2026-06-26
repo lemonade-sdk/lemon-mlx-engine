@@ -326,16 +326,30 @@ Qwen3Model::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
             auto unpacked = mx::concatenate({v0, v1, v2, v3}, 0);
 
             // Map codes: 0->-1, 1->0, 2->+1, then scale
-            auto ternary = mx::subtract(mx::astype(unpacked, mx::float16), mx::array(1.0f));
+            auto ternary = mx::subtract(mx::astype(unpacked, mx::float16), mx::array(mx::float16_t(1.0f)));
 
             // Read scale from weight_scale entry
             // bitlinear models use inverse scaling (actual_scale = 1/weight_scale)
             mx::eval(val);
             float scale_val = val.data<float>()[0];
             if (config_.bitnet_invert_weight_scales) {
-                scale_val = 1.0f / scale_val;
+                // Guard against division by zero and clamp to avoid fp16 overflow.
+                // weight_scale near zero would produce inf; clamp to 1e-5f minimum
+                // absolute value so the inverse stays in fp16 representable range.
+                float abs_scale = std::abs(scale_val);
+                if (abs_scale < 1e-5f) {
+                    scale_val = (scale_val >= 0.0f) ? 1e5f : -1e5f;
+                } else {
+                    scale_val = 1.0f / scale_val;
+                    // Clamp to fp16 representable range to avoid inf/underflow
+                    scale_val = std::max(-65504.0f, std::min(65504.0f, scale_val));
+                }
+            } else {
+                // For non-inverted scales, clamp to fp16 range to avoid inf
+                scale_val = std::max(-65504.0f, std::min(65504.0f, scale_val));
             }
-            auto scaled = mx::multiply(ternary, mx::array(scale_val));
+            // Cast to fp16 to avoid F32 promotion in the multiply
+            auto scaled = mx::multiply(ternary, mx::array(static_cast<mx::float16_t>(scale_val)));
             mx::eval(scaled);
 
             weights_to_replace.emplace_back(weight_key, std::move(scaled));
