@@ -43,6 +43,7 @@
 #include <mlx-lm/llm/models/baichuan_m1.h>
 #include <mlx-lm/llm/models/falcon_h1.h>
 #include <mlx-lm/llm/models/bitnet.h>
+#include <mlx-lm/llm/models/gemma4.h>
 #include <mlx-lm/llm/models/lfm2.h>
 #include <mlx-lm/llm/models/nemotron_h.h>
 #include <mlx-lm/llm/models/granite_moe_hybrid.h>
@@ -313,6 +314,7 @@ static std::unordered_map<std::string, LLMLoaderFn>& llm_loaders() {
         {"gpt_oss",     load_typed_model<GPTOSSConfiguration, GPTOSSModel>},
         {"lfm2_moe",    load_typed_model<LFM2MoEConfiguration, LFM2MoEModel>},
         {"gemma3n_text", load_typed_model<Gemma3nTextConfiguration, Gemma3nTextModel>},
+        {"gemma4_text",   load_typed_model<Gemma4Configuration, Gemma4Model>},
         {"jamba",        load_typed_model<JambaConfiguration, JambaModel>},
         {"baichuan_m1",  load_typed_model<BaichuanM1Configuration, BaichuanM1Model>},
         {"falcon_h1",    load_typed_model<FalconH1Configuration, FalconH1Model>},
@@ -373,6 +375,7 @@ ModelTypeRegistry& llm_type_registry() {
         {"gpt_oss",     create_model<GPTOSSConfiguration, GPTOSSModel>},
         {"lfm2_moe",    create_model<LFM2MoEConfiguration, LFM2MoEModel>},
         {"gemma3n_text", create_model<Gemma3nTextConfiguration, Gemma3nTextModel>},
+        {"gemma4_text",   create_model<Gemma4Configuration, Gemma4Model>},
         {"jamba",        create_model<JambaConfiguration, JambaModel>},
         {"baichuan_m1",  create_model<BaichuanM1Configuration, BaichuanM1Model>},
         {"falcon_h1",    create_model<FalconH1Configuration, FalconH1Model>},
@@ -414,6 +417,7 @@ AbstractModelRegistry& llm_model_registry() {
             "What is the Gemma architecture?"},
         {"mlx-community/gemma-4-e2b-it-4bit",
             "Describe the Gemma 4 model architecture."},
+
         // ── 1-bit / BitNet models ──
         {"mlx-community/Falcon-E-3B-Instruct-1.58bit",
             "What is the capital of France?"},
@@ -620,7 +624,6 @@ ModelContext load_llm_from_directory(
             {"llama3", "llama"},
             {"qwen3_moe_base", "qwen3_moe"},
             {"gemma3", "gemma3_text"},
-            {"gemma4", "llama"},  // Best-effort fallback; proper Gemma4 impl TBD
         };
         if (auto ait = aliases.find(base_config.model_type); ait != aliases.end()) {
             it = loaders.find(ait->second);
