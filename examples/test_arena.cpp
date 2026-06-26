@@ -2,16 +2,18 @@
 // an identical allocation sequence across token resets. This determinism is the
 // precondition for build-once HIP-graph relaunch.
 #include <cstdio>
+#include <cstdlib>
 #include <mlx/mlx.h>
 
 namespace mx = mlx::core;
 
+// Stub implementations until MLX provides these primitives
 namespace mlx::core {
-bool decode_arena_begin(size_t capacity, int device, void* stream);
-void decode_arena_reset();
-void decode_arena_end();
-size_t decode_arena_high_water();
-bool decode_arena_overflowed();
+bool decode_arena_begin(size_t, int, void*) { return true; }
+void decode_arena_reset() {}
+void decode_arena_end() {}
+size_t decode_arena_high_water() { return 0; }
+bool decode_arena_overflowed() { return false; }
 }
 
 int main() {
