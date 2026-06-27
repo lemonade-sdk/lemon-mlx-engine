@@ -277,7 +277,10 @@ mx::array Qwen3NextGatedDeltaNet::operator()(
 
     // *** T=1 DECODE FAST PATH ***
     // Fuse conv_silu + split + norms + beta/g + recurrence into minimal launches.
-    if (S == 1 && cache && (*cache)[0].has_value() && conv_input.shape(1) == conv_kernel_size_) {
+    // NOTE: On ROCm, the mx::compile'd decode step kernel can produce incorrect
+    // recurrent state updates, causing a 2-token repeating loop. Always use the
+    // general (non-compiled) path for correctness on ROCm.
+    if (false && S == 1 && cache && (*cache)[0].has_value() && conv_input.shape(1) == conv_kernel_size_) {
         // 1. Fused conv1d + silu (1 compiled kernel)
         auto w = mx::reshape(
             mx::transpose(mx::reshape(conv1d_weight_, {conv_dim_, conv_kernel_size_})),
