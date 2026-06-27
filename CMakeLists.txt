@@ -337,31 +337,12 @@ if(MLX_LM_BUILD_NPU)
 endif()
 
 if(MLX_LM_BUILD_EXAMPLES)
-    # Compile the float32 strided_scan force-instantiation stub with hipcc so
-    # the HIP fat binary registration constructor is linked properly.
-    if(MLX_BUILD_ROCM)
-        set(FORCE_F32_SCAN_SRC "${CMAKE_SOURCE_DIR}/src/npu/force_f32_scan.hip")
-        set(FORCE_F32_SCAN_OBJ "${CMAKE_BINARY_DIR}/force_f32_scan.o")
-        add_custom_command(
-            OUTPUT ${FORCE_F32_SCAN_OBJ}
-            COMMAND ${CMAKE_HIP_COMPILER} -c --offload-arch=gfx1151 -O3 -fPIC
-                -I"${CMAKE_SOURCE_DIR}/build/_deps/mlx-src"
-                -I/opt/rocm-7.2.4/include
-                -o ${FORCE_F32_SCAN_OBJ}
-                ${FORCE_F32_SCAN_SRC}
-            DEPENDS ${FORCE_F32_SCAN_SRC}
-            COMMENT "Compiling force_f32_scan.hip")
-        add_custom_target(force_f32_scan DEPENDS ${FORCE_F32_SCAN_OBJ})
-        set(FORCE_F32_SCAN_OBJ_REF ${FORCE_F32_SCAN_OBJ})
-    endif()
-
     add_executable(chat examples/chat.cpp)
     target_link_libraries(chat PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
     if(MLX_BUILD_ROCM)
         find_package(hip QUIET)
         target_compile_definitions(chat PRIVATE MLX_BUILD_ROCM)
-        target_link_libraries(chat PRIVATE hip::host ${FORCE_F32_SCAN_OBJ_REF})
-        add_dependencies(chat force_f32_scan)
+        target_link_libraries(chat PRIVATE hip::host)
     endif()
     if(MLX_LM_BUILD_NPU AND TARGET mlx-lm-npu)
         target_link_libraries(chat PRIVATE mlx-lm-npu)
@@ -370,10 +351,6 @@ if(MLX_LM_BUILD_EXAMPLES)
 
     add_executable(diagnose examples/diagnose.cpp)
     target_link_libraries(diagnose PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
-    if(MLX_BUILD_ROCM)
-        target_link_libraries(diagnose PRIVATE ${FORCE_F32_SCAN_OBJ_REF})
-        add_dependencies(diagnose force_f32_scan)
-    endif()
 
     # convert: quantize a bf16 Qwen3.6-A3B (+ inline MTP head) to a combined MLX
     # model with per-component mixed precision. Uses the engine's own MLX build.
