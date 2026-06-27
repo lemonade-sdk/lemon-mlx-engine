@@ -8,6 +8,7 @@
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/attention_utils.h>
 #include <cmath>
+#include <iostream>
 #include <mlx-lm/common/quantized_linear.h>
 
 namespace mx = mlx::core;
@@ -288,17 +289,22 @@ std::vector<KVCache> Gemma3TextModel::new_cache_impl(const GenerateParameters& p
 
 std::unordered_map<std::string, mx::array>
 Gemma3TextModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights) {
-    // Handle language_model.* prefix (VLM compatibility — strip it)
+    // Handle language_model.* prefix (VLM compatibility — strip it).
+    // NOTE: The factory-level code in llm_factory.cpp has ALREADY stripped
+    // "language_model.model." -> "model." for all weight keys. This sanitize
+    // handles any remaining "language_model." prefix (e.g., lm_head.*).
+    // Must keep ALL keys, not just those with the LM prefix, because the
+    // factory may have already converted model keys.
     std::unordered_map<std::string, mx::array> processed;
-    bool has_lm_prefix = false;
+    processed.reserve(weights.size());
     for (auto& [key, val] : weights) {
         if (key.find("language_model.") == 0) {
-            has_lm_prefix = true;
-            // "language_model." is 15 characters
             processed.insert_or_assign(key.substr(15), std::move(val));
+        } else {
+            processed.insert_or_assign(key, std::move(val));
         }
     }
-    if (has_lm_prefix) weights = std::move(processed);
+    weights = std::move(processed);
 
     // If "model.embed_tokens.weight" exists but "lm_head.weight" doesn't, copy embed to lm_head
     if (weights.find("lm_head.weight") == weights.end()) {

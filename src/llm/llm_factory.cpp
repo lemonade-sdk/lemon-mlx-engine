@@ -174,6 +174,27 @@ static ModelContext load_typed_model(
             }
         }
 
+        // Strip common VLM/text-model prefixes from all weight keys
+        // before checking against the model's weight_map. This handles
+        // Gemma3/4 VLM checkpoints that use "language_model." prefix.
+        static const std::vector<std::string> vlm_prefixes = {
+            "language_model.model.",
+            "language_model.",
+        };
+        for (auto& prefix : vlm_prefixes) {
+            std::vector<std::string> to_strip;
+            for (auto& [k, v] : weights) {
+                if (k.find(prefix) == 0) {
+                    to_strip.push_back(k);
+                }
+            }
+            for (auto& old_key : to_strip) {
+                auto new_key = old_key.substr(prefix.size());
+                weights.emplace(new_key, std::move(weights.at(old_key)));
+                weights.erase(old_key);
+            }
+        }
+
         int missing = 0;
         std::string first_missing;
         for (auto& [name, target] : wmap) {

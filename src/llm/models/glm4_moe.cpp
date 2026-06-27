@@ -21,9 +21,19 @@ void from_json(const nlohmann::json& j, GLM4MoEConfiguration& c) {
     c.num_key_value_heads = j.at("num_key_value_heads").get<int>();
     c.head_dim = j.at("head_dim").get<int>();
     c.rms_norm_eps = j.at("rms_norm_eps").get<float>();
-    c.rope_theta = j.at("rope_theta").get<float>();
-    c.partial_rotary_factor = j.at("partial_rotary_factor").get<float>();
-    c.use_qk_norm = j.at("use_qk_norm").get<bool>();
+    // rope_theta may be directly at top level or nested inside rope_parameters
+    if (j.contains("rope_theta")) {
+        c.rope_theta = j["rope_theta"].get<float>();
+    } else if (j.contains("rope_parameters") && j["rope_parameters"].contains("rope_theta")) {
+        c.rope_theta = j["rope_parameters"]["rope_theta"].get<float>();
+    }
+    // partial_rotary_factor may be under rope_parameters
+    if (j.contains("partial_rotary_factor")) {
+        c.partial_rotary_factor = j["partial_rotary_factor"].get<float>();
+    } else if (j.contains("rope_parameters") && j["rope_parameters"].contains("partial_rotary_factor")) {
+        c.partial_rotary_factor = j["rope_parameters"]["partial_rotary_factor"].get<float>();
+    }
+    c.use_qk_norm = j.value("use_qk_norm", true);
     c.tie_word_embeddings = j.at("tie_word_embeddings").get<bool>();
     c.attention_bias = j.at("attention_bias").get<bool>();
     c.norm_topk_prob = j.at("norm_topk_prob").get<bool>();
