@@ -150,6 +150,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "GPU wired memory limit: " << args.memory_limit_mb << " MB\n";
     }
 
+    std::cerr << "[startup] Creating model manager...\n";
+
     try {
         // Create model manager.
         auto manager = std::make_shared<mlx_lm::ModelManager>();
@@ -210,16 +212,21 @@ int main(int argc, char* argv[]) {
             std::cerr << "Starting in auto-load mode (no model pre-loaded).\n";
             std::cerr << "Models will be loaded on demand from API requests.\n";
 
-            // Show available cached models.
-            auto available = manager->list_available();
-            if (!available.empty()) {
-                std::cerr << "\nAvailable MLX models in HF cache:\n";
-                for (const auto& m : available) {
-                    std::cerr << "  " << m.model_id;
-                    if (!m.model_type.empty()) std::cerr << " (" << m.model_type << ")";
+            // Show available cached models (best-effort, don't crash on failure).
+            std::cerr << "[startup] Listing cached models...\n";
+            try {
+                auto available = manager->list_available();
+                if (!available.empty()) {
+                    std::cerr << "\nAvailable MLX models in HF cache:\n";
+                    for (const auto& m : available) {
+                        std::cerr << "  " << m.model_id;
+                        if (!m.model_type.empty()) std::cerr << " (" << m.model_type << ")";
+                        std::cerr << "\n";
+                    }
                     std::cerr << "\n";
                 }
-                std::cerr << "\n";
+            } catch (const std::exception& e) {
+                std::cerr << "[startup] Warning: list_available() failed: " << e.what() << "\n";
             }
         }
 
@@ -243,10 +250,15 @@ int main(int argc, char* argv[]) {
                   << "  POST /load\n"
                   << "  POST /unload\n";
 
+        std::cerr << "[startup] Starting HTTP server...\n";
         server.start();
+        std::cerr << "[startup] Server exited (unexpected)\n";
 
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "[startup] Error: " << e.what() << "\n";
+        return 1;
+    } catch (...) {
+        std::cerr << "[startup] Unknown error (non-std exception)\n";
         return 1;
     }
 
