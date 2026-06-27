@@ -1,0 +1,37 @@
+# CMake generated Testfile for 
+# Source directory: /home/bcloud/lemon-mlx-engine-fork/tests
+# Build directory: /home/bcloud/lemon-mlx-engine-fork/build_clean/tests
+# 
+# This file includes the relevant testing commands required for 
+# testing this directory and lists subdirectories to be tested as well.
+add_test([=[test_types]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_types")
+set_tests_properties([=[test_types]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;14;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_kv_cache]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_kv_cache")
+set_tests_properties([=[test_kv_cache]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;19;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_config]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_config")
+set_tests_properties([=[test_config]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;24;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_generate]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_generate")
+set_tests_properties([=[test_generate]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;30;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_tool_calling]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_tool_calling")
+set_tests_properties([=[test_tool_calling]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;35;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_chat_session]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_chat_session")
+set_tests_properties([=[test_chat_session]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;40;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_user_input]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_user_input")
+set_tests_properties([=[test_user_input]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;45;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_rope_utils]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_rope_utils")
+set_tests_properties([=[test_rope_utils]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;50;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_chat_template]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_chat_template")
+set_tests_properties([=[test_chat_template]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;55;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_nemotron_h]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_nemotron_h")
+set_tests_properties([=[test_nemotron_h]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;60;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_bitnet_quant]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_bitnet_quant")
+set_tests_properties([=[test_bitnet_quant]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;65;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_server_api_discovery]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_server_api" "[discovery]")
+set_tests_properties([=[test_server_api_discovery]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;77;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_server_api_endpoints]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_server_api" "[endpoints]")
+set_tests_properties([=[test_server_api_endpoints]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;81;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_server_api_inference]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_server_api" "[inference]")
+set_tests_properties([=[test_server_api_inference]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;85;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+add_test([=[test_server_api_errors]=] "/home/bcloud/lemon-mlx-engine-fork/build_clean/tests/test_server_api" "[errors]")
+set_tests_properties([=[test_server_api_errors]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;89;add_test;/home/bcloud/lemon-mlx-engine-fork/tests/CMakeLists.txt;0;")
+subdirs("../_deps/catch2-build")

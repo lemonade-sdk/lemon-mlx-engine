@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/CMakeFiles/mlx-populate"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/CMakeFiles/mlx-populate.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/CMakeFiles/mlx-populate-complete.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-build.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-configure.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-download.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-install.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-mkdir.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-patch.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-test.rule"
+		},
+		{
+			"file" : "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-subbuild/mlx-populate-prefix/src/mlx-populate-stamp/mlx-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"mlx-populate"
+		],
+		"name" : "mlx-populate"
+	}
+}

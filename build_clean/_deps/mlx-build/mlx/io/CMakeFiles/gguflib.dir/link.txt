@@ -1,0 +1,2 @@
+/usr/bin/ar qc libgguflib.a "CMakeFiles/gguflib.dir/__/__/__/gguflib-src/fp16.c.o" "CMakeFiles/gguflib.dir/__/__/__/gguflib-src/gguflib.c.o"
+/usr/bin/ranlib libgguflib.a
