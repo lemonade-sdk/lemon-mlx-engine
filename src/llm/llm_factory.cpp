@@ -187,6 +187,7 @@ static ModelContext load_typed_model(
                     {"model.", "gpt_neox."},
                     {"model.", "llama."},
                     {"model.", ""},
+                    {"", "transformer."},           // OpenELM: model expects transformer.X, checkpoint has X
                     {"language_model.model.", "model."},  // Gemma 4
                 };
                 for (auto& [old_pref, new_pref] : alt_remaps) {

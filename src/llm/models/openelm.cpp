@@ -366,6 +366,22 @@ OpenELMModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
     for (const auto& k : to_remove) {
         weights.erase(k);
     }
+
+    // Add "transformer." prefix to checkpoint weights that lack it.
+    // OpenELM MLX checkpoints (from Python) strip the "transformer." prefix
+    // during sanitize(), but our C++ weight_map expects it. Remap here.
+    std::vector<std::pair<std::string, std::string>> to_rename;
+    for (const auto& [k, v] : weights) {
+        if (k.find("transformer.") != 0) {
+            to_rename.push_back({k, "transformer." + k});
+        }
+    }
+    for (auto& [old_key, new_key] : to_rename) {
+        auto node = weights.extract(old_key);
+        node.key() = new_key;
+        weights.insert(std::move(node));
+    }
+
     return weights;
 }
 
