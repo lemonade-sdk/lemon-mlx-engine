@@ -983,6 +983,9 @@ std::optional<int> TokenIterator::next() {
         y_ = LMInput::Text(token);
         token_count_++;
         measure_prefill_boundary_();
+        // Pure replay is one hipGraphLaunch/token, so there is no per-op host
+        // dispatch to overlap — pipelining (return previous) was measured to be
+        // a no-op here, so sample this token directly.
         return token.item<int32_t>();
     }
 #endif

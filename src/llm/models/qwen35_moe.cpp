@@ -489,15 +489,25 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             fprintf(stderr, "[st] read_ssm %.6e\n", c.item<float>());
         }
 
+        // Cache f32 copies of the constant a_log/dt_bias once (built lazily, like
+        // q_norm_w_). gdn_fused_decode/gated_delta_update need them in f32; the
+        // kernels' internal astype(f32) then no-ops instead of launching a cast
+        // kernel per GDN layer per token.
+        if (!a_log_f32_.has_value()) {
+            a_log_f32_ = mx::astype(a_log_, mx::float32);
+            dt_bias_f32_ = mx::astype(dt_bias_, mx::float32);
+            mx::eval(*a_log_f32_, *dt_bias_f32_);
+        }
+
         if (use_fused_gdn) {
             mx::array o(0.0f), ns(0.0f);
             if (use_fused2) {
                 std::tie(o, ns) = gdn_fused_decode(
-                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
+                    q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
                     *q_norm_w_, *k_norm_w_, ssm_state, /*inplace=*/gdn_inplace);
             } else {
                 std::tie(o, ns) = gated_delta_update(
-                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
+                    q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
                     ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
             }
             // In-place: ns aliases [1]'s buffer (graph). Eager: fresh buffer.
