@@ -157,10 +157,6 @@ class Qwen35MoEGatedDeltaNet {
     std::optional<mlx::core::array> conv1d_w_dec_; // reshaped+transposed conv weight
     std::optional<mlx::core::array> q_norm_w_;     // full(head_k_dim, inv_scale^2)
     std::optional<mlx::core::array> k_norm_w_;     // full(head_k_dim, inv_scale)
-    // Float32 copies of the constant a_log/dt_bias, built once. The fused GDN
-    // kernels need them in f32; casting per token per layer (30x2=60 cast
-    // kernels/token) was pure waste — passing the cached f32 makes the kernels'
-    // internal astype(f32) a no-op.
     std::optional<mlx::core::array> a_log_f32_;
     std::optional<mlx::core::array> dt_bias_f32_;
 

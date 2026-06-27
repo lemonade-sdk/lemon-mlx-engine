@@ -444,7 +444,6 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     if (S == 1 && cache) {
         auto [conv_out, new_state] =
             gdn_conv_step(conv_state, qkv, conv1d_weight_, /*inplace=*/gdn_inplace);
-        // In-place: new_state aliases [0]'s buffer (graph). Eager: fresh buffer.
         (*cache)[0] = new_state;
 
         // Split into q, k, v
@@ -489,10 +488,6 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             fprintf(stderr, "[st] read_ssm %.6e\n", c.item<float>());
         }
 
-        // Cache f32 copies of the constant a_log/dt_bias once (built lazily, like
-        // q_norm_w_). gdn_fused_decode/gated_delta_update need them in f32; the
-        // kernels' internal astype(f32) then no-ops instead of launching a cast
-        // kernel per GDN layer per token.
         if (!a_log_f32_.has_value()) {
             a_log_f32_ = mx::astype(a_log_, mx::float32);
             dt_bias_f32_ = mx::astype(dt_bias_, mx::float32);
@@ -510,7 +505,6 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                     q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
                     ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
             }
-            // In-place: ns aliases [1]'s buffer (graph). Eager: fresh buffer.
             (*cache)[1] = ns;
             auto normalized = norm_(o, z);
             return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
