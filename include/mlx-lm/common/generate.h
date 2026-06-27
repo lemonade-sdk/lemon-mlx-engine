@@ -334,7 +334,6 @@ private:
     int pure_graph_state_ = 0;
     int pure_graph_cap_ = 0;      // reserved KV capacity
     int pure_pos_ = 0;            // host mirror of the device decode position
-    int pure_step_ = 0;           // decode step counter (drives ping-pong parity)
     // Logits array recorded during the capture token; the captured exec's
     // baked output buffer is overwritten by each replay, so re-reading it
     // (with a forced copy) yields the current token's logits.

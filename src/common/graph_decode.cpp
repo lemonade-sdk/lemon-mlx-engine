@@ -55,10 +55,6 @@ void advance_graph_decode_pos(int delta) {
 bool graph_external_pos() { return g_external; }
 void set_graph_external_pos(bool on) { g_external = on; }
 
-static int g_parity = 0;
-int graph_decode_parity() { return g_parity; }
-void set_graph_decode_parity(int parity) { g_parity = parity; }
-
 // Fixed-address [1,1] int32 input-token buffer. Constructed lazily (after device
 // selection) and kept resident so its device address never changes.
 mx::array& graph_decode_input() {

@@ -144,15 +144,14 @@ void KVCacheSimple::set_position(size_t pos) {
 std::pair<mlx::core::array, mlx::core::array> KVCacheSimple::update_at_pos(
     const mlx::core::array& new_keys, const mlx::core::array& new_values,
     const mlx::core::array& pos) {
-    // DynamicSliceUpdate at the device-side `pos` (axis 2). The buffer must be
-    // pre-allocated to capacity; the offset advances device-side so the built
-    // graph relaunches correctly as the loop advances pos. std::move releases the
-    // cache's reference so slice_update can donate (update in place) — keeping the
-    // buffer at a FIXED address, which the build-once graph's nodes bake into.
-    auto k = std::move(keys_.value());
-    auto v = std::move(values_.value());
-    keys_ = mx::slice_update(k, new_keys, pos, {2});
-    values_ = mx::slice_update(v, new_values, pos, {2});
+    // Write the new K/V directly into the pre-allocated cache buffer at the
+    // device-side `pos` via the in-place accessor (output aliases the cache, so
+    // the math output lands straight in KV[pos] — no slice_update array op, no
+    // copy). The buffer stays at a FIXED address the build-once graph bakes, and
+    // `pos` is a device scalar so the recorded graph relaunches correctly as the
+    // loop advances it.
+    keys_ = kv_inplace_update_at(keys_.value(), new_keys, pos);
+    values_ = kv_inplace_update_at(values_.value(), new_values, pos);
     offset_ += new_keys.shape(2);
     return {keys_.value(), values_.value()};
 }
