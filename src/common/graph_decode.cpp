@@ -2,15 +2,9 @@
 #include "mlx-lm/common/graph_decode.h"
 #include <cstdlib>
 
-namespace mx = mlx::core;
+#include "mlx-lm/common/gpu_stubs.h"
 
-// In-place device-scalar kernels (ROCm backend): mutate the pos buffer contents
-// without reallocating, keeping the captured graph's baked address valid.
-namespace mlx::core {
-void gpu_kv_pos_set(array& pos, int v);
-void gpu_kv_pos_increment(array& pos, int delta);
-void gpu_scalar_copy_i32(array& dst, array& src);
-}
+namespace mx = mlx::core;
 
 namespace mlx_lm {
 

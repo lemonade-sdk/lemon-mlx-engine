@@ -248,7 +248,7 @@ std::unordered_map<std::string, mx::array*> GLM4ModelInner::weight_map() {
 
 GLM4Model::GLM4Model(const GLM4Configuration& config)
     : config_(config),
-      model_(config),
+      model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size}))
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
@@ -274,7 +274,7 @@ mx::array GLM4Model::forward_impl(
     std::vector<KVCache>* cache)
 {
     auto out = model_(inputs, cache);
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::unordered_map<std::string, mx::array>

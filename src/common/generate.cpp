@@ -1,6 +1,7 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 
 #include <mlx-lm/common/generate.h>
+#include <mlx-lm/common/gpu_stubs.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx/mlx.h>
@@ -14,21 +15,9 @@
 #include <iostream>
 
 #if defined(MLX_BUILD_ROCM)
-// Decode-mode toggle (defined in mlx/backend/rocm/eval.cpp; declared here to
-// avoid pulling HIP headers into engine code).
 #include <mlx-lm/common/graph_decode.h>
 namespace mlx::core {
 void gpu_set_graph_decode_mode(bool v);
-// Build-once pure-relaunch decode + deterministic arena (rocm backend bridge).
-void decode_pure_record(int slot);
-void decode_pure_replay(int slot);
-void decode_pure_off();
-size_t decode_pure_chain_len(int slot);
-bool decode_arena_begin(size_t capacity, int device, void* stream);
-void decode_arena_reset();
-void decode_arena_end();
-bool decode_arena_overflowed();
-void gpu_buffer_copy(array& dst, array& src);
 } // namespace mlx::core
 #endif
 

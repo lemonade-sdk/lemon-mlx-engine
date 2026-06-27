@@ -248,7 +248,7 @@ std::unordered_map<std::string, mx::array*> Gemma3TextModelInner::weight_map() {
 
 Gemma3TextModel::Gemma3TextModel(const Gemma3TextConfiguration& config)
     : config_(config),
-      model_(config),
+      model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size}))
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
@@ -265,7 +265,7 @@ LMOutput Gemma3TextModel::call_impl(const LMInput::Text& input, std::vector<KVCa
 mx::array Gemma3TextModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
     // Always use lm_head (not tied embeddings)
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::vector<KVCache> Gemma3TextModel::new_cache_impl(const GenerateParameters& params) {

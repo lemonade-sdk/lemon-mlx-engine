@@ -3,11 +3,15 @@
 
 #include <mlx-lm/llm/llm_factory.h>
 #include <mlx-lm/common/chat_session.h>
+#include <mlx-lm/common/registry.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx/mlx.h>
 #if defined(MLX_BUILD_ROCM)
 #include <hip/hip_runtime.h>
+#include <dlfcn.h>
+#include <filesystem>
+#include <vector>
 #endif
 #include <cstdlib>
 #include <iostream>
@@ -15,6 +19,179 @@
 #include <string>
 
 namespace mx = mlx::core;
+
+
+#if defined(MLX_BUILD_ROCM)
+namespace {
+namespace fs = std::filesystem;
+
+static bool starts_with(const std::string& value, const std::string& prefix) {
+    return value.rfind(prefix, 0) == 0;
+}
+
+static void add_unique_candidate(std::vector<fs::path>& candidates,
+                                 const fs::path& candidate) {
+    if (candidate.empty()) {
+        return;
+    }
+    for (const auto& existing : candidates) {
+        if (existing == candidate) {
+            return;
+        }
+    }
+    candidates.push_back(candidate);
+}
+
+static bool has_tensile_library_files(const fs::path& directory) {
+    std::error_code ec;
+    if (!fs::is_directory(directory, ec)) {
+        return false;
+    }
+
+    for (const auto& entry : fs::directory_iterator(directory, ec)) {
+        if (ec) {
+            return false;
+        }
+        if (!entry.is_regular_file(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        const std::string filename = entry.path().filename().string();
+        if (starts_with(filename, "TensileLibrary_lazy_") &&
+            entry.path().extension() == ".dat") {
+            return true;
+        }
+    }
+    return false;
+}
+
+static fs::path loaded_library_directory(const char* library_name,
+                                         const char* symbol_name) {
+    void* symbol = nullptr;
+#ifdef RTLD_NOLOAD
+    void* handle = dlopen(library_name, RTLD_LAZY | RTLD_NOLOAD);
+    if (handle != nullptr) {
+        symbol = dlsym(handle, symbol_name);
+        dlclose(handle);
+    }
+#endif
+    if (symbol == nullptr) {
+        symbol = dlsym(RTLD_DEFAULT, symbol_name);
+    }
+
+    Dl_info info{};
+    if (symbol != nullptr && dladdr(symbol, &info) != 0 &&
+        info.dli_fname != nullptr) {
+        return fs::path(info.dli_fname).parent_path();
+    }
+    return {};
+}
+
+static void add_rocm_opt_candidates(std::vector<fs::path>& candidates,
+                                    const std::string& component) {
+    std::error_code ec;
+    const fs::path opt_dir("/opt");
+    if (!fs::is_directory(opt_dir, ec)) {
+        return;
+    }
+
+    for (const auto& entry : fs::directory_iterator(opt_dir, ec)) {
+        if (ec) {
+            return;
+        }
+        if (!entry.is_directory(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        const std::string name = entry.path().filename().string();
+        if (starts_with(name, "rocm")) {
+            add_unique_candidate(candidates,
+                                 entry.path() / "lib" / component / "library");
+        }
+    }
+}
+
+static void add_therock_venv_candidates(std::vector<fs::path>& candidates,
+                                        const std::string& component) {
+    std::error_code ec;
+    const fs::path lib_dir("/tmp/rocm_venv/lib");
+    if (!fs::is_directory(lib_dir, ec)) {
+        return;
+    }
+
+    for (const auto& entry : fs::directory_iterator(lib_dir, ec)) {
+        if (ec) {
+            return;
+        }
+        if (!entry.is_directory(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        const std::string name = entry.path().filename().string();
+        if (starts_with(name, "python")) {
+            add_unique_candidate(
+                candidates,
+                entry.path() / "site-packages" / "_rocm_sdk_libraries" / "lib" /
+                    component / "library");
+        }
+    }
+}
+
+static std::string path_with_trailing_slash(const fs::path& path) {
+    std::string value = path.string();
+    if (!value.empty() && value.back() != '/') {
+        value.push_back('/');
+    }
+    return value;
+}
+
+static void auto_configure_tensile_path(const char* env_var,
+                                        const char* library_name,
+                                        const char* symbol_name,
+                                        const std::string& component) {
+    if (std::getenv(env_var) != nullptr) {
+        return;
+    }
+
+    std::vector<fs::path> candidates;
+    const fs::path loaded_dir = loaded_library_directory(library_name, symbol_name);
+    if (!loaded_dir.empty()) {
+        add_unique_candidate(candidates, loaded_dir / component / "library");
+    }
+    add_unique_candidate(candidates, fs::path("/opt/rocm/lib") / component / "library");
+    add_unique_candidate(candidates,
+                         fs::path("/opt/rocm-7.2.4/lib") / component / "library");
+    if (const char* rocm_dir = std::getenv("ROCm_DIR")) {
+        if (rocm_dir[0] != '\0') {
+            add_unique_candidate(candidates,
+                                 fs::path(rocm_dir) / "lib" / component / "library");
+        }
+    }
+    add_rocm_opt_candidates(candidates, component);
+    add_therock_venv_candidates(candidates, component);
+
+    for (const auto& candidate : candidates) {
+        if (has_tensile_library_files(candidate)) {
+            const std::string path = path_with_trailing_slash(candidate);
+            if (setenv(env_var, path.c_str(), 0) == 0) {
+                std::cerr << "[rocm-tensile] Set " << env_var << "=" << path
+                          << std::endl;
+            }
+            return;
+        }
+    }
+}
+} // namespace
+
+static void auto_configure_rocm_tensile_paths() {
+    auto_configure_tensile_path("ROCBLAS_TENSILE_LIBPATH", "librocblas.so",
+                                "rocblas_create_handle", "rocblas");
+    auto_configure_tensile_path("HIPBLASLT_TENSILE_LIBPATH", "libhipblaslt.so",
+                                "hipblasLtCreate", "hipblaslt");
+}
+#else
+static void auto_configure_rocm_tensile_paths() {}
+#endif
 
 // GPU selection / enumeration. Selecting a device sets HIP_VISIBLE_DEVICES
 // before any HIP/MLX call so the chosen GPU becomes device 0 (which the MLX
@@ -82,7 +259,9 @@ struct CliArgs {
     int n_draft_tokens = 1;
     int device = -1;          // GPU index to use (-1 = auto / default device 0)
     bool list_devices = false;
+    std::string register_arch;  // Path to architecture registration JSON file
     bool ignore_eos = false;  // Benchmark: keep generating to --max-tokens (ignore EOS)
+    bool auto_quantize = false;  // Auto-quantize unquantized bf16/fp16 models to 4-bit
 };
 
 static CliArgs parse_args(int argc, char* argv[]) {
@@ -102,6 +281,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
                   << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
                   << "  --n-draft N             MTP draft tokens per step (default: 1)\n"
+                  << "  --register-arch FILE   Register custom architecture from JSON file\n"
+                  << "  --auto-quantize        Auto-quantize unquantized bf16/fp16 models to 4-bit at load time\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
         std::exit(1);
@@ -139,10 +320,14 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.n_draft_tokens = std::stoi(argv[++i]);
         } else if (flag == "--device" && i + 1 < argc) {
             args.device = std::stoi(argv[++i]);
+        } else if (flag == "--auto-quantize") {
+            args.auto_quantize = true;
         } else if (flag == "--list-devices") {
             args.list_devices = true;
         } else if (flag == "--ignore-eos") {
             args.ignore_eos = true;
+        } else if (flag == "--register-arch" && i + 1 < argc) {
+            args.register_arch = argv[++i];
         }
     }
     return args;
@@ -152,6 +337,9 @@ int main(int argc, char* argv[]) {
     // Unbuffered stdout so generated tokens appear live (not flushed in a block
     // when piped to a file/pipe).
     setvbuf(stdout, nullptr, _IONBF, 0);
+
+    // Configure ROCm Tensile paths before anything touches HIP/MLX.
+    auto_configure_rocm_tensile_paths();
 
     // Handle --list-devices / --device before anything touches HIP/MLX.
     select_or_list_gpu(argc, argv);
@@ -170,9 +358,15 @@ int main(int argc, char* argv[]) {
     }
 
     try {
+        // Load custom architecture registrations if specified
+        if (!args.register_arch.empty()) {
+            std::cerr << "Loading architecture registrations: " << args.register_arch << std::endl;
+            mlx_lm::ArchitectureRegistry::instance().load_from_file(args.register_arch);
+        }
+
         std::cout << "Loading model: " << args.model_path << std::endl;
 
-        auto ctx = mlx_lm::load_llm(args.model_path);
+        auto ctx = mlx_lm::load_llm(args.model_path, "", args.auto_quantize);
 
         // Warmup: run a dummy forward pass to prime the GPU allocator cache.
         // Without this, the first real prompt pays ~2s of hipExtMallocWithFlags

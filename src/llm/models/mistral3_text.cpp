@@ -251,7 +251,7 @@ mx::array Mistral3TextModelInner::operator()(const mx::array& inputs, std::vecto
 }
 
 mx::array Mistral3TextModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Mistral3TextModelInner::weight_map() {
@@ -268,7 +268,7 @@ std::unordered_map<std::string, mx::array*> Mistral3TextModelInner::weight_map()
 // --- Mistral3TextModel ---
 
 Mistral3TextModel::Mistral3TextModel(const Mistral3TextConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     if (!args.tie_word_embeddings) {
@@ -286,7 +286,7 @@ LMOutput Mistral3TextModel::call_impl(const LMInput::Text& input, std::vector<KV
 
 mx::array Mistral3TextModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    if (lm_head_weight_.has_value()) return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+    if (lm_head_weight_.has_value()) return linear_forward(out, lm_head_weight_.value());
     return model_.embed_as_linear(out);
 }
 

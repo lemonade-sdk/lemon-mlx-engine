@@ -295,7 +295,7 @@ mx::array LFM2ModelInner::operator()(const mx::array& inputs, std::vector<KVCach
 }
 
 mx::array LFM2ModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> LFM2ModelInner::weight_map() {
@@ -312,7 +312,7 @@ std::unordered_map<std::string, mx::array*> LFM2ModelInner::weight_map() {
 // --- LFM2Model ---
 
 LFM2Model::LFM2Model(const LFM2Configuration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {}
 
 PrepareResult LFM2Model::prepare_impl(const LMInput& input, std::vector<KVCache>& cache, int ws) {

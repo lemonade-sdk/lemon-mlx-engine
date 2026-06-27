@@ -199,7 +199,7 @@ static bool fuse_quant_projections(
 
     dst = std::move(w);
     reg.register_weight(&dst.value(), std::move(s), std::move(b),
-                        qis[0]->group_size, qis[0]->bits);
+                        qis[0]->group_size, qis[0]->bits, qis[0]->mode);
     return true;
 }
 
@@ -922,11 +922,11 @@ mx::array Qwen35MoEModelInner::embed_tokens(const mx::array& input_ids) const {
 }
 
 mx::array Qwen35MoEModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 mx::array Qwen35MoEModelInner::apply_lm_head(const mx::array& hidden) const {
-    return mx::matmul(hidden, mx::transpose(embed_tokens_weight_));
+    return linear_forward(hidden, embed_tokens_weight_);
 }
 
 mx::array Qwen35MoEModelInner::apply_norm(const mx::array& hidden) const {
@@ -980,7 +980,7 @@ std::unordered_map<std::string, mx::array*> Qwen35MoEModelInner::weight_map() {
 // --- Qwen35MoEModel ---
 
 Qwen35MoEModel::Qwen35MoEModel(const Qwen35MoEConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
     // Always allocate lm_head_weight_ so it is part of weight_map(). For TIED

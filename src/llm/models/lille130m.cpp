@@ -24,6 +24,13 @@ void from_json(const nlohmann::json& j, Lille130mConfiguration& c) {
     c.rope_theta = j.at("rope_theta").get<float>();
     c.vocab_size = j.at("vocab_size").get<int>();
     c.tie_word_embeddings = j.value("tie_word_embeddings", true);
+
+    // Read quantization parameters if present
+    if (j.contains("quantization")) {
+        const auto& q = j["quantization"];
+        c.quant_bits = q.value("bits", 0);
+        c.quant_group_size = q.value("group_size", 0);
+    }
 }
 
 // --- Helpers ---
@@ -177,8 +184,13 @@ mx::array Lille130mModelInner::operator()(
     const mx::array& inputs,
     std::vector<KVCache>* cache)
 {
+    auto tokens = inputs;
+    if (tokens.ndim() < 2) {
+        tokens = mx::reshape(tokens, {1, static_cast<int>(tokens.size())});
+    }
+
     // Embedding lookup — no scaling
-    auto h = mx::take(embed_tokens_weight_, inputs, 0);
+    auto h = mx::take(embed_tokens_weight_, tokens, 0);
 
     // Create attention mask
     auto mask = create_attention_mask(h, cache && !cache->empty() ? &(*cache)[0] : nullptr);
@@ -194,7 +206,7 @@ mx::array Lille130mModelInner::operator()(
 }
 
 mx::array Lille130mModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Lille130mModelInner::weight_map() {
@@ -245,7 +257,50 @@ mx::array Lille130mModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 Lille130mModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Remove keys containing "rotary_emb"
+    // Dequantize all affine-quantized weights at load time using the bits and
+    // group_size from the model config. Lille-130m is tiny (130M params), so
+    // dequantizing to float32 (~520MB) is fine. This bypasses quantized_matmul
+    // entirely, avoiding potential issues with the ROCm quantized kernel path
+    // for this particular model.
+    if (config_.quant_bits > 0 && config_.quant_group_size > 0) {
+        int bits = config_.quant_bits;
+        int group_size = config_.quant_group_size;
+        std::vector<std::string> to_remove;
+        std::vector<std::pair<std::string, mx::array>> to_add;
+        const std::string scales_suffix = ".scales";
+
+        for (const auto& [key, scales] : weights) {
+            if (key.size() <= scales_suffix.size() ||
+                key.compare(key.size() - scales_suffix.size(), scales_suffix.size(), scales_suffix) != 0)
+                continue;
+
+            auto prefix = key.substr(0, key.size() - scales_suffix.size());
+            auto weight_key = prefix + ".weight";
+            auto weight_it = weights.find(weight_key);
+            if (weight_it == weights.end()) continue;
+
+            std::optional<mx::array> biases;
+            auto biases_key = prefix + ".biases";
+            auto biases_it = weights.find(biases_key);
+            if (biases_it != weights.end()) {
+                biases = biases_it->second;
+                to_remove.push_back(biases_key);
+            }
+
+            to_add.emplace_back(weight_key,
+                mx::dequantize(weight_it->second, scales, biases, group_size, bits));
+            to_remove.push_back(key);
+        }
+
+        for (auto& [k, v] : to_add) {
+            weights.insert_or_assign(k, std::move(v));
+        }
+        for (const auto& k : to_remove) {
+            weights.erase(k);
+        }
+    }
+
+    // Remove unused precomputed rotary frequencies.
     std::vector<std::string> to_remove;
     for (auto& [k, v] : weights) {
         if (k.find("rotary_emb") != std::string::npos) {
@@ -272,10 +327,11 @@ void Lille130mModel::load_weights(
 
 std::unordered_map<std::string, mx::array*> Lille130mModel::weight_map() {
     std::unordered_map<std::string, mx::array*> map;
-    // Lille130m uses "transformer" prefix in the Swift reference for the inner model,
-    // but the weight file uses bare prefixes (tok_embeddings, layers, norm) — no wrapper prefix
+    // Lille130m checkpoints store the inner model under the transformer.*
+    // prefix. Keeping the keys aligned here lets sanitization and loading bind
+    // checkpoint weights (including .scales/.biases companions) to members.
     for (auto& [k, v] : transformer_.weight_map()) {
-        map[k] = v;
+        map["transformer." + k] = v;
     }
     return map;
 }

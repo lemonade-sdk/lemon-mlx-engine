@@ -472,7 +472,7 @@ std::unordered_map<std::string, mx::array*> DeepseekV3ModelInner::weight_map() {
 // --- DeepseekV3Model ---
 
 DeepseekV3Model::DeepseekV3Model(const DeepseekV3Configuration& config)
-    : config_(config), model_(config),
+    : config_(config), model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size}))
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
@@ -488,7 +488,7 @@ LMOutput DeepseekV3Model::call_impl(const LMInput::Text& input, std::vector<KVCa
 
 mx::array DeepseekV3Model::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::unordered_map<std::string, mx::array>

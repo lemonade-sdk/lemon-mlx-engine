@@ -8,6 +8,7 @@
 #include <mlx-lm/llm/models/llama.h>
 #include <mlx-lm/common/activations.h>
 #include <mlx-lm/common/attention_utils.h>
+#include <mlx-lm/common/bitnet_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
 #include <cmath>
@@ -43,6 +44,30 @@ void from_json(const nlohmann::json& j, LlamaConfiguration& c) {
         c.attention_bias = j["attention_bias"].get<bool>();
     if (j.contains("mlp_bias"))
         c.mlp_bias = j["mlp_bias"].get<bool>();
+    if (j.contains("hidden_act"))
+        c.hidden_act = j["hidden_act"].get<std::string>();
+
+    if (j.contains("quantization_config") && j["quantization_config"].is_object()) {
+        const auto& qc = j["quantization_config"];
+        c.quant_method = qc.value("quant_method", std::string());
+        if (c.quant_method == "bitnet") {
+            if (qc.contains("linear_class")) {
+                c.bitnet_invert_weight_scales =
+                    qc.value("linear_class", std::string()) != "autobitlinear";
+            } else {
+                // Falcon-E-style MLX BitLinear checkpoints omit linear_class and
+                // use scale = 1 / weight_scale. True relu2 BitNet checkpoints use
+                // direct scales unless marked otherwise.
+                c.bitnet_invert_weight_scales = (c.hidden_act != "relu2");
+            }
+        }
+    }
+
+    // 1-bit models (1bitLLM style) have sub-norms even with silu activation
+    if (j.value("weight_bits", 0) == 1 || j.value("input_bits", 0) > 0) {
+        c.bitnet_has_sub_norm = true;
+        c.activation_bits = j.value("input_bits", 0);
+    }
 
     if (j.contains("rope_scaling") && !j["rope_scaling"].is_null()) {
         std::unordered_map<std::string, StringOrNumber> scaling;
@@ -250,6 +275,23 @@ mx::array LlamaAttention::operator()(
     auto keys = linear(x, wk_weight_, wk_bias_);
     auto values = linear(x, wv_weight_, wv_bias_);
 
+    // Gemma 4 compatibility: some layers have BOTH regular (head_dim) AND
+    // global (global_head_dim) projections in q/k/v. Slice to regular only.
+    int expected_q = args_.num_attention_heads * head_dim;
+    int expected_kv = args_.num_key_value_heads * head_dim;
+    if (queries.shape(-1) != expected_q) {
+        mx::eval(queries);
+        queries = mx::slice(queries, {0, 0, 0}, {B, L, expected_q});
+    }
+    if (keys.shape(-1) != expected_kv) {
+        mx::eval(keys);
+        keys = mx::slice(keys, {0, 0, 0}, {B, L, expected_kv});
+    }
+    if (values.shape(-1) != expected_kv) {
+        mx::eval(values);
+        values = mx::slice(values, {0, 0, 0}, {B, L, expected_kv});
+    }
+
     // Reshape: [B, L, heads*head_dim] -> [B, heads, L, head_dim]
     queries = mx::transpose(mx::reshape(queries, {B, L, args_.num_attention_heads, head_dim}), {0, 2, 1, 3});
     keys = mx::transpose(mx::reshape(keys, {B, L, args_.num_key_value_heads, head_dim}), {0, 2, 1, 3});
@@ -303,6 +345,9 @@ LlamaMLP::LlamaMLP(const LlamaConfiguration& args)
         down_bias_ = mx::zeros({args.hidden_size});
         up_bias_ = mx::zeros({args.intermediate_size});
     }
+    if (args.hidden_act == "gelu_pytorch_tanh") {
+        activation_type_ = ActivationType::GeluTanh;
+    }
 }
 
 mx::array LlamaMLP::linear(const mx::array& x, const mx::array& weight,
@@ -311,9 +356,14 @@ mx::array LlamaMLP::linear(const mx::array& x, const mx::array& weight,
 }
 
 mx::array LlamaMLP::operator()(const mx::array& x) {
-    // swiglu(gate(x), up(x)) -> down
+    auto gate_out = linear(x, gate_weight_, gate_bias_);
     auto up_out = linear(x, up_weight_, up_bias_);
-    return linear(swiglu(linear(x, gate_weight_, gate_bias_), up_out), down_weight_, down_bias_);
+    // GELU tanh gating (GEGLU) for Gemma 4 / compatible models
+    if (activation_type_ == ActivationType::GeluTanh) {
+        return linear(mx::multiply(gelu_tanh(gate_out), up_out), down_weight_, down_bias_);
+    }
+    // Default: SiLU gating (SwiGLU) for Llama / most models
+    return linear(swiglu(gate_out, up_out), down_weight_, down_bias_);
 }
 
 std::unordered_map<std::string, mx::array*> LlamaMLP::weight_map() {
@@ -411,7 +461,7 @@ mx::array LlamaModelInner::operator()(
 
 mx::array LlamaModelInner::embed_as_linear(const mx::array& x) const {
     // Use embedding weights as a linear layer (for tied embeddings)
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> LlamaModelInner::weight_map() {
@@ -433,7 +483,7 @@ std::unordered_map<std::string, mx::array*> LlamaModelInner::weight_map() {
 // --- LlamaModel ---
 
 LlamaModel::LlamaModel(const LlamaConfiguration& args)
-    : config_(args), model_(args)
+    : config_(args), model_(config_)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
 
@@ -463,7 +513,7 @@ mx::array LlamaModel::forward_impl(
 {
     auto out = model_(inputs, cache);
     if (lm_head_weight_.has_value()) {
-        return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+        return linear_forward(out, lm_head_weight_.value());
     } else {
         return model_.embed_as_linear(out);
     }
@@ -472,8 +522,98 @@ mx::array LlamaModel::forward_impl(
 std::unordered_map<std::string, mx::array>
 LlamaModel::sanitize_impl(std::unordered_map<std::string, mx::array> weights)
 {
-    // Remove unused precomputed rotary frequencies
+    // Dequantize BitNet-style uint8 packed ternary weights at load time.
+    // Each *.weight (uint8, shape [out/4, in]) is paired with a *.weight_scale.
+    // Normal Llama weights do not have this pair and are left unchanged.
     std::vector<std::string> to_remove;
+    std::vector<std::pair<std::string, mx::array>> to_add;
+
+    const std::string scale_suffix = ".weight_scale";
+
+    for (auto& [key, val] : weights) {
+        if (key.size() > scale_suffix.size() &&
+            key.compare(key.size() - scale_suffix.size(), scale_suffix.size(), scale_suffix) == 0) {
+
+            auto prefix = key.substr(0, key.size() - scale_suffix.size());
+            auto weight_key = prefix + ".weight";
+
+            auto w_it = weights.find(weight_key);
+            if (w_it != weights.end() && w_it->second.dtype() == mx::uint8) {
+                int packed_rows = w_it->second.shape(0);
+                int out_features = packed_rows * 4;
+
+                to_add.emplace_back(weight_key,
+                    dequantize_bitnet_weight(
+                        w_it->second, val, out_features,
+                        config_.bitnet_invert_weight_scales));
+                to_remove.push_back(key);
+            }
+        }
+    }
+
+    for (auto& [k, v] : to_add) {
+        weights.insert_or_assign(k, std::move(v));
+    }
+
+    // AQLM dequantization: codebook-based 1-bit format
+    // Each weight has *.codebooks (F16 [1,256,1,8]), *.codes (I8 [out, in/8, 1]), *.scales
+    // Dequant: w[oc,in] = codebook[0, codes[oc,in/8,0], 0, in%8] * scales[oc,0,0,0]
+    if (config_.quant_method == "aqlm") {
+        const std::string cb_suffix = ".codebooks";
+        for (auto& [key, codebook] : weights) {
+            if (key.size() <= cb_suffix.size() ||
+                key.compare(key.size() - cb_suffix.size(), cb_suffix.size(), cb_suffix) != 0) {
+                continue;
+            }
+            std::string prefix = key.substr(0, key.size() - cb_suffix.size());
+            std::string codes_key = prefix + ".codes";
+            std::string scales_key = prefix + ".scales";
+
+            auto codes_it = weights.find(codes_key);
+            auto scales_it = weights.find(scales_key);
+            if (codes_it == weights.end() || scales_it == weights.end()) continue;
+
+            auto& codes = codes_it->second;
+            auto& scales = scales_it->second;
+
+            // codes shape: [out, in/8, 1], codebook shape: [1, 256, 1, 8]
+            int out_f = codes.shape(0);
+            int in_groups = codes.shape(1);
+            int in_f = in_groups * 8;
+
+            // Materialize codebook and scales
+            mx::eval(codes);
+            mx::eval(codebook);
+            mx::eval(scales);
+
+            auto codes_data = codes.data<int8_t>();
+            auto cb_data = codebook.data<mx::float16_t>();  // [1,256,1,8]
+            auto sc_data = scales.data<mx::float16_t>();    // [out,1,1,1]
+
+            // scales shape: [out, 1, 1, 1] — stride is 1 for contiguous
+            std::vector<mx::float16_t> result(out_f * in_f);
+            for (int oc = 0; oc < out_f; oc++) {
+                float s = (float)sc_data[oc];  // scales[oc,0,0,0]
+                for (int g = 0; g < in_groups; g++) {
+                    int code_idx = (int)codes_data[oc * in_groups + g];
+                    if (code_idx < 0) code_idx = 0;
+                    if (code_idx >= 256) code_idx = 255;
+                    for (int v = 0; v < 8; v++) {
+                        float val = (float)cb_data[code_idx * 8 + v] * s;
+                        result[oc * in_f + g * 8 + v] = (mx::float16_t)val;
+                    }
+                }
+            }
+
+            weights.insert_or_assign(prefix + ".weight",
+                mx::array(result.data(), {out_f, in_f}, mx::float16));
+            to_remove.push_back(key);        // codebooks
+            to_remove.push_back(codes_key);   // codes
+            to_remove.push_back(scales_key);  // scales
+        }
+    }
+
+    // Remove unused precomputed rotary frequencies
     for (auto& [k, v] : weights) {
         if (k.find("self_attn.rotary_emb.inv_freq") != std::string::npos) {
             to_remove.push_back(k);

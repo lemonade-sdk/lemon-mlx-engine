@@ -44,6 +44,7 @@ struct CliArgs {
     int kv_group_size = 64;
     int ctx_size = 0;
     bool no_download = false;
+    bool auto_quantize = false;
     int max_loaded = 1;
     bool use_mtp = false;
     int n_draft_tokens = 3;
@@ -68,6 +69,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.repetition_penalty = std::stof(argv[++i]);
         } else if (flag == "--memory-limit" && i + 1 < argc) {
             args.memory_limit_mb = std::stoul(argv[++i]);
+        } else if (flag == "--auto-quantize") {
+            args.auto_quantize = true;
         } else if (flag == "--no-think") {
             args.no_think = true;
         } else if (flag == "--no-download") {
@@ -98,6 +101,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --top-p P               Default top-p (default: 1.0)\n"
                       << "  --repetition-penalty F  Default repetition penalty (off)\n"
                       << "  --memory-limit MB       GPU wired memory limit\n"
+                      << "  --auto-quantize         Auto-quantize unquantized bf16 models to 4-bit at load time\n"
                       << "  --no-think              Disable thinking/reasoning\n"
                       << "  --no-download           Don't auto-download models from HF Hub\n"
                       << "  --max-loaded N          Max models in memory (default: 1, LRU eviction)\n"
@@ -146,11 +150,14 @@ int main(int argc, char* argv[]) {
         std::cerr << "GPU wired memory limit: " << args.memory_limit_mb << " MB\n";
     }
 
+    std::cerr << "[startup] Creating model manager...\n";
+
     try {
         // Create model manager.
         auto manager = std::make_shared<mlx_lm::ModelManager>();
         manager->set_no_download(args.no_download);
         manager->set_no_think(args.no_think);
+        if (args.auto_quantize) manager->set_auto_quantize(true);
         manager->set_max_loaded(args.max_loaded);
 
         // Build default params.
@@ -176,7 +183,7 @@ int main(int argc, char* argv[]) {
         if (!args.model_path.empty()) {
             std::cerr << "Loading model: " << args.model_path << "\n";
 
-            auto ctx = mlx_lm::load_llm(args.model_path);
+            auto ctx = mlx_lm::load_llm(args.model_path, "", args.auto_quantize);
 
             // Warmup: prime GPU allocator cache.
             {
@@ -205,16 +212,21 @@ int main(int argc, char* argv[]) {
             std::cerr << "Starting in auto-load mode (no model pre-loaded).\n";
             std::cerr << "Models will be loaded on demand from API requests.\n";
 
-            // Show available cached models.
-            auto available = manager->list_available();
-            if (!available.empty()) {
-                std::cerr << "\nAvailable MLX models in HF cache:\n";
-                for (const auto& m : available) {
-                    std::cerr << "  " << m.model_id;
-                    if (!m.model_type.empty()) std::cerr << " (" << m.model_type << ")";
+            // Show available cached models (best-effort, don't crash on failure).
+            std::cerr << "[startup] Listing cached models...\n";
+            try {
+                auto available = manager->list_available();
+                if (!available.empty()) {
+                    std::cerr << "\nAvailable MLX models in HF cache:\n";
+                    for (const auto& m : available) {
+                        std::cerr << "  " << m.model_id;
+                        if (!m.model_type.empty()) std::cerr << " (" << m.model_type << ")";
+                        std::cerr << "\n";
+                    }
                     std::cerr << "\n";
                 }
-                std::cerr << "\n";
+            } catch (const std::exception& e) {
+                std::cerr << "[startup] Warning: list_available() failed: " << e.what() << "\n";
             }
         }
 
@@ -238,10 +250,15 @@ int main(int argc, char* argv[]) {
                   << "  POST /load\n"
                   << "  POST /unload\n";
 
+        std::cerr << "[startup] Starting HTTP server...\n";
         server.start();
+        std::cerr << "[startup] Server exited (unexpected)\n";
 
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "[startup] Error: " << e.what() << "\n";
+        return 1;
+    } catch (...) {
+        std::cerr << "[startup] Unknown error (non-std exception)\n";
         return 1;
     }
 

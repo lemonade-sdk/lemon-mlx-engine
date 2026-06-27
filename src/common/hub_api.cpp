@@ -247,65 +247,140 @@ std::string HubApi::snapshot_download(
 {
     auto cache_path = resolve_cache_path(repo_id, revision);
 
-    // Check if already cached
+    // Check if already cached (config + at least one safetensors or its index)
     if (fs::exists(cache_path + "/config.json")) {
-        return cache_path;
+        bool has_weights = false;
+        for (const auto& e : fs::directory_iterator(cache_path)) {
+            auto name = e.path().filename().string();
+            if (name.size() >= 11 && name.compare(name.size()-11, 11, ".safetensors") == 0) {
+                has_weights = true; break;
+            }
+        }
+        if (!has_weights && fs::exists(cache_path + "/model.safetensors.index.json")) {
+            has_weights = true;
+        }
+        if (has_weights) return cache_path;
+        // config.json present but no weights — partial download; continue below to refill
     }
 
-    // Fetch file list from the API
+    // Fetch file list from the HF API
     std::string api_url = "https://huggingface.co/api/models/" + repo_id +
                           "/revision/" + revision;
-    auto api_response = http_get(api_url);
 
-    // Parse the response to get file list
-    // For now, download the standard set of files
-    std::vector<std::string> default_files = {
-        "config.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "generation_config.json",
-    };
-
-    for (const auto& f : default_files) {
-        try {
-            download_file(repo_id, f, revision, nullptr);
-        } catch (...) {
-            // Some files are optional
-        }
-    }
-
-    // Download safetensors files
-    // Try single file first, then sharded
-    std::string last_error;
+    std::vector<std::string> files_to_download;
+    bool api_ok = false;
     try {
-        download_file(repo_id, "model.safetensors", revision, progress);
-    } catch (const std::exception& e) {
-        last_error = e.what();
-        // Try sharded format
-        try {
-            download_file(repo_id, "model.safetensors.index.json", revision, nullptr);
-            // Parse index to get shard filenames
-            auto index_path = cache_path + "/model.safetensors.index.json";
-            if (fs::exists(index_path)) {
-                std::ifstream index_file(index_path);
-                nlohmann::json index_json;
-                index_file >> index_json;
-
-                if (index_json.contains("weight_map")) {
-                    std::set<std::string> shard_files;
-                    for (auto& [key, val] : index_json["weight_map"].items()) {
-                        shard_files.insert(val.get<std::string>());
-                    }
-                    for (const auto& shard : shard_files) {
-                        download_file(repo_id, shard, revision, progress);
-                    }
+        auto api_response = http_get(api_url);
+        auto api_json = nlohmann::json::parse(api_response);
+        if (api_json.contains("siblings") && api_json["siblings"].is_array()) {
+            for (const auto& sib : api_json["siblings"]) {
+                if (sib.contains("rfilename")) {
+                    files_to_download.push_back(sib["rfilename"].get<std::string>());
                 }
             }
+            api_ok = !files_to_download.empty();
+        }
+    } catch (...) {
+        // API call failed — fall back to hardcoded list below
+    }
+
+    // Extensions that are useful for MLX model loading.
+    // SKIP large native formats we can't load without conversion.
+    auto should_download = [](const std::string& fname) -> bool {
+        auto ends_with = [](const std::string& s, const std::string& suf) {
+            return s.size() >= suf.size() && s.compare(s.size()-suf.size(), suf.size(), suf) == 0;
+        };
+        // Skip formats we cannot load directly
+        for (const auto& skip : {".bin", ".pt", ".h5", ".msgpack", ".safetensors.index.json.bak"}) {
+            if (ends_with(fname, skip)) return false;
+        }
+        // Skip PyTorch-specific metadata/index files we never use
+        if (fname.find("pytorch_model") == 0) return false;
+        if (fname.find("flax_model") == 0) return false;
+        if (fname.find("tf_model") == 0) return false;
+        // Download these useful formats
+        for (const auto& good : {".json", ".safetensors", ".model", ".txt", ".jinja", ".token"}) {
+            if (ends_with(fname, good)) return true;
+        }
+        return false;
+    };
+
+    // Filter by allow_patterns if provided
+    auto matches_allow = [&](const std::string& fname) -> bool {
+        if (allow_patterns.empty()) return true;
+        for (const auto& pat : allow_patterns) {
+            if (fname == pat) return true;
+            // Simple glob: pat ends with '*' → prefix match
+            if (!pat.empty() && pat.back() == '*' &&
+                fname.size() >= pat.size()-1 &&
+                fname.compare(0, pat.size()-1, pat, 0, pat.size()-1) == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (api_ok) {
+        // Universal: download every relevant file the repo actually has
+        bool found_weights = false;
+        std::string weights_err;
+        for (const auto& f : files_to_download) {
+            if (!should_download(f) || !matches_allow(f)) continue;
+            bool is_weights = (f.find(".safetensors") != std::string::npos);
+            try {
+                download_file(repo_id, f, revision, is_weights ? progress : nullptr);
+                if (is_weights) found_weights = true;
+            } catch (const std::exception& e) {
+                if (is_weights) {
+                    weights_err = e.what();
+                    std::cerr << "[hub] failed to download " << f << ": " << e.what() << std::endl;
+                }
+            }
+        }
+        if (!found_weights && !weights_err.empty()) {
+            throw std::runtime_error("Could not download model weights for " + repo_id +
+                                     " (" + weights_err + ")");
+        }
+    } else {
+        // Fallback: hardcoded list (preserves old behavior on API failure)
+        std::vector<std::string> default_files = {
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "generation_config.json",
+        };
+        for (const auto& f : default_files) {
+            try { download_file(repo_id, f, revision, nullptr); } catch (...) {}
+        }
+        // Download safetensors (single or sharded)
+        std::string last_error;
+        try {
+            download_file(repo_id, "model.safetensors", revision, progress);
         } catch (const std::exception& e) {
-            throw std::runtime_error("Could not find model weights for " + repo_id +
-                                     " (single-file error: " + last_error +
-                                     ", sharded error: " + e.what() + ")");
+            last_error = e.what();
+            try {
+                download_file(repo_id, "model.safetensors.index.json", revision, nullptr);
+                auto index_path = cache_path + "/model.safetensors.index.json";
+                if (fs::exists(index_path)) {
+                    std::ifstream index_file(index_path);
+                    nlohmann::json index_json;
+                    index_file >> index_json;
+                    if (index_json.contains("weight_map")) {
+                        std::set<std::string> shard_files;
+                        for (auto& [key, val] : index_json["weight_map"].items()) {
+                            shard_files.insert(val.get<std::string>());
+                        }
+                        for (const auto& shard : shard_files) {
+                            download_file(repo_id, shard, revision, progress);
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                throw std::runtime_error("Could not find model weights for " + repo_id +
+                                         " (single-file error: " + last_error +
+                                         ", sharded error: " + e.what() + ")");
+            }
         }
     }
 

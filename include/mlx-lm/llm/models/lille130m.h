@@ -26,6 +26,10 @@ struct Lille130mConfiguration {
     int vocab_size;
     bool tie_word_embeddings = true;
 
+    // Quantization (optional — read from config.json "quantization" key)
+    int quant_bits = 0;
+    int quant_group_size = 0;
+
     int resolved_head_dim() const { return hidden_size / num_attention_heads; }
 };
 

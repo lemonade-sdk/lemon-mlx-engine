@@ -34,10 +34,55 @@ FetchContent_Declare(
     mlx
     # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        rocm-support
+    GIT_TAG 6abf0b7e # rocm-support (pinned working ExecUpdate commit)
     GIT_SHALLOW    FALSE
 )
-FetchContent_MakeAvailable(mlx)
+# Fetch MLX, apply local patches, then add it. Patching must happen before
+# add_subdirectory()/FetchContent_MakeAvailable so CMakeLists.txt changes (for
+# example removing unsupported ROCm clang flags) affect generated build files.
+FetchContent_GetProperties(mlx)
+if(NOT mlx_POPULATED)
+    FetchContent_Populate(mlx)
+endif()
+set(MLX_SOURCE_DIR "${mlx_SOURCE_DIR}")
+
+if(MLX_BUILD_ROCM AND MLX_SOURCE_DIR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch")
+        execute_process(
+            COMMAND git apply --check "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch"
+            WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
+            RESULT_VARIABLE PATCH_CHECK_RESULT
+            ERROR_QUIET
+            OUTPUT_QUIET
+        )
+        if(PATCH_CHECK_RESULT EQUAL 0)
+            message(STATUS "Applying mlx-rocm-build.patch...")
+            execute_process(
+                COMMAND git apply "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch"
+                WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
+                RESULT_VARIABLE PATCH_RESULT
+            )
+            if(PATCH_RESULT EQUAL 0)
+                message(STATUS "Patch applied successfully")
+            else()
+                message(FATAL_ERROR "Failed to apply mlx-rocm-build.patch")
+            endif()
+        else()
+            execute_process(
+                COMMAND git apply --reverse --check "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx-rocm-build.patch"
+                WORKING_DIRECTORY "${MLX_SOURCE_DIR}"
+                RESULT_VARIABLE PATCH_REVERSE_CHECK_RESULT
+                ERROR_QUIET
+                OUTPUT_QUIET
+            )
+            if(PATCH_REVERSE_CHECK_RESULT EQUAL 0)
+                message(STATUS "mlx-rocm-build.patch already applied, skipping")
+            else()
+                message(FATAL_ERROR "mlx-rocm-build.patch does not apply to fetched MLX source")
+            endif()
+        endif()
+endif()
+
+add_subdirectory("${mlx_SOURCE_DIR}" "${mlx_BINARY_DIR}")
 
 # nlohmann/json (MLX may already provide this)
 if(NOT TARGET nlohmann_json::nlohmann_json)
@@ -113,6 +158,8 @@ add_library(mlx-lm-common
     src/common/base_config.cpp
     src/common/hub_api.cpp
     src/common/safetensors.cpp
+    src/common/gguf_loader.cpp
+    src/common/registry.cpp
     src/common/switch_layers.cpp
     src/common/ssm_utils.cpp
     src/common/rope_utils.cpp
@@ -123,6 +170,7 @@ add_library(mlx-lm-common
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
     src/common/graph_decode.cpp
+    src/common/gpu_stubs.cpp
     src/llm/models/mtp_head.cpp
     src/llm/models/mtp_moe.cpp
 )
@@ -136,6 +184,11 @@ target_link_libraries(mlx-lm-common PUBLIC
     tokenizers_cpp
 )
 target_include_directories(mlx-lm-common PUBLIC ${minja_SOURCE_DIR}/include)
+# Patched minja headers (capitalize filter, etc.) take precedence over the
+# upstream minja version fetched by FetchContent.
+target_include_directories(mlx-lm-common BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/patched
+)
 
 # Propagate ROCm flag as compile definition so C++ code can use #if defined(MLX_BUILD_ROCM)
 if(MLX_BUILD_ROCM)
@@ -183,12 +236,14 @@ add_library(mlx-lm-llm
     src/llm/models/gptoss.cpp
     src/llm/models/lfm2_moe.cpp
     src/llm/models/gemma3n_text.cpp
+    src/llm/models/gemma4.cpp
     src/llm/models/jamba.cpp
     src/llm/models/baichuan_m1.cpp
     src/llm/models/falcon_h1.cpp
     src/llm/models/lfm2.cpp
     src/llm/models/nemotron_h.cpp
     src/llm/models/granite_moe_hybrid.cpp
+    src/llm/models/bitnet.cpp
 )
 target_link_libraries(mlx-lm-llm PUBLIC mlx-lm-common)
 
@@ -224,6 +279,63 @@ target_link_libraries(mlx-lm-vlm PUBLIC mlx-lm-common)
 # stb include path (header-only)
 target_include_directories(mlx-lm-common PUBLIC ${stb_SOURCE_DIR})
 
+# NPU backend (optional, requires XRT)
+# NPU backend (optional, requires IRON Python stack + XRT)
+if(MLX_LM_BUILD_NPU)
+    # The NPU backend uses the IRON JIT via Python subprocess.
+    # Install IRON: pip install mlir-aie
+    
+    # MLIR-AIE venv path for IRON JIT
+    set(NPU_VENV_DIR "${CMAKE_SOURCE_DIR}/../mlir-aie/.venv")
+    
+    # Copy JIT helpers to build directory
+    configure_file(
+        src/npu/kernels/ternary_gemv.py
+        ${CMAKE_BINARY_DIR}/bin/ternary_gemv.py
+        COPYONLY
+    )
+    
+    # Find LLVM-AIE compiler
+    find_program(AIE2_CLANG clang++
+        PATHS "${NPU_VENV_DIR}/lib/python3.14/site-packages/llvm-aie/bin"
+        NO_DEFAULT_PATH
+    )
+    if(NOT AIE2_CLANG)
+        message(STATUS "NPU: LLVM-AIE clang not found, kernel will be JIT-compiled at runtime")
+    else()
+        # Compile the AIE kernel at build time
+        set(AIE_KERNEL_SRC "${CMAKE_SOURCE_DIR}/src/npu/kernels/ternary_gemv_aie.cpp")
+        set(AIE_KERNEL_OBJ "${CMAKE_BINARY_DIR}/kernels/ternary_gemv_aie.o")
+        add_custom_command(
+            OUTPUT ${AIE_KERNEL_OBJ}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/kernels"
+            COMMAND ${AIE2_CLANG} --target=aie2-none-unknown-elf -O2 -std=c++20
+                -c "${AIE_KERNEL_SRC}" -o "${AIE_KERNEL_OBJ}"
+            DEPENDS ${AIE_KERNEL_SRC}
+            COMMENT "Compiling AIE2 kernel: ternary_gemv_aie"
+        )
+        add_custom_target(aie_kernels ALL DEPENDS ${AIE_KERNEL_OBJ})
+    endif()
+    
+    add_library(mlx-lm-npu STATIC
+        src/npu/npu_backend.cpp
+    )
+    target_include_directories(mlx-lm-npu PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    )
+    target_compile_definitions(mlx-lm-npu PUBLIC
+        MLX_BUILD_NPU
+        NPU_INSTALL_DIR="${CMAKE_BINARY_DIR}"
+    )
+    if(AIE2_CLANG)
+        add_dependencies(mlx-lm-npu aie_kernels)
+    endif()
+    message(STATUS "NPU backend enabled (JIT path)")
+    if(AIE2_CLANG)
+        message(STATUS "  AIE2 compiler: ${AIE2_CLANG}")
+    endif()
+endif()
+
 if(MLX_LM_BUILD_EXAMPLES)
     add_executable(chat examples/chat.cpp)
     target_link_libraries(chat PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core)
@@ -231,6 +343,10 @@ if(MLX_LM_BUILD_EXAMPLES)
         find_package(hip QUIET)
         target_compile_definitions(chat PRIVATE MLX_BUILD_ROCM)
         target_link_libraries(chat PRIVATE hip::host)
+    endif()
+    if(MLX_LM_BUILD_NPU AND TARGET mlx-lm-npu)
+        target_link_libraries(chat PRIVATE mlx-lm-npu)
+        target_compile_definitions(chat PRIVATE MLX_BUILD_NPU)
     endif()
 
     add_executable(diagnose examples/diagnose.cpp)
@@ -262,11 +378,16 @@ if(MLX_LM_BUILD_EXAMPLES)
         target_link_libraries(test_donate PRIVATE mlx)
 
         add_executable(test_arena examples/test_arena.cpp)
-        target_link_libraries(test_arena PRIVATE mlx)
+        target_link_libraries(test_arena PRIVATE mlx-lm-common)
     endif()
 
     add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)
     target_link_libraries(test_sdpa_ref PRIVATE mlx)
+
+    if(MLX_LM_BUILD_NPU AND TARGET mlx-lm-npu)
+        add_executable(test_npu examples/test_npu.cpp)
+        target_link_libraries(test_npu PRIVATE mlx-lm-npu)
+    endif()
 
     add_executable(server
         examples/server.cpp

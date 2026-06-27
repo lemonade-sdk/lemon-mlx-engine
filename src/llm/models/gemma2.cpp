@@ -191,7 +191,7 @@ mx::array Gemma2ModelInner::operator()(const mx::array& inputs, std::vector<KVCa
 }
 
 mx::array Gemma2ModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Gemma2ModelInner::weight_map() {
@@ -208,7 +208,7 @@ std::unordered_map<std::string, mx::array*> Gemma2ModelInner::weight_map() {
 // --- Gemma2Model ---
 
 Gemma2Model::Gemma2Model(const Gemma2Configuration& args)
-    : config_(args), model_(args), logit_soft_cap_(args.final_logit_softcapping)
+    : config_(args), model_(config_), logit_soft_cap_(args.final_logit_softcapping)
 {
     kv_heads_.resize(args.num_hidden_layers, args.num_key_value_heads);
 }
