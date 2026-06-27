@@ -19,11 +19,7 @@
 #include <mlx-lm/common/graph_decode.h>
 namespace mlx::core {
 void gpu_set_graph_decode_mode(bool v);
-// Build-once pure-relaunch decode + deterministic arena (rocm backend bridge).
-void decode_pure_record(int slot);
-void decode_pure_replay(int slot);
-void decode_pure_off();
-size_t decode_pure_chain_len(int slot);
+// Deterministic arena (rocm backend bridge).
 bool decode_arena_begin(size_t capacity, int device, void* stream);
 void decode_arena_reset();
 void decode_arena_freeze_floor();
