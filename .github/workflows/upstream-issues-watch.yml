@@ -1,0 +1,67 @@
+name: upstream-issues-watch
+
+on:
+  schedule:
+    # Daily at 08:00 UTC
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  watch:
+    name: Fetch upstream issues
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history of UPSTREAM_ISSUES.md to know what's new
+          fetch-depth: 2
+
+      - name: Fetch recent issues from upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # In fork context: fetch from the upstream owner/repo
+          UPSTREAM="lemonade-sdk/lemon-mlx-engine"
+          CACHE="UPSTREAM_ISSUES.md"
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Get all open issues from upstream (API max 100 per page)
+          echo "# Upstream Issues — ${UPSTREAM}" > "${CACHE}.new"
+          echo "Last checked: ${NOW}" >> "${CACHE}.new"
+          echo "" >> "${CACHE}.new"
+
+          curl -s "https://api.github.com/repos/${UPSTREAM}/issues?state=open&per_page=50&sort=created&direction=desc" \
+            | jq -r '.[] | select(.pull_request == null) | "- [#\(.number)](\(.html_url)) — \(.title) (\(.created_at))"' \
+            >> "${CACHE}.new" 2>/dev/null || echo "_No issues found or API error_" >> "${CACHE}.new"
+
+          # Diff against what we had before
+          if [ -f "$CACHE" ]; then
+            OLD_COUNT=$(grep -c '^\- \[' "$CACHE" 2>/dev/null || echo 0)
+            NEW_COUNT=$(grep -c '^\- \[' "${CACHE}.new" 2>/dev/null || echo 0)
+            echo "Previous issue count: ${OLD_COUNT}, Current: ${NEW_COUNT}"
+
+            # Find new issues (lines in .new not in old)
+            NEW_ISSUES=$(comm -13 <(grep '^\- \[' "$CACHE" 2>/dev/null | sort) <(grep '^\- \[' "${CACHE}.new" | sort) || true)
+            if [ -n "$NEW_ISSUES" ]; then
+              echo "New issues since last check:"
+              echo "$NEW_ISSUES"
+            fi
+          fi
+
+          mv "${CACHE}.new" "$CACHE"
+
+      - name: Commit updated issue list
+        run: |
+          if git diff --quiet UPSTREAM_ISSUES.md; then
+            echo "No changes to UPSTREAM_ISSUES.md"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add UPSTREAM_ISSUES.md
+          git commit -m "chore: update upstream issue watch [skip ci]"
+          git push
