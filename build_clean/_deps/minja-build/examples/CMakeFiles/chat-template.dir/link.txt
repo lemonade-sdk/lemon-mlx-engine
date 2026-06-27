@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/chat-template.dir/link.d "CMakeFiles/chat-template.dir/chat-template.cpp.o" -o chat-template

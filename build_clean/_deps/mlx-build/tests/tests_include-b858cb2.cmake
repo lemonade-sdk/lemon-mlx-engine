@@ -1,5 +1,0 @@
-if(EXISTS "/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-build/tests/tests_tests-b858cb2.cmake")
-  include("/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/mlx-build/tests/tests_tests-b858cb2.cmake")
-else()
-  add_test(tests_NOT_BUILT-b858cb2 tests_NOT_BUILT-b858cb2)
-endif()

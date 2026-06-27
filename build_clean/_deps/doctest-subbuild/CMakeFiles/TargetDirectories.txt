@@ -1,3 +1,0 @@
-/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/doctest-subbuild/CMakeFiles/doctest-populate.dir
-/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/doctest-subbuild/CMakeFiles/edit_cache.dir
-/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/doctest-subbuild/CMakeFiles/rebuild_cache.dir

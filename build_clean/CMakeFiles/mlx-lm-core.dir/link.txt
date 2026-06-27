@@ -1,2 +1,0 @@
-/usr/bin/ar qc libmlx-lm-core.a "CMakeFiles/mlx-lm-core.dir/src/core/module.cpp.o"
-/usr/bin/ranlib libmlx-lm-core.a

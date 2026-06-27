@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/bcloud/lemon-mlx-engine-fork/build_clean/_deps/stb-subbuild/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

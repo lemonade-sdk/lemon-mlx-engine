@@ -1,2 +1,0 @@
-/usr/bin/ar qc libmlx-lm-embedders.a "CMakeFiles/mlx-lm-embedders.dir/src/embedders/pooling.cpp.o" "CMakeFiles/mlx-lm-embedders.dir/src/embedders/bert.cpp.o" "CMakeFiles/mlx-lm-embedders.dir/src/embedders/nomic_bert.cpp.o" "CMakeFiles/mlx-lm-embedders.dir/src/embedders/qwen3_embed.cpp.o" "CMakeFiles/mlx-lm-embedders.dir/src/embedders/embedder_factory.cpp.o"
-/usr/bin/ranlib libmlx-lm-embedders.a

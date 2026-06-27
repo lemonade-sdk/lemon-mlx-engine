@@ -46,3 +46,4 @@ build-ci/
 *.xclbin
 __pycache__/
 swap_npu.sh
+build_clean/
