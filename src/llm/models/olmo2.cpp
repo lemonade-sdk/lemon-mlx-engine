@@ -277,7 +277,7 @@ mx::array Olmo2ModelInner::operator()(
 }
 
 mx::array Olmo2ModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> Olmo2ModelInner::weight_map() {
@@ -299,7 +299,7 @@ std::unordered_map<std::string, mx::array*> Olmo2ModelInner::weight_map() {
 // --- Olmo2Model ---
 
 Olmo2Model::Olmo2Model(const Olmo2Configuration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
 
@@ -328,7 +328,7 @@ mx::array Olmo2Model::forward_impl(
 {
     auto out = model_(inputs, cache);
     if (lm_head_weight_.has_value()) {
-        return mx::matmul(out, mx::transpose(lm_head_weight_.value()));
+        return linear_forward(out, lm_head_weight_.value());
     } else {
         return model_.embed_as_linear(out);
     }

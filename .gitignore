@@ -1,5 +1,6 @@
 # Build
 build/
+build_full/
 build-npu/
 cmake-build-*/
 out/
@@ -42,3 +43,6 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 build-ci/
+*.xclbin
+__pycache__/
+swap_npu.sh

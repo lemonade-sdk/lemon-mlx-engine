@@ -353,7 +353,7 @@ mx::array LFM2MoEModelInner::operator()(const mx::array& inputs, std::vector<KVC
 }
 
 mx::array LFM2MoEModelInner::embed_as_linear(const mx::array& x) const {
-    return mx::matmul(x, mx::transpose(embed_tokens_weight_));
+    return linear_forward(x, embed_tokens_weight_);
 }
 
 std::unordered_map<std::string, mx::array*> LFM2MoEModelInner::weight_map() {
@@ -370,7 +370,7 @@ std::unordered_map<std::string, mx::array*> LFM2MoEModelInner::weight_map() {
 // --- LFM2MoEModel ---
 
 LFM2MoEModel::LFM2MoEModel(const LFM2MoEConfiguration& config)
-    : config_(config), model_(config)
+    : config_(config), model_(config_)
 {
     std::set<int> attn_set(config.full_attn_idxs.begin(), config.full_attn_idxs.end());
     kv_heads_.resize(config.num_hidden_layers);

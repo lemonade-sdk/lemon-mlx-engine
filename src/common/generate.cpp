@@ -1,6 +1,7 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 
 #include <mlx-lm/common/generate.h>
+#include <mlx-lm/common/gpu_stubs.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx/mlx.h>
@@ -14,8 +15,7 @@
 #include <iostream>
 
 #if defined(MLX_BUILD_ROCM)
-// Decode-mode toggle (defined in mlx/backend/rocm/eval.cpp; declared here to
-// avoid pulling HIP headers into engine code).
+#include <mlx-lm/common/graph_decode.h>
 namespace mlx::core {
 void gpu_set_graph_decode_mode(bool v);
 } // namespace mlx::core
@@ -344,6 +344,110 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 
     return convert_to_token(result.logits);
 }
+
+#if defined(MLX_BUILD_ROCM)
+// Build-once pure-relaunch decode step. State machine:
+//   0 warmup     — engage device-pos; warm mx::compile caches (no record)
+//   1 record     — record the per-token graph chain once
+//   2 replay     — relaunch the recorded chain every token
+//   9 disabled   — fell back to the normal path (arena overflow / mismatch)
+// One graph suffices: the GatedDeltaNet recurrent state lives in a single static
+// buffer updated in place (no parity ping-pong), and position + input token are
+// injected each step via fixed-address device buffers.
+mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
+    StreamGuard sg(generation_stream());
+    namespace mc = mlx::core;
+
+    static const size_t arena_bytes = [] {
+        const char* e = std::getenv("MLX_DECODE_ARENA_MB");
+        return size_t(e ? std::atoll(e) : 1024) << 20;
+    }();
+    static const bool noreplay = std::getenv("MLX_PURE_NOREPLAY") != nullptr;
+
+    LMInput::Text in(mlx_lm::graph_decode_input());  // [1,1] int32, fixed addr
+
+    // Feed input + advance position via IMMEDIATE launches (loop-owned, between
+    // relaunches) — never recorded graph nodes.
+    mc::gpu_set_graph_decode_mode(false);
+    mx::array prev_tok = previous.tokens;
+    mlx_lm::set_graph_decode_input_from(prev_tok);  // device copy -> fixed buffer
+    if (pure_graph_state_ == 0) {
+        mlx_lm::set_graph_external_pos(true);
+        int off = 0;
+        for (auto& c : cache_) off = std::max(off, c.offset());
+        mlx_lm::set_graph_decode_pos(off);
+        pure_pos_ = off;
+        for (auto& c : cache_) c.reserve_to(pure_graph_cap_);
+    } else {
+        mlx_lm::advance_graph_decode_pos(1);
+        pure_pos_ += 1;
+    }
+    // Move GDN scratch next-state [2]/[3] -> read state [0]/[1] (immediate).
+    static const bool cpdbg = std::getenv("MLX_COPY_DEBUG") != nullptr;
+    int n_mamba = 0, n_scratch = 0;
+    if (pure_graph_state_ >= 1) {
+        for (auto& c : cache_) {
+            auto* m = c.as_mamba();
+            if (!m) continue;
+            n_mamba++;
+            if ((*m)[2].has_value()) {
+                n_scratch++;
+                mc::gpu_buffer_copy((*m)[0].value(), (*m)[2].value());
+                mc::gpu_buffer_copy((*m)[1].value(), (*m)[3].value());
+            }
+        }
+        if (cpdbg) fprintf(stderr, "[cp] mamba=%d scratch=%d\n", n_mamba, n_scratch);
+    }
+    mc::gpu_set_graph_decode_mode(true);
+
+    // Single static recurrent-state buffer (in-place RMW) -> ONE graph, no
+    // parity. Record once, then relaunch the same chain every token.
+    if (!noreplay) {
+        if (pure_graph_state_ == 1) {
+            mc::decode_arena_begin(arena_bytes, 0, nullptr);
+            mc::decode_arena_reset();
+            mc::decode_pure_record(0);
+        } else if (pure_graph_state_ == 2) {
+            mc::decode_arena_reset();
+            mc::decode_pure_replay(0);
+        }
+    }
+
+    auto result = context_.call_fn(
+        in, cache_.empty() ? nullptr : &cache_,
+        state_.has_value() ? &state_.value() : nullptr);
+    state_ = result.state;
+    auto token = convert_to_token(result.logits);
+    // Force-eval token + GDN scratch states (the loop reads their raw buffers).
+    std::vector<mx::array> ev{token};
+    for (auto& c : cache_) {
+        auto* m = c.as_mamba();
+        if (m && (*m)[2].has_value()) { ev.push_back((*m)[2].value()); ev.push_back((*m)[3].value()); }
+    }
+    mx::eval(ev);
+
+    static const bool pure_dbg = std::getenv("MLX_PURE_DEBUG") != nullptr;
+    if (pure_dbg) {
+        fprintf(stderr, "[pure] state=%d pos=%d in=%d sampled=%d\n",
+                pure_graph_state_, pure_pos_,
+                mlx_lm::graph_decode_input().item<int>(), token.item<int>());
+    }
+
+    auto disable = [&]() {
+        mc::decode_pure_off();
+        mc::decode_arena_end();
+        mlx_lm::set_graph_external_pos(false);
+        pure_graph_state_ = 9;
+    };
+    if (pure_graph_state_ == 0) {
+        pure_graph_state_ = 1;                       // next token records
+    } else if (pure_graph_state_ == 1) {
+        if (mc::decode_arena_overflowed()) disable();
+        else pure_graph_state_ = 2;                  // recorded -> replay
+    }
+    return token;
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // TokenIterator — prepare (prompt prefill)
@@ -812,6 +916,28 @@ std::optional<int> TokenIterator::next() {
 
     // Standard path: single token generation.
     static const bool g_sync_decode = std::getenv("MLX_SYNC_DECODE") != nullptr;
+
+#if defined(MLX_BUILD_ROCM)
+    // Build-once pure-relaunch graph decode (opt-in, qwen35-moe device-pos path).
+    static const bool pure_enabled =
+        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr;
+    if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
+        if (pure_graph_cap_ == 0) {
+            int off = 0;
+            for (auto& c : cache_) off = std::max(off, c.offset());
+            int remaining = max_tokens_.has_value()
+                ? std::max(0, max_tokens_.value() - token_count_) : 256;
+            pure_graph_cap_ = off + remaining + 8;
+        }
+        auto previous_y = y_;
+        auto token = step_pure_graph(previous_y);
+        y_ = LMInput::Text(token);
+        token_count_++;
+        measure_prefill_boundary_();
+        return token.item<int32_t>();
+    }
+#endif
+
     auto previous_y = y_;
     auto token = step(previous_y);
     y_ = LMInput::Text(token);

@@ -34,6 +34,21 @@ struct LlamaConfiguration {
     bool tie_word_embeddings = true;
     bool attention_bias = false;
     bool mlp_bias = false;
+    std::string hidden_act = "silu";
+    // Some MLX BitLinear checkpoints store weight_scale as an inverse divisor
+    // (scale = 1 / weight_scale). True BitNet/autobitlinear checkpoints store
+    // the direct multiplier.
+    bool bitnet_invert_weight_scales = false;
+    // For 1-bit models with silu activation that still have sub-norms
+    // (1bitLLM style). Setting this to true enables attn_sub_norm and
+    // ffn_sub_norm even when hidden_act != "relu2".
+    bool bitnet_has_sub_norm = false;
+    // Activation quantization bits (0 = off). 1bitLLM uses 8-bit activation
+    // quantization. When set, linear_fwd will quantize activations before
+    // each matmul to match BitLinear's activation_quant behavior.
+    int activation_bits = 0;
+    // Quantization method (aqlm, bitnet, etc.). Empty = standard floating point.
+    std::string quant_method;
 
     int resolved_head_dim() const {
         return head_dim.value_or(hidden_size / num_attention_heads);
@@ -108,6 +123,8 @@ public:
 };
 
 // Llama MLP.
+enum class ActivationType { SwiGLU, GeluTanh };
+
 class LlamaMLP {
     mlx::core::array gate_weight_;
     std::optional<mlx::core::array> gate_bias_;
@@ -115,6 +132,7 @@ class LlamaMLP {
     std::optional<mlx::core::array> down_bias_;
     mlx::core::array up_weight_;
     std::optional<mlx::core::array> up_bias_;
+    ActivationType activation_type_ = ActivationType::SwiGLU;
 
     mlx::core::array linear(const mlx::core::array& x,
                             const mlx::core::array& weight,

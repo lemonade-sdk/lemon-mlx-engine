@@ -12,6 +12,7 @@ namespace mlx_lm {
 // Quantization mode.
 enum class QuantizationMode {
     Affine,
+    Mxfp4,
 };
 
 // Quantization parameters.
@@ -25,7 +26,11 @@ inline void from_json(const nlohmann::json& j, Quantization& q) {
     q.group_size = j.value("group_size", 64);
     q.bits = j.value("bits", 4);
     auto mode_str = j.value("mode", std::string("affine"));
-    q.mode = QuantizationMode::Affine; // only mode for now
+    if (mode_str == "mxfp4") {
+        q.mode = QuantizationMode::Mxfp4;
+    } else {
+        q.mode = QuantizationMode::Affine;
+    }
 }
 
 // Per-layer quantization option.

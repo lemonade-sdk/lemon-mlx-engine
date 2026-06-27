@@ -28,6 +28,8 @@ struct Qwen3Configuration {
     int head_dim;
     std::optional<std::unordered_map<std::string, StringOrNumber>> rope_scaling;
     bool tie_word_embeddings = false;
+    bool has_pre_norms = false;  // Per-projection rms_norm (BitNet variants)
+    bool bitnet_invert_weight_scales = false;  // 1/scale for bitlinear checkpoints
 };
 
 void from_json(const nlohmann::json& j, Qwen3Configuration& c);
@@ -40,6 +42,9 @@ class Qwen3Attention {
 
     mlx::core::array wq_weight_, wk_weight_, wv_weight_, wo_weight_;
     mlx::core::array q_norm_weight_, k_norm_weight_;
+    // Optional per-projection norms (used by BitNet variants)
+    mlx::core::array wq_pre_norm_, wk_pre_norm_, wv_pre_norm_, wo_pre_norm_;
+    bool has_pre_norms_ = false;
     float rms_norm_eps_;
 
     float rope_theta_;
@@ -51,15 +56,20 @@ public:
                                  const AttentionMask& mask,
                                  KVCache* cache);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+    void enable_pre_norms() { has_pre_norms_ = true; }
 };
 
 class Qwen3MLP {
     mlx::core::array gate_weight_, down_weight_, up_weight_;
+    // Optional per-projection norms (used by BitNet variants)
+    mlx::core::array gate_pre_norm_, up_pre_norm_, down_pre_norm_;
+    bool has_pre_norms_ = false;
 
 public:
     Qwen3MLP(int dimensions, int hidden_dimensions);
     mlx::core::array operator()(const mlx::core::array& x);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+    void enable_pre_norms() { has_pre_norms_ = true; }
 };
 
 class Qwen3TransformerBlock {
@@ -75,6 +85,8 @@ public:
                                  const AttentionMask& mask,
                                  KVCache* cache);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+    Qwen3Attention& attention() { return attention_; }
+    Qwen3MLP& mlp() { return mlp_; }
 };
 
 class Qwen3ModelInner {

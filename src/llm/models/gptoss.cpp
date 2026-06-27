@@ -264,7 +264,7 @@ std::unordered_map<std::string, mx::array*> GPTOSSModelInner::weight_map() {
 // --- GPTOSSModel ---
 
 GPTOSSModel::GPTOSSModel(const GPTOSSConfiguration& config)
-    : config_(config), model_(config),
+    : config_(config), model_(config_),
       lm_head_weight_(mx::zeros({config.vocab_size, config.hidden_size}))
 {
     kv_heads_.resize(config.num_hidden_layers, config.num_key_value_heads);
@@ -280,7 +280,7 @@ LMOutput GPTOSSModel::call_impl(const LMInput::Text& input, std::vector<KVCache>
 
 mx::array GPTOSSModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {
     auto out = model_(inputs, cache);
-    return mx::matmul(out, mx::transpose(lm_head_weight_));
+    return linear_forward(out, lm_head_weight_);
 }
 
 std::vector<KVCache> GPTOSSModel::new_cache_impl(const GenerateParameters& params) {

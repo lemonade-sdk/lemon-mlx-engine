@@ -217,6 +217,34 @@ static mx::fast::CustomKernelFunction& get_gdn_kernel() {
 }
 
 // In-place copy of `src` into `dst`'s buffer (output 0 aliases input 0).
+// In-place KV-cache slice write: writes new_kv [B,H,N,D] into cache [B,H,ALLOC,D]
+// at [:,:,offset:offset+N,:]. Output ALIASES the cache buffer (no copy, no
+// donation check) — `offset` is a runtime scalar so the kernel/topology stays
+// fixed token-to-token (this is what makes the decode graph replayable).
+static const char* kv_inplace_update_hip_source = R"(
+    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    long total = (long)B * H * N * D;
+    if (idx >= total) return;
+    int d = idx % D;
+    long t = idx / D;
+    int i = t % N;
+    long bh = t / N;
+    int off = offset[0];
+    long dst = (bh * (long)ALLOC + (off + i)) * D + d;
+    out[dst] = new_kv[idx];
+)";
+
+static mx::fast::CustomKernelFunction& get_kv_inplace_update_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "kv_inplace_update",
+        {"cache", "new_kv", "offset"},
+        {"out"},
+        kv_inplace_update_hip_source,
+        /*header=*/"", /*ensure_row_contiguous=*/true, /*shared_memory=*/0,
+        /*output_input_aliases=*/{{0, 0}});
+    return kernel;
+}
+
 static mx::fast::CustomKernelFunction& get_inplace_copy_kernel() {
     static auto kernel = mx::fast::hip_kernel(
         "inplace_copy",
@@ -299,6 +327,40 @@ static mx::fast::CustomKernelFunction& get_add_rms_norm_kernel() {
     return kernel;
 }
 
+// Fused gated RMSNorm (GDN/attention output gate): out = silu(gate) *
+// rmsnorm(x) * weight, in one pass. Replaces rms_norm + sigmoid + mul.
+static const char* gated_rms_norm_hip_source = R"(
+    int r = blockIdx.y * blockDim.y + threadIdx.y;   // row
+    int lane = threadIdx.x;                            // 0..31
+    if (r >= N) return;
+    const InT* xr = x + (long)r * H;
+    const InT* gr = gate + (long)r * H;
+    InT* outr = out + (long)r * H;
+    float ss = 0.0f;
+    for (int h = lane; h < H; h += 32) {
+        float s = static_cast<float>(xr[h]);
+        ss += s * s;
+    }
+    for (int off = 16; off > 0; off >>= 1)
+        ss += __shfl_xor(ss, off);
+    float scale = rsqrtf(ss / (float)H + eps[0]);
+    for (int h = lane; h < H; h += 32) {
+        float gv = static_cast<float>(gr[h]);
+        float silu = gv / (1.0f + expf(-gv));
+        outr[h] = static_cast<InT>(static_cast<float>(xr[h]) * scale *
+                                   static_cast<float>(weight[h]) * silu);
+    }
+)";
+
+static mx::fast::CustomKernelFunction& get_gated_rms_norm_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "gated_rms_norm",
+        {"x", "gate", "weight", "eps"},
+        {"out"},
+        gated_rms_norm_hip_source);
+    return kernel;
+}
+
 // Fused MoE router (norm_topk_prob): one warp per row finds the top-K of E
 // logits and softmaxes over just those K, in a single pass — replaces
 // argpartition(block_sort) + slice + take_along + softmax. Each lane owns
@@ -347,6 +409,82 @@ static const char* moe_route_hip_source = R"(
 static mx::fast::CustomKernelFunction& get_moe_route_kernel() {
     static auto kernel = mx::fast::hip_kernel(
         "moe_route", {"logits"}, {"indices", "scores"}, moe_route_hip_source);
+    return kernel;
+}
+
+// FlashQLA-style fused GDN decode (T=1): folds beta/g + q/k-RMSNorm + the delta
+// recurrence into ONE kernel, replacing rms_norm(q)+rms_norm(k)+compiled_beta_g
+// + gated_delta_step (4-5 launches/GDN-layer -> 1). One warp per (batch,v-head);
+// the 32 dk-lanes hold Dk so q/k RMSNorm is a warp __shfl reduction. The output
+// gate (norm_, reduces over Dv across blocks) stays separate. eps = 1e-6.
+static const char* gdn_fused_decode_hip_source = R"(
+    int n = blockIdx.z * blockDim.z + threadIdx.z;
+    int b_idx = n / Hv;
+    int hv_idx = n % Hv;
+    int hk_idx = hv_idx / (Hv / Hk);
+    constexpr int n_per_t = Dk / 32;
+    int dk_idx = threadIdx.x;
+    int dv_idx = blockIdx.y * blockDim.y + threadIdx.y;
+
+    const InT* q_ = q + (long)b_idx * Hk * Dk + hk_idx * Dk;
+    const InT* k_ = k + (long)b_idx * Hk * Dk + hk_idx * Dk;
+    const InT* v_ = v + (long)b_idx * Hv * Dv + hv_idx * Dv;
+    const InT* i_state = state_in + ((long)n * Dv + dv_idx) * Dk;
+    InT* o_state = state_out + ((long)n * Dv + dv_idx) * Dk;
+
+    // beta, g (per head)
+    float beta = 1.0f / (1.0f + expf(-static_cast<float>(b[(long)b_idx * Hv + hv_idx])));
+    float sp = logf(expf(static_cast<float>(a[(long)b_idx * Hv + hv_idx]) +
+                         static_cast<float>(dt_bias[hv_idx])) + 1.0f);
+    float g = expf(-expf(static_cast<float>(a_log[hv_idx])) * sp);
+
+    // load q/k, RMSNorm over Dk (warp reduce across the 32 dk-lanes).
+    // Column layout (s = dk_idx + 32*i): consecutive lanes hit consecutive Dk
+    // -> coalesced loads + independent per-i ops for dual-issue.
+    float ql[n_per_t], kl[n_per_t];
+    float sq = 0.0f, sk = 0.0f;
+    #pragma unroll
+    for (int i = 0; i < n_per_t; ++i) {
+        int s = dk_idx + 32 * i;
+        ql[i] = static_cast<float>(q_[s]); kl[i] = static_cast<float>(k_[s]);
+        sq += ql[i] * ql[i]; sk += kl[i] * kl[i];
+    }
+    for (int o = 16; o > 0; o >>= 1) { sq += __shfl_xor(sq, o); sk += __shfl_xor(sk, o); }
+    float scq = rsqrtf(sq / (float)Dk + 1e-6f);
+    float sck = rsqrtf(sk / (float)Dk + 1e-6f);
+    #pragma unroll
+    for (int i = 0; i < n_per_t; ++i) {
+        int s = dk_idx + 32 * i;
+        ql[i] = ql[i] * scq * static_cast<float>(q_norm_w[s]);
+        kl[i] = kl[i] * sck * static_cast<float>(k_norm_w[s]);
+    }
+
+    // state load (column layout, coalesced)
+    float state[n_per_t];
+    #pragma unroll
+    for (int i = 0; i < n_per_t; ++i) state[i] = static_cast<float>(i_state[dk_idx + 32 * i]);
+
+    // recurrence (single timestep)
+    float kv_mem = 0.0f;
+    #pragma unroll
+    for (int i = 0; i < n_per_t; ++i) { state[i] *= g; kv_mem += state[i] * kl[i]; }
+    for (int o = 16; o > 0; o >>= 1) kv_mem += __shfl_xor(kv_mem, o);
+    float delta = (static_cast<float>(v_[dv_idx]) - kv_mem) * beta;
+    float out = 0.0f;
+    #pragma unroll
+    for (int i = 0; i < n_per_t; ++i) { state[i] += kl[i] * delta; out += state[i] * ql[i]; }
+    for (int o = 16; o > 0; o >>= 1) out += __shfl_xor(out, o);
+    if (dk_idx == 0) y[(long)b_idx * Hv * Dv + hv_idx * Dv + dv_idx] = static_cast<InT>(out);
+    #pragma unroll
+    for (int i = 0; i < n_per_t; ++i) o_state[dk_idx + 32 * i] = static_cast<InT>(state[i]);
+)";
+
+static mx::fast::CustomKernelFunction& get_gdn_fused_decode_kernel() {
+    static auto kernel = mx::fast::hip_kernel(
+        "gdn_fused_decode",
+        {"q", "k", "v", "b", "a", "a_log", "dt_bias", "q_norm_w", "k_norm_w", "state_in"},
+        {"y", "state_out"},
+        gdn_fused_decode_hip_source);
     return kernel;
 }
 
@@ -678,6 +816,39 @@ std::pair<mx::array, mx::array> gated_delta_update(
     return gated_delta_ops(q, k, v, g, beta, s, mask, inplace_state);
 }
 
+std::pair<mx::array, mx::array> gdn_fused_decode(
+    const mx::array& q, const mx::array& k, const mx::array& v,
+    const mx::array& a, const mx::array& b,
+    const mx::array& a_log, const mx::array& dt_bias,
+    const mx::array& q_norm_w, const mx::array& k_norm_w,
+    const mx::array& state)
+{
+    int B = q.shape(0);
+    int Hk = q.shape(2), Dk = q.shape(3);
+    int Hv = v.shape(2), Dv = v.shape(3);
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    static const bool force_fallback = std::getenv("MLX_GDN_FUSED2_MXOPS") != nullptr;
+    if (!force_fallback) {
+        auto t = q.dtype();
+        auto al = mx::astype(a_log, mx::float32);
+        auto db = mx::astype(dt_bias, mx::float32);
+        auto results = get_gdn_fused_decode_kernel()(
+            {q, k, v, b, a, al, db, q_norm_w, k_norm_w, state},
+            {{B, 1, Hv, Dv}, state.shape()},
+            {t, t},
+            {32, Dv, B * Hv},      // grid (total threads, Metal-style)
+            {32, 4, 1},            // threadgroup
+            {{"InT", t}, {"Dk", Dk}, {"Dv", Dv}, {"Hk", Hk}, {"Hv", Hv}},
+            std::nullopt, true, {});
+        return {results[0], results[1]};
+    }
+#endif
+    auto qn = mx::fast::rms_norm(q, q_norm_w, 1e-6f);
+    auto kn = mx::fast::rms_norm(k, k_norm_w, 1e-6f);
+    return gated_delta_update(qn, kn, v, a, b, a_log, dt_bias, state,
+                             std::nullopt, false);
+}
+
 std::pair<mx::array, mx::array> gdn_conv_step(
     const mx::array& conv_state,  // [B, KS-1, CD]
     const mx::array& qkv,         // [B, 1, CD]
@@ -738,6 +909,31 @@ std::pair<mx::array, mx::array> add_rms_norm(
     return {s, mx::fast::rms_norm(s, weight, eps)};
 }
 
+mx::array gated_rms_norm(
+    const mx::array& x, const mx::array& gate,
+    const mx::array& weight, float eps)
+{
+    int H = x.shape(-1);
+    int N = static_cast<int>(x.size() / H);
+    auto t = x.dtype();
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    static const bool force_mxops = std::getenv("MLX_FUSED_NORM_MXOPS") != nullptr;
+    if (!force_mxops) {
+        auto results = get_gated_rms_norm_kernel()(
+            {x, gate, weight, mx::array(eps)},
+            {x.shape()},
+            {t},
+            {32, N, 1},   // grid (total threads): one wave per row
+            {32, 1, 1},   // threadgroup
+            {{"InT", t}, {"H", H}, {"N", N}},
+            std::nullopt, true, {});
+        return results[0];
+    }
+#endif
+    auto normed = mx::fast::rms_norm(x, weight, eps);
+    return mx::multiply(mx::multiply(gate, mx::sigmoid(gate)), normed);
+}
+
 std::pair<mx::array, mx::array> moe_route(const mx::array& logits, int k) {
     int E = logits.shape(-1);
     int rows = static_cast<int>(logits.size() / E);
@@ -766,6 +962,29 @@ std::pair<mx::array, mx::array> moe_route(const mx::array& logits, int k) {
 }
 
 // In-place write of src into dst's device buffer (same total element count).
+mx::array kv_inplace_update(
+    const mx::array& cache, const mx::array& new_kv, int offset)
+{
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    int B = cache.shape(0), H = cache.shape(1);
+    int ALLOC = cache.shape(2), D = cache.shape(3);
+    int N = new_kv.shape(2);
+    long total = (long)B * H * N * D;
+    auto res = get_kv_inplace_update_kernel()(
+        {cache, new_kv, mx::array(offset, mx::int32)},
+        {cache.shape()}, {cache.dtype()},
+        {static_cast<int>(total), 1, 1}, {256, 1, 1},
+        {{"B", B}, {"H", H}, {"ALLOC", ALLOC}, {"D", D}, {"N", N}},
+        std::nullopt, true, {});
+    return res[0];
+#else
+    mx::Shape st{0, 0, offset, 0};
+    mx::Shape sp{cache.shape(0), cache.shape(1), offset + new_kv.shape(2),
+                 cache.shape(3)};
+    return mx::slice_update(cache, new_kv, st, sp, mx::Shape{1, 1, 1, 1});
+#endif
+}
+
 mx::array inplace_write(const mx::array& dst, const mx::array& src) {
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     int n = static_cast<int>(src.size());

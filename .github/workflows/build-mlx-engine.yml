@@ -225,7 +225,10 @@ jobs:
         retention-days: 30
 
   build-macos:
-    runs-on: macos-latest
+    # Pinned: macos-latest moved to macOS 26 (Xcode 26 / SDK 26), whose Metal
+    # toolchain compiles the metallib as MSL 4.0 — not loadable on the test
+    # runner's Metal runtime. macos-15 keeps the metallib at MSL 3.2.
+    runs-on: macos-15
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.should_build_macos == 'true'
 
@@ -342,7 +345,7 @@ jobs:
           #   timeout_minutes: 30
           - os: macos-arm64
             artifact: mlx-engine-macos-arm64
-            runs_on: '"macos-latest"'
+            runs_on: '"macos-15"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false

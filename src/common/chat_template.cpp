@@ -113,6 +113,14 @@ std::optional<ChatTemplate> load_chat_template(const std::string& model_director
             }
 
             if (!template_str.empty()) {
+                // Patch Jinja2 pipe filters for minja compatibility.
+                // Remove unsupported filters like | capitalize, | trim (cosmetic only).
+                for (auto& filter : {"| capitalize", "| trim", "| upper", "| lower", "| title"}) {
+                    std::string f(filter);
+                    for (auto pos = template_str.find(f); pos != std::string::npos; pos = template_str.find(f, pos)) {
+                        template_str.erase(pos, f.size());
+                    }
+                }
                 return ChatTemplate(template_str, config);
             }
         }
@@ -127,6 +135,12 @@ std::optional<ChatTemplate> load_chat_template(const std::string& model_director
             ss << f.rdbuf();
             auto template_str = ss.str();
             if (!template_str.empty()) {
+                // Patch Jinja2 pipe filters for minja compatibility.
+                for (auto& filter : {"| capitalize", "| trim", "| upper", "| lower", "| title"}) {
+                    std::string f(filter);
+                    for (auto pos = template_str.find(f); pos != std::string::npos; pos = template_str.find(f, pos))
+                        template_str.erase(pos, f.size());
+                }
                 // Load tokenizer_config for special tokens even without chat_template field.
                 nlohmann::json config;
                 if (fs::exists(config_path)) {

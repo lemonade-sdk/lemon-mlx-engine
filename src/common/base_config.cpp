@@ -16,12 +16,32 @@ BaseConfiguration parse_base_configuration(const nlohmann::json& config) {
         base.eos_token_ids = eos;
     }
 
-    if (config.contains("quantization")) {
-        const auto& q_json = config["quantization"];
+    // Check for BitNet quantization — BitNet handles its own repacking internally.
+    // quant_method can appear inside either "quantization" or "quantization_config".
+    auto get_quant_method = [](const nlohmann::json& c) -> std::string {
+        if (c.contains("quantization") && c["quantization"].contains("quant_method"))
+            return c["quantization"]["quant_method"].get<std::string>();
+        if (c.contains("quantization_config") && c["quantization_config"].contains("quant_method"))
+            return c["quantization_config"]["quant_method"].get<std::string>();
+        return std::string();
+    };
+    if (get_quant_method(config) == "bitnet") {
+        return base;
+    }
 
+    // Helper to build PerLayerQuantization from a quantization JSON object.
+    // This is used for both "quantization" (MLX format) and
+    // "quantization_config" (HuggingFace format).
+    auto build_per_layer_quantization = [](const nlohmann::json& q_json) {
         Quantization default_quant;
         default_quant.group_size = q_json.value("group_size", 64);
         default_quant.bits = q_json.value("bits", 4);
+        auto mode_str = q_json.value("mode", std::string("affine"));
+        if (mode_str == "mxfp4") {
+            default_quant.mode = QuantizationMode::Mxfp4;
+        } else {
+            default_quant.mode = QuantizationMode::Affine;
+        }
 
         PerLayerQuantization plq;
         plq.default_quantization = default_quant;
@@ -60,7 +80,14 @@ BaseConfiguration parse_base_configuration(const nlohmann::json& config) {
             }
         }
 
-        base.per_layer_quantization = plq;
+        return plq;
+    };
+
+    if (config.contains("quantization")) {
+        base.per_layer_quantization = build_per_layer_quantization(config["quantization"]);
+    } else if (config.contains("quantization_config")) {
+        // HuggingFace format: read from quantization_config instead.
+        base.per_layer_quantization = build_per_layer_quantization(config["quantization_config"]);
     }
 
     return base;

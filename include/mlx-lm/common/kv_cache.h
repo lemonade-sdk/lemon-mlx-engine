@@ -56,6 +56,21 @@ class KVCacheSimple : public KVCacheBase<KVCacheSimple> {
     int trim_impl(int n);
 
 public:
+    // Device-position write for build-once HIP-graph decode: write new_keys/values
+    // at slot `pos` (a [1] int32 device array) into the pre-allocated buffer via
+    // DynamicSliceUpdate (offset advances device-side on replay). The full buffer
+    // is returned; the caller attends over it with a device-pos length mask.
+    // Requires the buffer pre-allocated to capacity (no growth during decode).
+    std::pair<mlx::core::array, mlx::core::array> update_at_pos(
+        const mlx::core::array& new_keys, const mlx::core::array& new_values,
+        const mlx::core::array& pos);
+
+    // Pre-grow the buffer to `capacity` columns (axis 2) with zeros, keeping the
+    // logical offset. Required before update_at_pos so device-offset writes never
+    // grow/realloc the buffer (which would break the build-once graph's baked
+    // pointers). No-op if not yet populated or already at capacity.
+    void reserve_to(int capacity);
+
     KVCacheSimple() = default;
     explicit KVCacheSimple(int initial_capacity) : initial_capacity_(initial_capacity) {}
     KVCacheSimple(int initial_capacity, int reserve)
@@ -161,7 +176,11 @@ public:
 // Mamba-style state space model cache.
 // Stores conv_state (index 0) and ssm_state (index 1).
 class MambaCache {
-    std::optional<mlx::core::array> states_[2];
+    // [0]=conv_state, [1]=ssm_state. [2]/[3] are scratch "next-state" buffers for
+    // build-once graph decode: the recorded graph reads [0]/[1] and writes the new
+    // state to [2]/[3] (different buffers → no read==write hazard on relaunch);
+    // the decode loop copies [2]->[0], [3]->[1] between relaunches.
+    std::optional<mlx::core::array> states_[4];
     int offset_ = 0;
 
 public:
@@ -291,6 +310,28 @@ public:
     update(const mlx::core::array& keys, const mlx::core::array& values) {
         return std::visit([&](auto& c) { return c.update(keys, values); }, kv_);
     }
+    std::pair<mlx::core::array, mlx::core::array>
+    update_at_pos(const mlx::core::array& keys, const mlx::core::array& values,
+                  const mlx::core::array& pos) {
+        return std::visit([&](auto& c)
+                              -> std::pair<mlx::core::array, mlx::core::array> {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple>) {
+                return c.update_at_pos(keys, values, pos);
+            } else {
+                throw std::runtime_error(
+                    "update_at_pos unsupported for rotating KV sub-cache");
+            }
+        }, kv_);
+    }
+    void reserve_to(int capacity) {
+        std::visit([&](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple>) {
+                c.reserve_to(capacity);
+            }
+        }, kv_);
+    }
     bool is_trimmable() const {
         return std::visit([](const auto& c) { return c.is_trimmable(); }, kv_);
     }
@@ -341,6 +382,34 @@ public:
     std::pair<mlx::core::array, mlx::core::array>
     update(const mlx::core::array& keys, const mlx::core::array& values) {
         return std::visit([&](auto& c) { return c.update(keys, values); }, impl_);
+    }
+
+    // Device-offset write at `pos` (build-once graph decode). Only the simple /
+    // compound KV caches support it.
+    std::pair<mlx::core::array, mlx::core::array>
+    update_at_pos(const mlx::core::array& keys, const mlx::core::array& values,
+                  const mlx::core::array& pos) {
+        return std::visit([&](auto& c)
+                              -> std::pair<mlx::core::array, mlx::core::array> {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, CompoundCache>) {
+                return c.update_at_pos(keys, values, pos);
+            } else {
+                throw std::runtime_error(
+                    "update_at_pos unsupported for this cache type");
+            }
+        }, impl_);
+    }
+
+    void reserve_to(int capacity) {
+        std::visit([&](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, KVCacheSimple> ||
+                          std::is_same_v<T, CompoundCache>) {
+                c.reserve_to(capacity);
+            }
+        }, impl_);
     }
 
     bool is_trimmable() const {
