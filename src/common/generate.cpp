@@ -33,8 +33,8 @@ bool decode_arena_overflowed();
 long decode_inline_launch_count();
 // Full decode-step stream capture (build-once / replay).
 bool decode_capture_begin();
-bool decode_capture_end_record();
-bool decode_capture_replay();
+bool decode_capture_end_record(int slot);
+bool decode_capture_replay(int slot);
 void decode_capture_destroy();
 void gpu_buffer_copy(array& dst, array& src);
 } // namespace mlx::core
@@ -382,6 +382,10 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
         return size_t(e ? std::atoll(e) : 1024) << 20;
     }();
     static const bool noreplay = std::getenv("MLX_PURE_NOREPLAY") != nullptr;
+    // Two-parity zero-copy mode: alternate GDN read/write slots per token so the
+    // write of one relaunch is the read of the next (no per-token state copy).
+    // Default (off) is the proven single-graph + [2]->[0] copy path.
+    static const bool parity_mode = std::getenv("MLX_PURE_PARITY") != nullptr;
 
     LMInput::Text in(mlx_lm::graph_decode_input());  // [1,1] int32, fixed addr
 
@@ -401,28 +405,33 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
         mlx_lm::advance_graph_decode_pos(1);
         pure_pos_ += 1;
     }
-    // Move GDN scratch next-state [2]/[3] -> read state [0]/[1] (immediate). The
-    // captured graph reads [0]/[1] and writes scratch [2]/[3]; this ping-pong is
-    // required for correctness (in-place [0]/[1] in the captured graph does not
-    // hold the fixed address the relaunch bakes -> divergent state).
-    static const bool cpdbg = std::getenv("MLX_COPY_DEBUG") != nullptr;
-    int n_mamba = 0, n_scratch = 0;
-    if (pure_graph_state_ >= 1) {
+
+    // GDN recurrent-state ping-pong parity. parity 0: graph reads [0]/[1], writes
+    // scratch [2]/[3]. parity 1: reads [2]/[3], writes [0]/[1]. Single-graph mode
+    // pins parity 0 and copies [2]->[0] each token; two-parity alternates and
+    // copies nothing (one recorded exec per parity, relaunched by pos parity).
+    const int parity = parity_mode ? (pure_step_ & 1) : 0;
+    mlx_lm::set_graph_decode_parity(parity);
+
+    // Single-graph mode only: move GDN scratch next-state [2]/[3] -> read state
+    // [0]/[1] (immediate). The captured graph reads [0]/[1] and writes [2]/[3];
+    // in-place [0]/[1] in the captured graph does not hold the fixed address the
+    // relaunch bakes (-> divergent state), hence the scratch + copy.
+    if (!parity_mode && pure_graph_state_ >= 1) {
         for (auto& c : cache_) {
             auto* m = c.as_mamba();
-            if (!m) continue;
-            n_mamba++;
-            if ((*m)[2].has_value()) {
-                n_scratch++;
+            if (m && (*m)[2].has_value()) {
                 mc::gpu_buffer_copy((*m)[0].value(), (*m)[2].value());
                 mc::gpu_buffer_copy((*m)[1].value(), (*m)[3].value());
             }
         }
-        if (cpdbg) fprintf(stderr, "[cp] mamba=%d scratch=%d\n", n_mamba, n_scratch);
     }
-    // Full-capture build-once/replay: graphs stay OFF so every kernel launches
-    // on the stream (capturable). Record the whole forward once into a single
-    // exec, then relaunch it verbatim every token.
+
+    // Record phase occupies states [1, replay_state); replay is replay_state.
+    // Single-graph: 1 record state (replay at 2). Two-parity: 2 record states,
+    // one per parity (replay at 3).
+    const int replay_state = parity_mode ? 3 : 2;
+
     auto disable = [&]() {
         mc::decode_capture_destroy();
         mc::decode_arena_end();
@@ -432,88 +441,63 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
 
     mx::array token = mx::array(0);
 
-    static const bool stage_dbg = std::getenv("MLX_PURE_STAGEDBG") != nullptr;
-    auto tprev = std::chrono::steady_clock::now();
-    auto stage = [&](const char* s) {
-        if (stage_dbg) {
-            mx::synchronize(generation_stream());
-            auto now = std::chrono::steady_clock::now();
-            fprintf(stderr, "[stage] %-10s %.3f ms\n", s,
-                    std::chrono::duration<double, std::milli>(now - tprev).count());
-            tprev = now;
-        }
-    };
-    if (!noreplay && pure_graph_state_ == 2 && pure_logits_.has_value()) {
-        // REPLAY: input/pos/GDN-state already injected above. Relaunch the
-        // captured forward, then read the freshly-written logits buffer. astype
-        // forces a real copy kernel — slicing the [1,1,V] view would return the
-        // stale recorded value without re-reading the device buffer.
-        stage("pre-reset");
+    if (!noreplay && pure_graph_state_ == replay_state && pure_logits_.has_value()) {
+        // REPLAY: input/pos/parity already set above. Relaunch this parity's
+        // recorded exec, then read the freshly-overwritten logits buffer
+        // (convert_to_token's sample kernel reads it at launch time).
         mc::decode_arena_reset_to_floor();   // keep recorded buffers; sample above
-        stage("reset");
-        static const bool tdbg = std::getenv("MLX_PURE_TIMING") != nullptr;
-        static double t_relaunch = 0, t_sample = 0; static long t_n = 0;
-        auto t0 = std::chrono::steady_clock::now();
-        if (mc::decode_capture_replay()) {
-            stage("replay");
-            auto t1 = std::chrono::steady_clock::now();
-            // The relaunch just overwrote pure_logits_'s buffer; convert_to_token
-            // reads it fresh (argmax/sample is a kernel that reads the buffer at
-            // launch time). No astype copy needed.
+        if (mc::decode_capture_replay(parity)) {
             token = convert_to_token(*pure_logits_);
-            stage("sampled");
-            auto t2 = std::chrono::steady_clock::now();
-            if (tdbg) {
-                t_relaunch += std::chrono::duration<double, std::milli>(t1 - t0).count();
-                t_sample   += std::chrono::duration<double, std::milli>(t2 - t1).count();
-                if (++t_n % 40 == 0)
-                    fprintf(stderr, "[timing] relaunch-dispatch %.3f ms  sample(+sync) %.3f ms (avg/tok)\n",
-                            t_relaunch / t_n, t_sample / t_n);
-            }
         } else {
             disable();  // capture lost -> rebuild via the eager fallback below
         }
     }
 
-    if (pure_graph_state_ != 2 || pure_graph_state_ == 9) {
-        // WARMUP (0), RECORD (1), or fallback: run the forward via call_fn.
-        if (!noreplay && pure_graph_state_ == 1) {
-            mc::decode_arena_begin(arena_bytes, 0, nullptr);
-            mc::decode_arena_reset();
-            mc::decode_capture_begin();   // capture the eager call_fn that follows
+    const bool is_record =
+        !noreplay && pure_graph_state_ >= 1 && pure_graph_state_ < replay_state;
+    if (pure_graph_state_ != replay_state || pure_graph_state_ == 9) {
+        // WARMUP (0), RECORD (1..replay_state-1), or fallback: run via call_fn.
+        if (is_record) {
+            if (pure_graph_state_ == 1)
+                mc::decode_arena_begin(arena_bytes, 0, nullptr);
+            mc::decode_arena_reset();      // record forward allocates from base
+            mc::decode_capture_begin();    // capture the eager call_fn that follows
         }
         auto result = context_.call_fn(
             in, cache_.empty() ? nullptr : &cache_,
             state_.has_value() ? &state_.value() : nullptr);
         state_ = result.state;
 
-        if (!noreplay && pure_graph_state_ == 1) {
+        if (is_record) {
             // Launch the forward INLINE (async_eval: no blocking sync, which is
             // illegal mid-capture) so every kernel records into the capture.
+            // Include all GDN state slots so whichever was written this parity is
+            // eval'd (its producing kernel captured); the rest are no-ops.
             std::vector<mx::array> outs{result.logits};
             for (auto& c : cache_) {
                 auto* m = c.as_mamba();
-                if (m && (*m)[2].has_value()) {
-                    outs.push_back((*m)[2].value());
-                    outs.push_back((*m)[3].value());
-                }
+                if (!m) continue;
+                for (int s = 0; s < 4; ++s)
+                    if ((*m)[s].has_value()) outs.push_back((*m)[s].value());
             }
             mx::async_eval(outs);
-            if (mc::decode_capture_end_record()) {
+            if (mc::decode_capture_end_record(parity)) {
                 pure_logits_ = result.logits;  // buffer overwritten by each replay
                 // The captured forward's allocations occupy [0, floor); freeze it
-                // so replay sampling allocates above the recorded buffers.
-                mc::decode_arena_freeze_floor();
+                // once so replay sampling allocates above the recorded buffers.
+                if (pure_graph_state_ == 1) mc::decode_arena_freeze_floor();
             } else {
                 disable();
             }
         }
         token = convert_to_token(result.logits);
-        // Force-eval token + GDN scratch (the loop reads their raw buffers).
+        // Force-eval token + GDN state slots (the next relaunch / copy reads them).
         std::vector<mx::array> ev{token};
         for (auto& c : cache_) {
             auto* m = c.as_mamba();
-            if (m && (*m)[2].has_value()) { ev.push_back((*m)[2].value()); ev.push_back((*m)[3].value()); }
+            if (!m) continue;
+            for (int s = 0; s < 4; ++s)
+                if ((*m)[s].has_value()) ev.push_back((*m)[s].value());
         }
         mx::eval(ev);
     }
@@ -531,10 +515,11 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
 
     if (pure_graph_state_ == 0) {
         pure_graph_state_ = 1;                       // next token records
-    } else if (pure_graph_state_ == 1) {
+    } else if (pure_graph_state_ >= 1 && pure_graph_state_ < replay_state) {
         if (mc::decode_arena_overflowed()) disable();
-        else pure_graph_state_ = 2;                  // recorded -> replay
+        else pure_graph_state_ += 1;                 // next record parity, or replay
     }
+    pure_step_++;
     return token;
 }
 #endif
