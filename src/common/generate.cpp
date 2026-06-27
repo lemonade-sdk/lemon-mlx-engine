@@ -969,7 +969,7 @@ std::optional<int> TokenIterator::next() {
 #if defined(MLX_BUILD_ROCM)
     // Build-once pure-relaunch graph decode (opt-in, qwen35-moe device-pos path).
     static const bool pure_enabled =
-        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr;
+        std::getenv("MLX_DECODE_GRAPH_PURE_OFF") == nullptr;
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;
