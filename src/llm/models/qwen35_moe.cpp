@@ -16,8 +16,10 @@
 #include <mlx-lm/common/quantized_linear.h>
 #include <mlx-lm/common/graph_decode.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
+#include <optional>
 
 namespace mx = mlx::core;
 
@@ -382,15 +384,6 @@ void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
                            in_proj_fused_weight_);
 }
 
-// In-place overwrite of dst with src via native slice_update donation (start=0).
-static mlx::core::array gdn_state_overwrite_(mlx::core::array dst,
-                                             const mlx::core::array& src) {
-    int nd = dst.ndim();
-    std::vector<int> axes(nd);
-    for (int i = 0; i < nd; ++i) axes[i] = i;
-    return mx::slice_update(std::move(dst), src,
-                            mx::zeros({nd}, mx::int32), axes);
-}
 
 mx::array Qwen35MoEGatedDeltaNet::operator()(
     const mx::array& inputs,
@@ -425,12 +418,13 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // Conv1d processing.
     auto dtype = inputs.dtype();
 
-    // Build-once HIP-graph decode: keep the conv + SSM recurrent state in a SINGLE
-    // static buffer updated IN PLACE (inplace_write). The recorded graph reads the
-    // fixed-address state, computes the new state, and writes it back into the same
-    // buffer — one kernel's read-before-write is safe within a launch, and the
-    // in-place write accumulates across relaunches. No double buffer / parity is
-    // needed (only stream capture required ping-pong; build+relaunch does not).
+    // Build-once HIP-graph decode keeps the conv + SSM recurrent state in
+    // fixed-address cache slots [0]/[1] and updates them IN PLACE: the fused
+    // kernels alias their state output to the state input (forced alias, like
+    // kv_inplace_update), so the new state is written back into the SAME buffer —
+    // no scratch slot, no copy, and the address the recorded exec bakes stays put
+    // across relaunches. The kernels read the full state before writing, so the
+    // in-place update is race-free.
     bool gdn_inplace = mlx_lm::graph_external_pos() && S == 1 && cache;
 
     mx::array conv_state(0.0f);
@@ -449,15 +443,8 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     // eliminating their copy_gg/copy_g kernels.
     if (S == 1 && cache) {
         auto [conv_out, new_state] =
-            gdn_conv_step(conv_state, qkv, conv1d_weight_);
-        if (gdn_inplace && (*cache)[0].has_value()) {
-            // Read [0], write new state to scratch [2]; loop copies [2]->[0].
-            if (!(*cache)[2].has_value())
-                (*cache)[2] = mx::zeros_like((*cache)[0].value());
-            (*cache)[2] = gdn_state_overwrite_(std::move((*cache)[2].value()), new_state);
-        } else {
-            (*cache)[0] = new_state;
-        }
+            gdn_conv_step(conv_state, qkv, conv1d_weight_, /*inplace=*/gdn_inplace);
+        (*cache)[0] = new_state;
 
         // Split into q, k, v
         auto q_out = mx::reshape(mx::slice(conv_out, {0, 0, 0}, {B, 1, key_dim_}),
@@ -501,25 +488,24 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             fprintf(stderr, "[st] read_ssm %.6e\n", c.item<float>());
         }
 
+        if (!a_log_f32_.has_value()) {
+            a_log_f32_ = mx::astype(a_log_, mx::float32);
+            dt_bias_f32_ = mx::astype(dt_bias_, mx::float32);
+            mx::eval(*a_log_f32_, *dt_bias_f32_);
+        }
+
         if (use_fused_gdn) {
             mx::array o(0.0f), ns(0.0f);
             if (use_fused2) {
                 std::tie(o, ns) = gdn_fused_decode(
-                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
-                    *q_norm_w_, *k_norm_w_, ssm_state);
+                    q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
+                    *q_norm_w_, *k_norm_w_, ssm_state, /*inplace=*/gdn_inplace);
             } else {
                 std::tie(o, ns) = gated_delta_update(
-                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
-                    ssm_state, std::nullopt, /*inplace=*/false);
+                    q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
+                    ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
             }
-            if (gdn_inplace && (*cache)[1].has_value()) {
-                // Read [1], write new state to scratch [3]; loop copies [3]->[1].
-                if (!(*cache)[3].has_value())
-                    (*cache)[3] = mx::zeros_like((*cache)[1].value());
-                (*cache)[3] = gdn_state_overwrite_(std::move((*cache)[3].value()), ns);
-            } else {
-                (*cache)[1] = ns;
-            }
+            (*cache)[1] = ns;
             auto normalized = norm_(o, z);
             return linear_fwd(mx::reshape(normalized, {B, S, -1}), out_proj_weight_);
         }

@@ -334,6 +334,10 @@ private:
     int pure_graph_state_ = 0;
     int pure_graph_cap_ = 0;      // reserved KV capacity
     int pure_pos_ = 0;            // host mirror of the device decode position
+    // Logits array recorded during the capture token; the captured exec's
+    // baked output buffer is overwritten by each replay, so re-reading it
+    // (with a forced copy) yields the current token's logits.
+    std::optional<mlx::core::array> pure_logits_;
     // Run one decode step under the pure-graph path; returns the sampled token.
     mlx::core::array step_pure_graph(const LMInput::Text& previous);
 

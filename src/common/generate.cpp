@@ -19,16 +19,19 @@
 #include <mlx-lm/common/graph_decode.h>
 namespace mlx::core {
 void gpu_set_graph_decode_mode(bool v);
-// Build-once pure-relaunch decode + deterministic arena (rocm backend bridge).
-void decode_pure_record(int slot);
-void decode_pure_replay(int slot);
-void decode_pure_off();
-size_t decode_pure_chain_len(int slot);
+// Deterministic arena (rocm backend bridge).
 bool decode_arena_begin(size_t capacity, int device, void* stream);
 void decode_arena_reset();
+void decode_arena_freeze_floor();
+void decode_arena_reset_to_floor();
 void decode_arena_end();
 bool decode_arena_overflowed();
-void gpu_buffer_copy(array& dst, array& src);
+long decode_inline_launch_count();
+// Full decode-step stream capture (build-once / replay).
+bool decode_capture_begin();
+bool decode_capture_end_record(int slot);
+bool decode_capture_replay(int slot);
+void decode_capture_destroy();
 } // namespace mlx::core
 #endif
 
@@ -357,14 +360,14 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
 }
 
 #if defined(MLX_BUILD_ROCM)
-// Build-once pure-relaunch decode step. State machine:
-//   0 warmup     — engage device-pos; warm mx::compile caches (no record)
-//   1 record     — record the per-token graph chain once
-//   2 replay     — relaunch the recorded chain every token
-//   9 disabled   — fell back to the normal path (arena overflow / mismatch)
-// One graph suffices: the GatedDeltaNet recurrent state lives in a single static
-// buffer updated in place (no parity ping-pong), and position + input token are
-// injected each step via fixed-address device buffers.
+// Build-once pure-relaunch decode step. Captures the whole forward into a HIP
+// graph once, then relaunches the cached exec every token. State machine:
+//   0 warmup -> 1 record -> 2 replay   (9 = disabled: arena overflow / capture fail)
+// Everything that varies per token lives in FIXED-address buffers so the
+// recorded exec's baked pointers stay valid across relaunches: position and input
+// token are device buffers injected each step; the GDN recurrent state is updated
+// IN PLACE in its cache slots [0]/[1] (the fused kernels alias state-out to
+// state-in); KV is written in place at the device position. No scratch, no copy.
 mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
     StreamGuard sg(generation_stream());
     namespace mc = mlx::core;
@@ -393,68 +396,99 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
         mlx_lm::advance_graph_decode_pos(1);
         pure_pos_ += 1;
     }
-    // Move GDN scratch next-state [2]/[3] -> read state [0]/[1] (immediate).
-    static const bool cpdbg = std::getenv("MLX_COPY_DEBUG") != nullptr;
-    int n_mamba = 0, n_scratch = 0;
-    if (pure_graph_state_ >= 1) {
-        for (auto& c : cache_) {
-            auto* m = c.as_mamba();
-            if (!m) continue;
-            n_mamba++;
-            if ((*m)[2].has_value()) {
-                n_scratch++;
-                mc::gpu_buffer_copy((*m)[0].value(), (*m)[2].value());
-                mc::gpu_buffer_copy((*m)[1].value(), (*m)[3].value());
-            }
-        }
-        if (cpdbg) fprintf(stderr, "[cp] mamba=%d scratch=%d\n", n_mamba, n_scratch);
-    }
-    mc::gpu_set_graph_decode_mode(true);
 
-    // Single static recurrent-state buffer (in-place RMW) -> ONE graph, no
-    // parity. Record once, then relaunch the same chain every token.
-    if (!noreplay) {
-        if (pure_graph_state_ == 1) {
-            mc::decode_arena_begin(arena_bytes, 0, nullptr);
-            mc::decode_arena_reset();
-            mc::decode_pure_record(0);
-        } else if (pure_graph_state_ == 2) {
-            mc::decode_arena_reset();
-            mc::decode_pure_replay(0);
-        }
-    }
-
-    auto result = context_.call_fn(
-        in, cache_.empty() ? nullptr : &cache_,
-        state_.has_value() ? &state_.value() : nullptr);
-    state_ = result.state;
-    auto token = convert_to_token(result.logits);
-    // Force-eval token + GDN scratch states (the loop reads their raw buffers).
-    std::vector<mx::array> ev{token};
-    for (auto& c : cache_) {
-        auto* m = c.as_mamba();
-        if (m && (*m)[2].has_value()) { ev.push_back((*m)[2].value()); ev.push_back((*m)[3].value()); }
-    }
-    mx::eval(ev);
-
-    static const bool pure_dbg = std::getenv("MLX_PURE_DEBUG") != nullptr;
-    if (pure_dbg) {
-        fprintf(stderr, "[pure] state=%d pos=%d in=%d sampled=%d\n",
-                pure_graph_state_, pure_pos_,
-                mlx_lm::graph_decode_input().item<int>(), token.item<int>());
-    }
+    // GDN recurrent state is updated IN PLACE in cache slots [0]/[1] by the fused
+    // kernels (state output aliases state input), and KV is written in place at
+    // the device position — so there is no scratch slot to copy back between
+    // relaunches. One recorded exec suffices: record once (state 1), replay (2).
+    const int replay_state = 2;
 
     auto disable = [&]() {
-        mc::decode_pure_off();
+        mc::decode_capture_destroy();
         mc::decode_arena_end();
         mlx_lm::set_graph_external_pos(false);
         pure_graph_state_ = 9;
     };
+
+    mx::array token = mx::array(0);
+
+    if (!noreplay && pure_graph_state_ == replay_state && pure_logits_.has_value()) {
+        // REPLAY: input/pos already set above. Relaunch the recorded exec, then
+        // read the freshly-overwritten logits buffer (convert_to_token's sample
+        // kernel reads it at launch time).
+        mc::decode_arena_reset_to_floor();   // keep recorded buffers; sample above
+        if (mc::decode_capture_replay(0)) {
+            token = convert_to_token(*pure_logits_);
+        } else {
+            disable();  // capture lost -> rebuild via the eager fallback below
+        }
+    }
+
+    const bool is_record =
+        !noreplay && pure_graph_state_ >= 1 && pure_graph_state_ < replay_state;
+    if (pure_graph_state_ != replay_state || pure_graph_state_ == 9) {
+        // WARMUP (0), RECORD (1..replay_state-1), or fallback: run via call_fn.
+        if (is_record) {
+            if (pure_graph_state_ == 1)
+                mc::decode_arena_begin(arena_bytes, 0, nullptr);
+            mc::decode_arena_reset();      // record forward allocates from base
+            mc::decode_capture_begin();    // capture the eager call_fn that follows
+        }
+        auto result = context_.call_fn(
+            in, cache_.empty() ? nullptr : &cache_,
+            state_.has_value() ? &state_.value() : nullptr);
+        state_ = result.state;
+
+        if (is_record) {
+            // Launch the forward INLINE (async_eval: no blocking sync, which is
+            // illegal mid-capture) so every kernel records into the capture. The
+            // in-place GDN state slots [0]/[1] are eval'd so their writing kernels
+            // are captured.
+            std::vector<mx::array> outs{result.logits};
+            for (auto& c : cache_) {
+                auto* m = c.as_mamba();
+                if (!m) continue;
+                if ((*m)[0].has_value()) outs.push_back((*m)[0].value());
+                if ((*m)[1].has_value()) outs.push_back((*m)[1].value());
+            }
+            mx::async_eval(outs);
+            if (mc::decode_capture_end_record(0)) {
+                pure_logits_ = result.logits;  // buffer overwritten by each replay
+                // The captured forward's allocations occupy [0, floor); freeze it
+                // so replay sampling allocates above the recorded buffers.
+                mc::decode_arena_freeze_floor();
+            } else {
+                disable();
+            }
+        }
+        token = convert_to_token(result.logits);
+        // Force-eval token + in-place GDN state (the next relaunch reads them).
+        std::vector<mx::array> ev{token};
+        for (auto& c : cache_) {
+            auto* m = c.as_mamba();
+            if (!m) continue;
+            if ((*m)[0].has_value()) ev.push_back((*m)[0].value());
+            if ((*m)[1].has_value()) ev.push_back((*m)[1].value());
+        }
+        mx::eval(ev);
+    }
+
+    static const bool pure_dbg = std::getenv("MLX_PURE_DEBUG") != nullptr;
+    if (pure_dbg) {
+        static long prev_inline = 0;
+        long now_inline = mc::decode_inline_launch_count();
+        fprintf(stderr, "[pure] state=%d pos=%d in=%d sampled=%d inline=%ld(+%ld)\n",
+                pure_graph_state_, pure_pos_,
+                mlx_lm::graph_decode_input().item<int>(), token.item<int>(),
+                now_inline, now_inline - prev_inline);
+        prev_inline = now_inline;
+    }
+
     if (pure_graph_state_ == 0) {
         pure_graph_state_ = 1;                       // next token records
-    } else if (pure_graph_state_ == 1) {
+    } else if (pure_graph_state_ >= 1 && pure_graph_state_ < replay_state) {
         if (mc::decode_arena_overflowed()) disable();
-        else pure_graph_state_ = 2;                  // recorded -> replay
+        else pure_graph_state_ += 1;                 // recorded -> replay
     }
     return token;
 }
@@ -931,7 +965,7 @@ std::optional<int> TokenIterator::next() {
 #if defined(MLX_BUILD_ROCM)
     // Build-once pure-relaunch graph decode (opt-in, qwen35-moe device-pos path).
     static const bool pure_enabled =
-        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr;
+        std::getenv("MLX_DECODE_GRAPH_PURE_OFF") == nullptr;
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;

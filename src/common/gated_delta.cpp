@@ -291,6 +291,21 @@ static mx::fast::CustomKernelFunction& get_conv_step_kernel() {
     return kernel;
 }
 
+// In-place variant: new_state (output 1) aliases conv_state (input 0). The
+// kernel reads all taps before writing the shifted state, and each thread owns a
+// (batch, channel), so the per-thread read-before-write makes the alias race-free
+// — the conv state is updated in its fixed buffer with no copy.
+static mx::fast::CustomKernelFunction& get_conv_step_kernel_inplace() {
+    static auto kernel = mx::fast::hip_kernel(
+        "gdn_conv_step",
+        {"conv_state", "qkv", "weight"},
+        {"conv_out", "new_state"},
+        conv_step_hip_source,
+        /*header=*/"", /*ensure_row_contiguous=*/true, /*shared_memory=*/0,
+        /*output_input_aliases=*/{{1, 0}});
+    return kernel;
+}
+
 // Fused residual-add + RMSNorm: sum = a + b ; normed = rmsnorm(sum) * weight.
 // Returns BOTH (sum for the next residual, normed for the next matmul) in one
 // kernel, eliminating the standalone add (binary_vv) and keeping the residual
@@ -485,6 +500,22 @@ static mx::fast::CustomKernelFunction& get_gdn_fused_decode_kernel() {
         {"q", "k", "v", "b", "a", "a_log", "dt_bias", "q_norm_w", "k_norm_w", "state_in"},
         {"y", "state_out"},
         gdn_fused_decode_hip_source);
+    return kernel;
+}
+
+// In-place variant: state_out (output 1) aliases state_in (input 9) so the new
+// SSM state is written back into the same fixed buffer — no copy. Used by the
+// build-once decode path (the kernel reads the full state before writing, so the
+// alias is race-free). Kept separate so the eager path (no sole-ref donation)
+// keeps using the non-aliased kernel and never pays a donation-failure copy.
+static mx::fast::CustomKernelFunction& get_gdn_fused_decode_kernel_inplace() {
+    static auto kernel = mx::fast::hip_kernel(
+        "gdn_fused_decode",
+        {"q", "k", "v", "b", "a", "a_log", "dt_bias", "q_norm_w", "k_norm_w", "state_in"},
+        {"y", "state_out"},
+        gdn_fused_decode_hip_source,
+        /*header=*/"", /*ensure_row_contiguous=*/true, /*shared_memory=*/0,
+        /*output_input_aliases=*/{{1, 9}});
     return kernel;
 }
 
@@ -821,7 +852,7 @@ std::pair<mx::array, mx::array> gdn_fused_decode(
     const mx::array& a, const mx::array& b,
     const mx::array& a_log, const mx::array& dt_bias,
     const mx::array& q_norm_w, const mx::array& k_norm_w,
-    const mx::array& state)
+    const mx::array& state, bool inplace)
 {
     int B = q.shape(0);
     int Hk = q.shape(2), Dk = q.shape(3);
@@ -832,7 +863,9 @@ std::pair<mx::array, mx::array> gdn_fused_decode(
         auto t = q.dtype();
         auto al = mx::astype(a_log, mx::float32);
         auto db = mx::astype(dt_bias, mx::float32);
-        auto results = get_gdn_fused_decode_kernel()(
+        auto& kern = inplace ? get_gdn_fused_decode_kernel_inplace()
+                             : get_gdn_fused_decode_kernel();
+        auto results = kern(
             {q, k, v, b, a, al, db, q_norm_w, k_norm_w, state},
             {{B, 1, Hv, Dv}, state.shape()},
             {t, t},
@@ -852,7 +885,8 @@ std::pair<mx::array, mx::array> gdn_fused_decode(
 std::pair<mx::array, mx::array> gdn_conv_step(
     const mx::array& conv_state,  // [B, KS-1, CD]
     const mx::array& qkv,         // [B, 1, CD]
-    const mx::array& weight)      // [CD, 1, KS]
+    const mx::array& weight,      // [CD, 1, KS]
+    bool inplace)
 {
     int B = qkv.shape(0);
     int CD = qkv.shape(2);
@@ -864,7 +898,9 @@ std::pair<mx::array, mx::array> gdn_conv_step(
     static const bool force_mxops = std::getenv("MLX_GDN_CONV_MXOPS") != nullptr;
     if (!force_mxops) {
         auto t = qkv.dtype();
-        auto results = get_conv_step_kernel()(
+        auto& kern = inplace ? get_conv_step_kernel_inplace()
+                             : get_conv_step_kernel();
+        auto results = kern(
             {conv_state, qkv, weight},
             {{B, 1, CD}, {B, KS - 1, CD}},
             {t, t},
@@ -982,6 +1018,32 @@ mx::array kv_inplace_update(
     mx::Shape sp{cache.shape(0), cache.shape(1), offset + new_kv.shape(2),
                  cache.shape(3)};
     return mx::slice_update(cache, new_kv, st, sp, mx::Shape{1, 1, 1, 1});
+#endif
+}
+
+mx::array kv_inplace_update_at(
+    const mx::array& cache, const mx::array& new_kv, const mx::array& pos)
+{
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    // Same in-place accessor as kv_inplace_update, but the write position comes
+    // from a device [1] int32 buffer (graph_decode_pos) instead of a host int —
+    // so the build-once decode graph relaunches correctly as the loop advances
+    // pos device-side. Output aliases the cache buffer: the math output (roped K
+    // / V) is written DIRECTLY into KV[pos], no slice_update array op, no copy.
+    int B = cache.shape(0), H = cache.shape(1);
+    int ALLOC = cache.shape(2), D = cache.shape(3);
+    int N = new_kv.shape(2);
+    long total = (long)B * H * N * D;
+    auto res = get_kv_inplace_update_kernel()(
+        {cache, new_kv, pos},
+        {cache.shape()}, {cache.dtype()},
+        {static_cast<int>(total), 1, 1}, {256, 1, 1},
+        {{"B", B}, {"H", H}, {"ALLOC", ALLOC}, {"D", D}, {"N", N}},
+        std::nullopt, true, {});
+    return res[0];
+#else
+    (void)new_kv; (void)pos;
+    return cache;
 #endif
 }
 

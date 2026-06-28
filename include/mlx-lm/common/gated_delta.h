@@ -59,6 +59,13 @@ mlx::core::array inplace_write(const mlx::core::array& dst,
 mlx::core::array kv_inplace_update(
     const mlx::core::array& cache, const mlx::core::array& new_kv, int offset);
 
+// Device-position variant: the write position is read from a device [1] int32
+// buffer (graph_decode_pos) so the build-once decode graph relaunches correctly.
+// Output aliases the cache buffer — the new K/V is written directly into KV[pos].
+mlx::core::array kv_inplace_update_at(
+    const mlx::core::array& cache, const mlx::core::array& new_kv,
+    const mlx::core::array& pos);
+
 // FlashQLA-style fused GDN decode step (T=1): folds q/k-RMSNorm + beta/g +
 // the delta recurrence into ONE kernel (replaces rms_norm(q)+rms_norm(k)+
 // compiled beta/g + gated_delta_step). q,k: [B,1,Hk,Dk], v: [B,1,Hv,Dv],
@@ -71,7 +78,10 @@ std::pair<mlx::core::array, mlx::core::array> gdn_fused_decode(
     const mlx::core::array& b, const mlx::core::array& a_log,
     const mlx::core::array& dt_bias,
     const mlx::core::array& q_norm_w, const mlx::core::array& k_norm_w,
-    const mlx::core::array& state);
+    const mlx::core::array& state,
+    // When true, state_out aliases state_in (output written into the same fixed
+    // buffer) for build-once replay — no scratch slot, no copy.
+    bool inplace = false);
 
 // Fused GDN conv1d decode step: causal depthwise conv (KS taps) + silu + state
 // shift in one kernel. conv_state [B,KS-1,CD], qkv [B,1,CD], weight [CD,1,KS].
@@ -80,7 +90,9 @@ std::pair<mlx::core::array, mlx::core::array> gdn_fused_decode(
 std::pair<mlx::core::array, mlx::core::array> gdn_conv_step(
     const mlx::core::array& conv_state,
     const mlx::core::array& qkv,
-    const mlx::core::array& weight);
+    const mlx::core::array& weight,
+    // When true, new_state aliases conv_state (in-place) for build-once replay.
+    bool inplace = false);
 
 // Fused residual-add + RMSNorm. Returns (sum = a+b, normed = rmsnorm(sum)*weight)
 // in one kernel — eliminates the standalone residual add and keeps the sum

@@ -157,6 +157,8 @@ class Qwen35MoEGatedDeltaNet {
     std::optional<mlx::core::array> conv1d_w_dec_; // reshaped+transposed conv weight
     std::optional<mlx::core::array> q_norm_w_;     // full(head_k_dim, inv_scale^2)
     std::optional<mlx::core::array> k_norm_w_;     // full(head_k_dim, inv_scale)
+    std::optional<mlx::core::array> a_log_f32_;
+    std::optional<mlx::core::array> dt_bias_f32_;
 
     // The four in_proj projections (qkv, z, b, a) all map hidden_size -> their
     // own output width with identical input width / quantization params, so
