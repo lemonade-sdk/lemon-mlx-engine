@@ -36,9 +36,12 @@ Prefer concrete rewrites over abstract critiques.
 enabled = true
 
 [config]
-# Verbose logging in CI is fine — it's ephemeral.
 verbosity_level = 1
-# The model to use — gpt-5-mini for cost efficiency on routine reviews,
-# gpt-5 for deeper reviews when someone explicitly requests /review.
-model = "gpt-5-mini"
-fallback_models = "claude-3-sonnet"
+# Model priority (user's standing order):
+#   1. Codex (OpenAI)      — best for code review and generation
+#   2. GLM-5.2 (OpenCode)  — via api.opencode.ai/v1
+#   3. DeepSeek v4 Flash   — fastest fallback for volume work
+model = "codex"
+fallback_models = "glm-5.2, deepseek-v4-flash"
+# OpenCode API endpoint (used when fallback hits glm-5.2)
+openai.api_base = "https://api.opencode.ai/v1"

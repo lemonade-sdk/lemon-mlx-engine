@@ -25,6 +25,7 @@ jobs:
         uses: Codium-ai/pr-agent@v0
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE || 'https://api.openai.com/v1' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           github_action_config.auto_describe: "true"
           github_action_config.auto_review: "true"
