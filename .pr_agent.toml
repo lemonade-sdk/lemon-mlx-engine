@@ -41,8 +41,10 @@ verbosity_level = 1
 #   1. Codex (OpenAI)      — best for code review and generation
 #   2. GLM-5.2 (OpenCode)  — via api.opencode.ai/v1
 #   3. DeepSeek Chat v3    — fastest fallback for volume work
-model = "openai/gpt-4o"
-fallback_models = "openai/gpt-4-turbo, openai/gpt-3.5-turbo"
+model = "deepseek/deepseek-chat"
+fallback_models = "openai/gpt-4o, openai/gpt-4-turbo"
 custom_model_max_tokens = 64000
+# Remove opencode base URL — litellm routes deepseek/ natively
+openai.api_base = ""
 # OpenCode API endpoint (used when fallback hits glm-5.2)
 openai.api_base = "https://api.opencode.ai/v1"
