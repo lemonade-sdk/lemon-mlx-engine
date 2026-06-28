@@ -40,8 +40,8 @@ verbosity_level = 1
 # Model priority (user's standing order):
 #   1. Codex (OpenAI)      — best for code review and generation
 #   2. GLM-5.2 (OpenCode)  — via api.opencode.ai/v1
-#   3. DeepSeek v4 Flash   — fastest fallback for volume work
+#   3. DeepSeek Chat v3    — fastest fallback for volume work
 model = "codex"
-fallback_models = "glm-5.2, deepseek-v4-flash"
+fallback_models = "glm-5.2, deepseek-chat-v3"
 # OpenCode API endpoint (used when fallback hits glm-5.2)
 openai.api_base = "https://api.opencode.ai/v1"
