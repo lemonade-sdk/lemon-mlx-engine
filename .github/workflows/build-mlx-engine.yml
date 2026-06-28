@@ -26,6 +26,7 @@ env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
   ROCM_VERSION: '7.13'
   ROCM_ARCH: 'gfx1151'
+  HIP_BUILD_ARCHS: 'gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201'
 
 jobs:
   prepare-matrix:
@@ -107,9 +108,11 @@ jobs:
       env:
         ROCM_VER: ${{ env.ROCM_VERSION }}
         ROCM_ARCH: ${{ env.ROCM_ARCH }}
+        HIP_BUILD_ARCHS: ${{ env.HIP_BUILD_ARCHS }}
       run: |
         ROCM_VER="${{ env.ROCM_VERSION }}"
         ROCM_ARCH="${{ env.ROCM_ARCH }}"
+        HIP_BUILD_ARCHS="${{ env.HIP_BUILD_ARCHS }}"
 
         # Pin clang (ROCm 7.13 = clang 23) to GCC 13's libstdc++.
         GCC_INSTALL_DIR="/usr/lib/gcc/x86_64-linux-gnu/13"
@@ -125,7 +128,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++ \
           -DCMAKE_HIP_COMPILER=hipcc \
           -DCMAKE_PREFIX_PATH=/opt/rocm/core-${ROCM_VER} \
-          -DCMAKE_HIP_ARCHITECTURES="${ROCM_ARCH}" \
+          -DCMAKE_HIP_ARCHITECTURES="${HIP_BUILD_ARCHS}" \
           -DCMAKE_C_FLAGS="--gcc-install-dir=${GCC_INSTALL_DIR}" \
           -DCMAKE_CXX_FLAGS="--gcc-install-dir=${GCC_INSTALL_DIR}" \
           -DCMAKE_HIP_FLAGS="--gcc-install-dir=${GCC_INSTALL_DIR}" \
