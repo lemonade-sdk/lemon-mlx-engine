@@ -1,0 +1,38 @@
+[pr_description]
+extra_instructions = """
+Focus on:
+1. What behavior changed (not just what code changed)
+2. Backend/platform impact (ROCm, Metal, CPU, NPU)
+3. Breaking API or build changes
+4. Performance implications
+Use bullet points. Keep it under 250 words.
+"""
+
+[pr_reviewer]
+extra_instructions = """
+Prioritize:
+1. Thread safety and memory correctness (C++20, raw pointers, HIP streams)
+2. Build correctness — CMakeLists.txt changes, new targets, platform guards
+3. Error handling — allocation failures, HIP errors, file-not-found?
+4. Performance — blocking calls on hot paths, unnecessary copies, missing reserve()
+5. Test coverage — do new features have corresponding tests?
+6. Backward compatibility — HTTP API, CLI interface, model format?
+
+Ignore minor style nits (naming, formatting) unless they obscure intent.
+Flag security issues (buffer overflows, unsanitized inputs) as critical.
+"""
+
+[pr_code_suggestions]
+extra_instructions = """
+Suggestions should be actionable and specific. Avoid generic advice.
+Prefer concrete rewrites over abstract critiques.
+"""
+
+[pr_questions]
+enabled = true
+
+[config]
+verbosity_level = 1
+model = "deepseek/deepseek-chat"
+fallback_models = "openai/gpt-4o"
+custom_model_max_tokens = 64000
