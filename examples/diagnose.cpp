@@ -531,6 +531,44 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // =========================================================
+    // TEST 9: M>1 (prefill) op isolation — these are the kernels that only run
+    // for multi-token prefill (decode M=1 uses different paths). A NaN here on a
+    // given GPU pinpoints the broken kernel without touching the model.
+    // =========================================================
+    std::cerr << "\n--- TEST 9: M>1 prefill-op isolation (S=19) ---" << std::endl;
+    {
+        int S = 19;
+
+        // (a) depthwise grouped conv1d (GDN conv): [1, S+3, C] * [C,4,1] groups=C
+        int C = 8192;
+        auto cx = mx::astype(mx::random::normal({1, S + 3, C}), mx::bfloat16);
+        auto cw = mx::astype(mx::random::normal({C, 4, 1}), mx::bfloat16);
+        mx::eval(cx, cw);
+        auto cout = mx::conv1d(cx, cw, 1, 0, 1, C);
+        mx::eval(cout);
+        print_stats("conv1d depthwise S>1", cout);
+
+        // (b) multi-token causal SDPA (attention): GQA 16 q / 2 kv, head_dim 256
+        int hd = 256;
+        auto q = mx::astype(mx::random::normal({1, 16, S, hd}), mx::bfloat16);
+        auto k = mx::astype(mx::random::normal({1, 2, S, hd}), mx::bfloat16);
+        auto v = mx::astype(mx::random::normal({1, 2, S, hd}), mx::bfloat16);
+        mx::eval(q, k, v);
+        float scale = 1.0f / std::sqrt((float)hd);
+        auto attn = mx::fast::scaled_dot_product_attention(q, k, v, scale, "causal");
+        mx::eval(attn);
+        print_stats("sdpa causal S>1", attn);
+
+        // (c) multi-token rms_norm
+        auto rx = mx::astype(mx::random::normal({1, S, 2048}), mx::bfloat16);
+        auto rw = mx::astype(mx::ones({2048}), mx::bfloat16);
+        mx::eval(rx, rw);
+        auto rn = mx::fast::rms_norm(rx, rw, 1e-6f);
+        mx::eval(rn);
+        print_stats("rms_norm S>1", rn);
+    }
+
     std::cerr << "\n=== DIAGNOSTICS COMPLETE ===" << std::endl;
     return 0;
 }
