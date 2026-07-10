@@ -41,14 +41,18 @@ struct MTPDeltaConfig {
 // On non-ROCm platforms, falls back to MLX graph compose.
 //
 // Parameters:
-//   inputs        - [B, S, H] input hidden state
-//   conv_weight   - [conv_dim, 1, conv_kernel_dim] conv1d weights
-//   qkv_weight    - [2*key_dim + value_dim, H] in_proj_qkv weights
-//   z_weight      - [value_dim, H] in_proj_z weights
-//   dt_bias       - [num_value_heads] timestep bias
-//   a_log         - [num_value_heads] log of A parameter
-//   state         - optional [B, Hv, Dv, Dk] SSM state
-//   config        - kernel configuration
+//   inputs           - [B, S, H] input hidden state
+//   conv_weight      - [conv_dim, 1, conv_kernel_dim] conv1d weights
+//   qkv_weight       - [2*key_dim + value_dim, H] in_proj_qkv weights
+//   z_weight         - [value_dim, H] in_proj_z weights
+//   dt_bias          - [num_value_heads] timestep bias
+//   a_log            - [num_value_heads] log of A parameter
+//   state            - optional [B, Hv, Dv, Dk] SSM state
+//   config           - kernel configuration
+//   beta_bias_weight - optional [num_value_heads] learned beta bias (b).
+//                      Defaults to zeros (0.5 gating) when not provided.
+//   a_weight         - optional [num_value_heads] learned a param.
+//                      Defaults to zeros when not provided.
 //
 // Returns: {output [B, S, H], new_state [B, Hv, Dv, Dk]}
 std::pair<mlx::core::array, std::optional<mlx::core::array>>
@@ -60,7 +64,9 @@ mtp_delta_fused(
     const mlx::core::array& dt_bias,
     const mlx::core::array& a_log,
     const std::optional<mlx::core::array>& state,
-    const MTPDeltaConfig& config);
+    const MTPDeltaConfig& config,
+    const std::optional<mlx::core::array>& beta_bias_weight = std::nullopt,
+    const std::optional<mlx::core::array>& a_weight = std::nullopt);
 
 // Full MTP draft forward pass using the fused delta kernel.
 // Orchestrates the complete MTP draft step:

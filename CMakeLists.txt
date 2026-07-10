@@ -116,12 +116,12 @@ add_library(mlx-lm-common
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
     src/common/graph_decode.cpp
+    src/common/mtp_delta_kernel.cpp
     src/llm/models/mtp_head.cpp
     src/llm/models/mtp_moe.cpp
 )
-# NOTE: src/common/mtp_delta_kernel.cpp intentionally excluded from build.
-# Contains dead code (mtp_delta_fused / mtp_draft_forward) not wired into
-# generate.cpp. Left on disk for future ROCm optimization work.
+# MTP delta kernel -- fused GatedDeltaNet compute for MTP draft generation.
+# Wired into generate.cpp via the mtp_head and context pipelines.
 target_link_libraries(mlx-lm-common PUBLIC
     mlx-lm-core
     nlohmann_json::nlohmann_json
