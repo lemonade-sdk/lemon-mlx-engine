@@ -440,6 +440,16 @@ jobs:
           exit 1
         fi
 
+        # The server JIT-compiles kernels (e.g. the GDN conv step) through comgr
+        # at request time, and comgr resolves hip/hip_runtime.h against the
+        # default /opt/rocm/include -- which does not exist in this versioned
+        # layout, the headers live under /opt/rocm/core-${ROCM_VER}/include.
+        # Without these, model load fails with "hip/hip_runtime.h file not
+        # found". $GITHUB_ENV does not cross jobs, so re-export what the build
+        # job set.
+        echo "HIP_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
+        echo "ROCM_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
+
     - name: Download build artifact
       uses: actions/download-artifact@v6
       with:
