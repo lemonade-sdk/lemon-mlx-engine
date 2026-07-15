@@ -30,11 +30,16 @@ if(MLX_LM_BUILD_NPU)
 endif()
 
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
+# Pin a known-good rocm-support tip. Floating the branch name alone leaves
+# build/_deps/mlx-src stuck on an ancient FetchContent clone (seen on gfx1152
+# producing "!!!!!!" from host WARP_SIZE=64 launches into wave32 QMV kernels).
+# Required fixes in this pin:
+#   845153d6  runtime warp launches + low-CU QMV (fixes garbage decode)
+#   4287bf5b  guard HIPBLASLT_EPILOGUE_SIGMOID_BIAS_EXT (older hipBLASLt)
 FetchContent_Declare(
     mlx
-    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        rocm-support
+    GIT_TAG        4287bf5b58c1f831de4ca70873b737762f01e9c7
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
