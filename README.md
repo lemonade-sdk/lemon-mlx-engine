@@ -11,6 +11,7 @@ Run LLMs locally on **Apple M-series**, **AMD GPUs** (Linux/Windows), and CPU --
 - **Embedders** -- BERT, Nomic-BERT, Qwen3-Embed
 - **Quantized inference** -- 4-bit/8-bit via `quantized_matmul`
 - **HuggingFace integration** -- auto-downloads models, tokenizers, and chat templates
+- **fastokens** -- high-performance BPE tokenizer ([crusoecloud/fastokens](https://github.com/crusoecloud/fastokens))
 - **OpenAI-compatible API server** -- drop-in replacement for local inference
 - **Streaming generation** -- async token pipeline with KV caching
 - **Multi-model management** -- LRU eviction, explicit load/unload
@@ -21,7 +22,7 @@ Run LLMs locally on **Apple M-series**, **AMD GPUs** (Linux/Windows), and CPU --
 - CMake 3.20+
 - C++17 compiler
 - libcurl
-- Rust toolchain (for tokenizers-cpp)
+- Rust toolchain (for [fastokens](https://github.com/crusoecloud/fastokens))
 
 ## Build
 
