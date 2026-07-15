@@ -234,7 +234,11 @@ jobs:
         retention-days: 30
 
   build-ubuntu-cpu:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now 24.04 (glibc 2.39 / GLIBCXX_3.4.32), so its
+    # binaries refuse to start on the 22.04 smoke-test runner and on any user
+    # box older than 24.04. Build against the oldest glibc we support instead --
+    # 2.35 runs everywhere newer. Same class of drift as the macos-15 pin below.
+    runs-on: ubuntu-22.04
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.should_build_ubuntu_cpu == 'true'
 
