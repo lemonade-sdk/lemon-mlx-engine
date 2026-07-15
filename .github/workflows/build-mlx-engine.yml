@@ -133,7 +133,9 @@ jobs:
           "amdrocm-fft-dev${ROCM_VER}" \
           "amdrocm-solver-dev${ROCM_VER}" \
           "amdrocm-sparse-dev${ROCM_VER}" \
-          "amdrocm-hipblas-common-dev${ROCM_VER}"
+          "amdrocm-hipblas-common-dev${ROCM_VER}" \
+          "amdrocm-ccl-dev${ROCM_VER}" \
+          "amdrocm-dnn-dev${ROCM_VER}"
 
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
