@@ -29,7 +29,8 @@ env:
 
 jobs:
   prepare-matrix:
-    runs-on: ubuntu-22.04
+    # ubuntu-latest (24.04 pool) — 22.04 hosted queue was stalling for hours
+    runs-on: ubuntu-latest
     outputs:
       should_build_ubuntu_rocm: ${{ steps.set-matrix.outputs.should_build_ubuntu_rocm }}
       should_build_ubuntu_cpu: ${{ steps.set-matrix.outputs.should_build_ubuntu_cpu }}
@@ -189,7 +190,7 @@ jobs:
         retention-days: 30
 
   build-ubuntu-cpu:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.should_build_ubuntu_cpu == 'true'
 
