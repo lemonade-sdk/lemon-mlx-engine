@@ -37,10 +37,11 @@ endif()
 #   845153d6  runtime warp launches + low-CU QMV (fixes garbage decode)
 #   4287bf5b  guard HIPBLASLT_EPILOGUE_SIGMOID_BIAS_EXT (older hipBLASLt)
 #   bd76a966  RDNA host warp=32 when any RDNA arch present (never pin 64)
+#   (incl. RDNA4 wave32; optional -DMLX_HOST_WARP_SIZE / MLX_ROCM_FORCE_WARP_SIZE)
 FetchContent_Declare(
     mlx
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        bd76a966bd6dd57b04e690486e35b019e6c5ffda
+    GIT_TAG        833e9e3834511a7573c1085526c2d835118d2b75
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
