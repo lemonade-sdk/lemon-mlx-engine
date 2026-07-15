@@ -79,12 +79,28 @@ jobs:
         ROCM_VER="${{ env.ROCM_VERSION }}"
         ROCM_ARCH="${{ env.ROCM_ARCH }}"
 
-        if dpkg -s "amdrocm${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed" \
-           && dpkg -s "amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed"; then
+        # Self-hosted runners are expected to pre-install ROCm; this step only
+        # verifies the packages are present. Package naming differs by ROCm
+        # series:
+        #   7.13: amdrocm7.13-gfx1151 + amdrocm-core-dev7.13  (no arch suffix)
+        #   7.14: amdrocm7.14-gfx1151 + amdrocm-core-dev7.14-gfx1151
+        pkg_ok() { dpkg -s "$1" 2>/dev/null | grep -q "Status: install ok installed"; }
+
+        RUNTIME_PKG="amdrocm${ROCM_VER}-${ROCM_ARCH}"
+        CORE_DEV_ARCH="amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}"
+        CORE_DEV_VER="amdrocm-core-dev${ROCM_VER}"
+
+        if pkg_ok "$RUNTIME_PKG" && { pkg_ok "$CORE_DEV_ARCH" || pkg_ok "$CORE_DEV_VER"; }; then
           echo "ROCm ${ROCM_VER} ${ROCM_ARCH} packages already installed; skipping."
+          dpkg -l | grep -E "amdrocm${ROCM_VER}|amdrocm-core-dev${ROCM_VER}" | head -20 || true
           exit 0
         fi
 
+        echo "ERROR: required ROCm packages not installed on this runner."
+        echo "  need: $RUNTIME_PKG"
+        echo "  and:  $CORE_DEV_ARCH  OR  $CORE_DEV_VER"
+        echo "Installed amdrocm packages:"
+        dpkg -l 'amdrocm*' 2>/dev/null | head -40 || true
         exit 1
 
     - name: Set ROCm environment variables
