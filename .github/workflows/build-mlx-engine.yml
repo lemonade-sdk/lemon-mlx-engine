@@ -29,8 +29,9 @@ env:
 
 jobs:
   prepare-matrix:
-    # ubuntu-latest (24.04 pool) — 22.04 hosted queue was stalling for hours
-    runs-on: ubuntu-latest
+    # Self-hosted: GitHub-hosted ubuntu-* pool was stalling for hours (queued forever).
+    # This job is a few shell echoes — safe on the office ROCm box.
+    runs-on: [self-hosted, Linux, X64, gfx1151]
     outputs:
       should_build_ubuntu_rocm: ${{ steps.set-matrix.outputs.should_build_ubuntu_rocm }}
       should_build_ubuntu_cpu: ${{ steps.set-matrix.outputs.should_build_ubuntu_cpu }}
