@@ -114,16 +114,26 @@ jobs:
         echo "/opt/rocm/core-${ROCM_VER}/bin:/opt/rocm/core-${ROCM_VER}/lib/llvm/bin:$PATH" >> $GITHUB_PATH
 
     # Host CPU BLAS/LAPACK + curl are required by MLX even for ROCm builds.
+    # amdrocm-runtime-dev provides hip-config.cmake (find_package(hip)).
     # Keep this idempotent so a freshly provisioned self-hosted runner recovers.
     - name: Ensure host build dependencies
       run: |
+        ROCM_VER="${{ env.ROCM_VERSION }}"
         sudo apt-get update -qq
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
           cmake ninja-build \
           libcurl4-openssl-dev \
           libopenblas-dev liblapacke-dev \
           pkg-config \
-          g++-13
+          g++-13 \
+          "amdrocm-runtime-dev${ROCM_VER}" \
+          "amdrocm-llvm-dev${ROCM_VER}" \
+          "amdrocm-blas-dev${ROCM_VER}" \
+          "amdrocm-rand-dev${ROCM_VER}" \
+          "amdrocm-fft-dev${ROCM_VER}" \
+          "amdrocm-solver-dev${ROCM_VER}" \
+          "amdrocm-sparse-dev${ROCM_VER}" \
+          "amdrocm-hipblas-common-dev${ROCM_VER}"
 
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
