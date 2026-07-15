@@ -1,0 +1,18 @@
+[package]
+name = "fastokens_c"
+version = "0.1.0"
+edition = "2021"
+description = "C FFI bindings for crusoecloud/fastokens"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# High-performance BPE tokenizer (https://github.com/crusoecloud/fastokens).
+# default-features disabled: we load tokenizer.json from local model dirs and
+# do not need the HuggingFace Hub client in the inference engine.
+# Pin to main tip tested with this integration (v0.2.1 era).
+fastokens = { git = "https://github.com/crusoecloud/fastokens", rev = "326cb5afc5a033d2f7885832d12fd43b9ea50cdd", default-features = false }
+serde_json = "1"

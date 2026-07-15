@@ -62,17 +62,10 @@ FetchContent_MakeAvailable(stb)
 # Find libcurl for Hub client
 find_package(CURL REQUIRED)
 
-# tokenizers-cpp (HuggingFace tokenizers via Rust + C++ wrapper)
-set(MSGPACK_USE_BOOST OFF CACHE BOOL "" FORCE)
-set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    tokenizers_cpp
-    GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(tokenizers_cpp)
+# fastokens (high-performance BPE via crusoecloud/fastokens + C FFI)
+# Replaces mlc-ai/tokenizers-cpp. ~10x faster encode for long prompts.
+# https://github.com/crusoecloud/fastokens
+add_subdirectory(third_party/fastokens_cpp)
 
 # minja — Jinja2 template engine for HF chat templates (header-only)
 set(MINJA_TEST_ENABLED OFF CACHE BOOL "" FORCE)
@@ -133,7 +126,7 @@ target_link_libraries(mlx-lm-common PUBLIC
     mlx-lm-core
     nlohmann_json::nlohmann_json
     CURL::libcurl
-    tokenizers_cpp
+    fastokens_cpp
 )
 target_include_directories(mlx-lm-common PUBLIC ${minja_SOURCE_DIR}/include)
 
