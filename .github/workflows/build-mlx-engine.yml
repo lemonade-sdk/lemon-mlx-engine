@@ -137,6 +137,37 @@ jobs:
           "amdrocm-ccl-dev${ROCM_VER}" \
           "amdrocm-dnn-dev${ROCM_VER}"
 
+    # Ubuntu universe ships ROCm 5.7.1 dev packages that drop their headers in
+    # /usr/include (hip/, rocprim/, thrust/). Clang puts the ROCm tree's include
+    # dir in the "after system dirs" group, so /usr/include is searched FIRST and
+    # every .hip TU compiles against the 5.7.1 headers -- no -I ordering can undo
+    # this. Nothing here needs them: MLX resolves hip/rocprim/rocthrust through
+    # /opt/rocm's CMake config packages. apt pulls them in as recommends of
+    # librocthrust-dev, so re-check on every run.
+    - name: Remove distro ROCm headers that shadow /opt/rocm
+      run: |
+        conflicting=$(dpkg-query -W -f='${binary:Package} ${Status}\n' \
+          libamdhip64-dev librocprim-dev librocthrust-dev 2>/dev/null \
+          | awk '$NF == "installed" { print $1 }')
+
+        if [ -n "$conflicting" ]; then
+          echo "Purging: $conflicting"
+          sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y $conflicting
+        else
+          echo "No conflicting distro ROCm dev packages installed."
+        fi
+
+        stale=""
+        for d in /usr/include/hip /usr/include/rocprim /usr/include/thrust; do
+          [ -e "$d" ] && stale="$stale $d"
+        done
+        if [ -n "$stale" ]; then
+          echo "ERROR: ROCm headers still present under /usr/include:$stale"
+          echo "They shadow /opt/rocm/core-${{ env.ROCM_VERSION }} and will break the HIP build."
+          for d in $stale; do dpkg -S "$d" 2>/dev/null || echo "  $d is unowned"; done
+          exit 1
+        fi
+
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
       with:
