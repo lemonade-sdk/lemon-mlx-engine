@@ -10,9 +10,18 @@ BaseConfiguration parse_base_configuration(const nlohmann::json& config) {
     BaseConfiguration base;
     base.model_type = config.value("model_type", std::string(""));
 
+    // Top-level eos_token_id (most LLMs). VLM / hybrid wrappers (Qwen3.5/3.6)
+    // nest it under text_config — without this generation never stops and
+    // hits max_tokens, replaying answers after <|endoftext|>.
     if (config.contains("eos_token_id")) {
         IntOrIntArray eos;
         from_json(config["eos_token_id"], eos);
+        base.eos_token_ids = eos;
+    } else if (config.contains("text_config") &&
+               config["text_config"].is_object() &&
+               config["text_config"].contains("eos_token_id")) {
+        IntOrIntArray eos;
+        from_json(config["text_config"]["eos_token_id"], eos);
         base.eos_token_ids = eos;
     }
 
