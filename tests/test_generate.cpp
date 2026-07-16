@@ -6,8 +6,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/generate_params.h>
+#include <mlx-lm/common/model_container.h>
 #include <mlx/mlx.h>
+#include <functional>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace mx = mlx::core;
@@ -393,6 +396,130 @@ TEST_CASE("NaiveStreamingDetokenizer segment reset on newline", "[generate]") {
     text = detok.next(decode);
     REQUIRE(text.has_value());
     REQUIRE(text.value() == "world");
+}
+
+// ===== Cancellation predicate =====
+
+// generate() reaches the model only through ModelContext's type-erased function
+// members, so a fake context exercises the real decode loop with no weights.
+// The model always emits kForcedToken; decode_fn decides what (if anything) the
+// detokenizer surfaces.
+static mlx_lm::ModelContext make_fake_context(
+    std::function<std::string(const std::vector<int>&)> decode_fn)
+{
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+
+    mlx_lm::ModelContext ctx;
+    ctx.model_id = "fake-model";
+    ctx.new_cache_fn = [](const mlx_lm::GenerateParameters&) {
+        return std::vector<mlx_lm::KVCache>{};
+    };
+    ctx.prepare_fn = [](const mlx_lm::LMInput& input, std::vector<mlx_lm::KVCache>&, int) {
+        return mlx_lm::PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const mlx_lm::LMInput::Text&, std::vector<mlx_lm::KVCache>*,
+                     const mlx_lm::LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;  // argmax sampling makes this deterministic
+        return mlx_lm::LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = std::move(decode_fn);
+    return ctx;
+}
+
+static mlx_lm::GenerateParameters greedy_params(int max_tokens) {
+    mlx_lm::GenerateParameters params;
+    params.temperature = 0.0f;  // argmax
+    params.max_tokens = max_tokens;
+    return params;
+}
+
+// Regression: the client-disconnect check must not depend on on_text firing.
+// The detokenizer withholds text for incomplete UTF-8 and for tokens that do
+// not extend the segment, so a cancel that only runs from on_text would keep
+// decoding (holding the model lock) while the detokenizer stays silent.
+TEST_CASE("generate_text cancels when the detokenizer emits no text", "[generate]") {
+    // Decode to a constant: new_segment never grows, so next() always returns
+    // nullopt and on_text is never invoked.
+    auto ctx = make_fake_context([](const std::vector<int>&) -> std::string {
+        return "";
+    });
+
+    auto params = greedy_params(64);
+    mlx_lm::LMInput input(mx::array({1, 2, 3}, {3}, mx::int32));
+
+    int text_callbacks = 0;
+    int cancel_polls = 0;
+
+    auto info = mlx_lm::generate_text(
+        ctx, input, params, /*eos_token_ids=*/{},
+        [&](const std::string&, int) {
+            text_callbacks++;
+            return mlx_lm::GenerateDisposition::more;
+        },
+        [&]() {
+            cancel_polls++;
+            return cancel_polls > 3;  // "client disconnected" after 3 tokens
+        });
+
+    // The gap this guards: no text chunk ever reached the callback...
+    REQUIRE(text_callbacks == 0);
+    // ...yet the predicate was still polled and stopped generation early,
+    // rather than running to max_tokens.
+    REQUIRE(cancel_polls == 4);
+    REQUIRE(info.generation_token_count < 64);
+}
+
+// The predicate must also be polled when the callback *is* firing normally.
+TEST_CASE("generate_text cancel predicate runs every token", "[generate]") {
+    // Each token appends a character, so every token yields text.
+    auto ctx = make_fake_context([](const std::vector<int>& tokens) -> std::string {
+        return std::string(tokens.size(), 'x');
+    });
+
+    auto params = greedy_params(64);
+    mlx_lm::LMInput input(mx::array({1, 2, 3}, {3}, mx::int32));
+
+    int text_callbacks = 0;
+    int cancel_polls = 0;
+
+    mlx_lm::generate_text(
+        ctx, input, params, /*eos_token_ids=*/{},
+        [&](const std::string& text, int) {
+            text_callbacks++;
+            REQUIRE(text == "x");
+            return mlx_lm::GenerateDisposition::more;
+        },
+        [&]() {
+            cancel_polls++;
+            return cancel_polls > 2;
+        });
+
+    REQUIRE(cancel_polls == 3);
+    // Polled before each forward pass, so at most one text chunk per poll.
+    REQUIRE(text_callbacks <= 2);
+}
+
+// An absent predicate must not break the ordinary path.
+TEST_CASE("generate_text without a cancel predicate runs to completion", "[generate]") {
+    auto ctx = make_fake_context([](const std::vector<int>& tokens) -> std::string {
+        return std::string(tokens.size(), 'x');
+    });
+
+    auto params = greedy_params(5);
+    mlx_lm::LMInput input(mx::array({1, 2, 3}, {3}, mx::int32));
+
+    int text_callbacks = 0;
+    auto info = mlx_lm::generate_text(
+        ctx, input, params, /*eos_token_ids=*/{},
+        [&](const std::string&, int) {
+            text_callbacks++;
+            return mlx_lm::GenerateDisposition::more;
+        });
+
+    REQUIRE(text_callbacks > 0);
+    REQUIRE(info.generation_token_count > 0);
 }
 
 // ===== MTPHead draft-token shape smoke =====

@@ -398,16 +398,14 @@ struct Server::Impl {
                             }
                         }
 
-                        // Generate tokens and stream as SSE. Returning
-                        // GenerateDisposition::stop aborts the decode loop
-                        // (and frees the model mutex) when the client drops.
+                        // Generate tokens and stream as SSE. The should_cancel
+                        // predicate below runs before every forward pass, so a
+                        // dropped client aborts the decode loop (and frees the
+                        // model mutex) at the next token — including tokens the
+                        // detokenizer swallows, which never reach this callback.
                         auto info = generate_text(
                             ctx, lm_input, params, eos_set,
                             [&](const std::string& text, int /*token*/) {
-                                if (!client_writable(sink)) {
-                                    client_gone = true;
-                                    return GenerateDisposition::stop;
-                                }
                                 openai::ChatCompletionChunk chunk;
                                 chunk.id = request_id;
                                 chunk.created = created;
@@ -423,6 +421,13 @@ struct Server::Impl {
                                     return GenerateDisposition::stop;
                                 }
                                 return GenerateDisposition::more;
+                            },
+                            [&]() {
+                                if (client_writable(sink)) {
+                                    return false;
+                                }
+                                client_gone = true;
+                                return true;
                             });
 
                         if (client_gone) {

@@ -1028,7 +1028,8 @@ GenerateCompletionInfo generate(
     const LMInput& input,
     const GenerateParameters& params,
     const std::set<int>& eos_token_ids,
-    const std::function<GenerateDisposition(int token)>& on_token)
+    const std::function<GenerateDisposition(int token)>& on_token,
+    const GenerateCancelPredicate& should_cancel)
 {
     // Upgrade GPU wired memory for the duration of generation.
     WiredLimitGuard wired_guard;
@@ -1040,7 +1041,18 @@ GenerateCompletionInfo generate(
     auto start = std::chrono::steady_clock::now();
     int token_count = 0;
 
-    while (auto maybe_token = iter.next()) {
+    while (true) {
+        // Poll before the forward pass, so an abandoned request stops without
+        // spending another token's compute. on_token cannot be relied on for
+        // this: generate_text() skips it whenever the detokenizer has no text.
+        if (should_cancel && should_cancel()) {
+            break;
+        }
+
+        auto maybe_token = iter.next();
+        if (!maybe_token) {
+            break;
+        }
         int token = *maybe_token;
 
         // Restart the decode clock after the first token.
@@ -1085,7 +1097,8 @@ GenerateCompletionInfo generate_text(
     const LMInput& input,
     const GenerateParameters& params,
     const std::set<int>& eos_token_ids,
-    const std::function<GenerateDisposition(const std::string& text, int token)>& on_text)
+    const std::function<GenerateDisposition(const std::string& text, int token)>& on_text,
+    const GenerateCancelPredicate& should_cancel)
 {
     auto decode_fn = context.decode_fn;
 
@@ -1097,8 +1110,12 @@ GenerateCompletionInfo generate_text(
             if (auto text = detokenizer.next(decode_fn)) {
                 return on_text(*text, token);
             }
+            // No text this token (incomplete UTF-8, or it did not extend the
+            // segment). on_text is skipped, so cancellation rests entirely on
+            // should_cancel, which generate() polls every iteration.
             return GenerateDisposition::more;
-        });
+        },
+        should_cancel);
 }
 
 } // namespace mlx_lm
