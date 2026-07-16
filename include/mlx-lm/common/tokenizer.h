@@ -7,8 +7,9 @@
 
 namespace mlx_lm {
 
-// Tokenizer wraps tokenizers-cpp (HuggingFace tokenizers).
+// Tokenizer wraps crusoecloud/fastokens (high-performance BPE).
 // Loads from tokenizer.json in a model directory.
+// https://github.com/crusoecloud/fastokens
 class Tokenizer {
 public:
     ~Tokenizer();

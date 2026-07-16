@@ -29,7 +29,9 @@ env:
 
 jobs:
   prepare-matrix:
-    runs-on: ubuntu-22.04
+    # Self-hosted: GitHub-hosted ubuntu-* pool was stalling for hours (queued forever).
+    # This job is a few shell echoes — safe on the office ROCm box.
+    runs-on: [self-hosted, Linux, X64, gfx1151]
     outputs:
       should_build_ubuntu_rocm: ${{ steps.set-matrix.outputs.should_build_ubuntu_rocm }}
       should_build_ubuntu_cpu: ${{ steps.set-matrix.outputs.should_build_ubuntu_cpu }}
@@ -79,12 +81,28 @@ jobs:
         ROCM_VER="${{ env.ROCM_VERSION }}"
         ROCM_ARCH="${{ env.ROCM_ARCH }}"
 
-        if dpkg -s "amdrocm${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed" \
-           && dpkg -s "amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}" 2>/dev/null | grep -q "Status: install ok installed"; then
+        # Self-hosted runners are expected to pre-install ROCm; this step only
+        # verifies the packages are present. Package naming differs by ROCm
+        # series:
+        #   7.13: amdrocm7.13-gfx1151 + amdrocm-core-dev7.13  (no arch suffix)
+        #   7.14: amdrocm7.14-gfx1151 + amdrocm-core-dev7.14-gfx1151
+        pkg_ok() { dpkg -s "$1" 2>/dev/null | grep -q "Status: install ok installed"; }
+
+        RUNTIME_PKG="amdrocm${ROCM_VER}-${ROCM_ARCH}"
+        CORE_DEV_ARCH="amdrocm-core-dev${ROCM_VER}-${ROCM_ARCH}"
+        CORE_DEV_VER="amdrocm-core-dev${ROCM_VER}"
+
+        if pkg_ok "$RUNTIME_PKG" && { pkg_ok "$CORE_DEV_ARCH" || pkg_ok "$CORE_DEV_VER"; }; then
           echo "ROCm ${ROCM_VER} ${ROCM_ARCH} packages already installed; skipping."
+          dpkg -l | grep -E "amdrocm${ROCM_VER}|amdrocm-core-dev${ROCM_VER}" | head -20 || true
           exit 0
         fi
 
+        echo "ERROR: required ROCm packages not installed on this runner."
+        echo "  need: $RUNTIME_PKG"
+        echo "  and:  $CORE_DEV_ARCH  OR  $CORE_DEV_VER"
+        echo "Installed amdrocm packages:"
+        dpkg -l 'amdrocm*' 2>/dev/null | head -40 || true
         exit 1
 
     - name: Set ROCm environment variables
@@ -94,6 +112,61 @@ jobs:
         echo "ROCM_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
         echo "HIP_PLATFORM=amd" >> $GITHUB_ENV
         echo "/opt/rocm/core-${ROCM_VER}/bin:/opt/rocm/core-${ROCM_VER}/lib/llvm/bin:$PATH" >> $GITHUB_PATH
+
+    # Host CPU BLAS/LAPACK + curl are required by MLX even for ROCm builds.
+    # amdrocm-runtime-dev provides hip-config.cmake (find_package(hip)).
+    # Keep this idempotent so a freshly provisioned self-hosted runner recovers.
+    - name: Ensure host build dependencies
+      run: |
+        ROCM_VER="${{ env.ROCM_VERSION }}"
+        sudo apt-get update -qq
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          cmake ninja-build \
+          libcurl4-openssl-dev \
+          libopenblas-dev liblapacke-dev \
+          pkg-config \
+          g++-13 \
+          "amdrocm-runtime-dev${ROCM_VER}" \
+          "amdrocm-llvm-dev${ROCM_VER}" \
+          "amdrocm-blas-dev${ROCM_VER}" \
+          "amdrocm-rand-dev${ROCM_VER}" \
+          "amdrocm-fft-dev${ROCM_VER}" \
+          "amdrocm-solver-dev${ROCM_VER}" \
+          "amdrocm-sparse-dev${ROCM_VER}" \
+          "amdrocm-hipblas-common-dev${ROCM_VER}" \
+          "amdrocm-ccl-dev${ROCM_VER}" \
+          "amdrocm-dnn-dev${ROCM_VER}"
+
+    # Ubuntu universe ships ROCm 5.7.1 dev packages that drop their headers in
+    # /usr/include (hip/, rocprim/, thrust/). Clang puts the ROCm tree's include
+    # dir in the "after system dirs" group, so /usr/include is searched FIRST and
+    # every .hip TU compiles against the 5.7.1 headers -- no -I ordering can undo
+    # this. Nothing here needs them: MLX resolves hip/rocprim/rocthrust through
+    # /opt/rocm's CMake config packages. apt pulls them in as recommends of
+    # librocthrust-dev, so re-check on every run.
+    - name: Remove distro ROCm headers that shadow /opt/rocm
+      run: |
+        conflicting=$(dpkg-query -W -f='${binary:Package} ${Status}\n' \
+          libamdhip64-dev librocprim-dev librocthrust-dev 2>/dev/null \
+          | awk '$NF == "installed" { print $1 }')
+
+        if [ -n "$conflicting" ]; then
+          echo "Purging: $conflicting"
+          sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y $conflicting
+        else
+          echo "No conflicting distro ROCm dev packages installed."
+        fi
+
+        stale=""
+        for d in /usr/include/hip /usr/include/rocprim /usr/include/thrust; do
+          [ -e "$d" ] && stale="$stale $d"
+        done
+        if [ -n "$stale" ]; then
+          echo "ERROR: ROCm headers still present under /usr/include:$stale"
+          echo "They shadow /opt/rocm/core-${{ env.ROCM_VERSION }} and will break the HIP build."
+          for d in $stale; do dpkg -S "$d" 2>/dev/null || echo "  $d is unowned"; done
+          exit 1
+        fi
 
     - name: Cache FetchContent MLX source
       uses: actions/cache@v4
@@ -161,6 +234,10 @@ jobs:
         retention-days: 30
 
   build-ubuntu-cpu:
+    # Pinned: ubuntu-latest is now 24.04 (glibc 2.39 / GLIBCXX_3.4.32), so its
+    # binaries refuse to start on the 22.04 smoke-test runner and on any user
+    # box older than 24.04. Build against the oldest glibc we support instead --
+    # 2.35 runs everywhere newer. Same class of drift as the macos-15 pin below.
     runs-on: ubuntu-22.04
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.should_build_ubuntu_cpu == 'true'
@@ -366,6 +443,16 @@ jobs:
         if [ "${ROCM_INSTALLED}" = "false" ]; then
           exit 1
         fi
+
+        # The server JIT-compiles kernels (e.g. the GDN conv step) through comgr
+        # at request time, and comgr resolves hip/hip_runtime.h against the
+        # default /opt/rocm/include -- which does not exist in this versioned
+        # layout, the headers live under /opt/rocm/core-${ROCM_VER}/include.
+        # Without these, model load fails with "hip/hip_runtime.h file not
+        # found". $GITHUB_ENV does not cross jobs, so re-export what the build
+        # job set.
+        echo "HIP_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
+        echo "ROCM_PATH=/opt/rocm/core-${ROCM_VER}" >> $GITHUB_ENV
 
     - name: Download build artifact
       uses: actions/download-artifact@v6
