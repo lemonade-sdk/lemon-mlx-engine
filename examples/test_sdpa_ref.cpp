@@ -59,11 +59,22 @@ static void run(int H, int L, int D, bool causal) {
 }
 
 int main() {
-  for (int D : {64, 128, 256}) {
-    for (int L : {8, 64, 256, 1024}) {
-      run(8, L, D, true);
+  // Bisect the tile boundary. BLOCK_M=BLOCK_N=64, so:
+  //   L<=16  : one 16x16 WMMA tile, one wave writes output (rows 0..L-1).
+  //   L=32   : two query waves written, two key tiles -> first multi-tile case.
+  //   L=64   : full single K/V block (still NO online-softmax rescale).
+  //   L>=128 : first time the k_start loop runs >1 iteration (rescale active).
+  // If L=16 passes but L=32 fails, the bug is the multi-tile full-block WMMA
+  // path, not the online softmax. Run both causal and non-causal to factor the
+  // causal mask out of the picture.
+  for (int causal = 1; causal >= 0; causal--) {
+    printf("=== %s ===\n", causal ? "causal" : "non-causal");
+    for (int D : {64, 128, 256}) {
+      for (int L : {8, 16, 17, 32, 48, 64, 128, 256, 1024}) {
+        run(8, L, D, causal != 0);
+      }
+      printf("\n");
     }
-    printf("\n");
   }
   return 0;
 }

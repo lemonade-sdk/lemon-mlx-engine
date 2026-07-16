@@ -28,6 +28,21 @@ TEST_CASE("BaseConfiguration with array EOS", "[config]") {
     REQUIRE(config.eos_token_ids->values.size() == 2);
 }
 
+TEST_CASE("BaseConfiguration text_config nested EOS (Qwen3.5 VLM)", "[config]") {
+    nlohmann::json j = {
+        {"model_type", "qwen3_5"},
+        {"text_config", {
+            {"eos_token_id", 248044},
+            {"head_dim", 256}
+        }}
+    };
+
+    auto config = mlx_lm::parse_base_configuration(j);
+    REQUIRE(config.eos_token_ids.has_value());
+    REQUIRE(config.eos_token_ids->values.size() == 1);
+    REQUIRE(config.eos_token_ids->values[0] == 248044);
+}
+
 TEST_CASE("BaseConfiguration with quantization", "[config]") {
     nlohmann::json j = {
         {"model_type", "llama"},

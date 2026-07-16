@@ -53,6 +53,7 @@
 #include <mlx-lm/common/quantize_utils.h>
 #include <mlx-lm/common/quantized_linear.h>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -367,17 +368,27 @@ ModelContext load_llm_from_directory(
         };
     }
 
-    // Load chat template from tokenizer_config.json
+    // Merge chat-template / tokenizer-config EOS into the stop set. Qwen
+    // models often use <|im_end|> in the template while text_config lists
+    // <|endoftext|> — both must stop generation.
+    auto add_eos_id = [&](int id) {
+        if (id < 0) return;
+        if (!ctx.eos_token_ids.has_value()) {
+            ctx.eos_token_ids = std::vector<int>{};
+        }
+        auto& v = *ctx.eos_token_ids;
+        if (std::find(v.begin(), v.end(), id) == v.end()) {
+            v.push_back(id);
+        }
+    };
+
+    // Load chat template from tokenizer_config.json / chat_template.jinja
     auto chat_tmpl = load_chat_template(model_directory);
     if (chat_tmpl.has_value() && tokenizer) {
         auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
 
-        // If eos_token_ids not set from config.json, resolve from tokenizer_config eos_token
-        if (!ctx.eos_token_ids.has_value() && !shared_tmpl->eos_token().empty()) {
-            int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
-            if (eos_id >= 0) {
-                ctx.eos_token_ids = std::vector<int>{eos_id};
-            }
+        if (!shared_tmpl->eos_token().empty()) {
+            add_eos_id(tokenizer->token_to_id(shared_tmpl->eos_token()));
         }
 
         // Shared extra context allows callers (e.g., chat.cpp --no-think)
@@ -390,6 +401,17 @@ ModelContext load_llm_from_directory(
             auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
             return tokenizer->encode(rendered);
         };
+    } else if (tokenizer) {
+        // No chat template: still honor tokenizer_config eos_token if present.
+        auto tc_path = fs::path(model_directory) / "tokenizer_config.json";
+        if (fs::exists(tc_path)) {
+            std::ifstream tf(tc_path);
+            nlohmann::json tc;
+            tf >> tc;
+            if (tc.contains("eos_token") && tc["eos_token"].is_string()) {
+                add_eos_id(tokenizer->token_to_id(tc["eos_token"].get<std::string>()));
+            }
+        }
     }
 
     return ctx;
