@@ -215,6 +215,18 @@ enum class GenerateDisposition {
 // Returns true to continue, false to stop.
 using GenerateCallback = std::function<bool(const GenerateChunk& chunk)>;
 
+// Polled once per decode iteration, before each forward pass. Return true to
+// abort generation.
+//
+// This exists because GenerateDisposition alone cannot guarantee prompt
+// cancellation: generate_text() only invokes its callback when the streaming
+// detokenizer has text to emit, and the detokenizer holds tokens back for
+// incomplete UTF-8 sequences or when a token does not extend the decoded
+// segment. A caller that only cancels from the callback therefore keeps
+// decoding — and keeps the model lock held — for as long as the detokenizer
+// stays silent. The predicate runs on every token regardless.
+using GenerateCancelPredicate = std::function<bool()>;
+
 // Streaming detokenizer — accumulates tokens and emits decoded text.
 class NaiveStreamingDetokenizer {
     std::vector<int> segment_tokens_;
@@ -401,6 +413,8 @@ private:
 //   eos_token_ids - set of token IDs that signal end of sequence
 //   on_token      - callback invoked for each token; receives token ID,
 //                   returns GenerateDisposition
+//   should_cancel - optional; polled before every forward pass. Return true to
+//                   abort. May be empty, in which case generation never cancels.
 //
 // Returns: GenerateCompletionInfo with timing and token count statistics.
 // ---------------------------------------------------------------------------
@@ -409,10 +423,15 @@ GenerateCompletionInfo generate(
     const LMInput& input,
     const GenerateParameters& params,
     const std::set<int>& eos_token_ids,
-    const std::function<GenerateDisposition(int token)>& on_token);
+    const std::function<GenerateDisposition(int token)>& on_token,
+    const GenerateCancelPredicate& should_cancel = {});
 
 // Streaming generate with text chunks — same as above but decodes tokens
 // into text using the context's decode_fn and calls back with text chunks.
+//
+// on_text fires only when the detokenizer has text to emit, so callers that
+// must abort promptly (e.g. on client disconnect) should pass should_cancel
+// instead of relying on the callback's GenerateDisposition.
 //
 // Returns: GenerateCompletionInfo with timing and token count statistics.
 GenerateCompletionInfo generate_text(
@@ -420,6 +439,7 @@ GenerateCompletionInfo generate_text(
     const LMInput& input,
     const GenerateParameters& params,
     const std::set<int>& eos_token_ids,
-    const std::function<GenerateDisposition(const std::string& text, int token)>& on_text);
+    const std::function<GenerateDisposition(const std::string& text, int token)>& on_text,
+    const GenerateCancelPredicate& should_cancel = {});
 
 } // namespace mlx_lm

@@ -354,6 +354,7 @@ struct Server::Impl {
             "text/event-stream",
             [model, chat_req, params, request_id, created]
             (size_t /*offset*/, httplib::DataSink& sink) -> bool {
+                bool client_gone = false;
                 try {
                     model->perform([&](ModelContext& ctx) {
                         WiredLimitGuard wired_guard;
@@ -391,10 +392,17 @@ struct Server::Impl {
                             choice.delta.role = "assistant";
                             chunk.choices.push_back(std::move(choice));
 
-                            send_sse(sink, nlohmann::json(chunk).dump());
+                            if (!send_sse(sink, nlohmann::json(chunk).dump())) {
+                                client_gone = true;
+                                return;
+                            }
                         }
 
-                        // Generate tokens and stream as SSE.
+                        // Generate tokens and stream as SSE. The should_cancel
+                        // predicate below runs before every forward pass, so a
+                        // dropped client aborts the decode loop (and frees the
+                        // model mutex) at the next token — including tokens the
+                        // detokenizer swallows, which never reach this callback.
                         auto info = generate_text(
                             ctx, lm_input, params, eos_set,
                             [&](const std::string& text, int /*token*/) {
@@ -408,9 +416,26 @@ struct Server::Impl {
                                 choice.delta.content = text;
                                 chunk.choices.push_back(std::move(choice));
 
-                                send_sse(sink, nlohmann::json(chunk).dump());
+                                if (!send_sse(sink, nlohmann::json(chunk).dump())) {
+                                    client_gone = true;
+                                    return GenerateDisposition::stop;
+                                }
                                 return GenerateDisposition::more;
+                            },
+                            [&]() {
+                                if (client_writable(sink)) {
+                                    return false;
+                                }
+                                client_gone = true;
+                                return true;
                             });
+
+                        if (client_gone) {
+                            std::cerr << "[server] client disconnected mid-stream; "
+                                      << "cancelled generation for " << request_id
+                                      << "\n";
+                            return;
+                        }
 
                         std::cerr << "[TPS] " << info.summary() << std::endl;
 
@@ -426,18 +451,26 @@ struct Server::Impl {
                             choice.finish_reason = "stop";
                             chunk.choices.push_back(std::move(choice));
 
-                            send_sse(sink, nlohmann::json(chunk).dump());
+                            if (!send_sse(sink, nlohmann::json(chunk).dump())) {
+                                client_gone = true;
+                                return;
+                            }
                         }
 
                         send_sse(sink, "[DONE]");
                     });
                 } catch (const std::exception& e) {
-                    nlohmann::json err = {{"error", e.what()}};
-                    send_sse(sink, err.dump());
+                    if (client_writable(sink)) {
+                        nlohmann::json err = {{"error", e.what()}};
+                        send_sse(sink, err.dump());
+                    }
                 }
 
-                sink.done();
-                return true;
+                if (!client_gone) {
+                    sink.done();
+                }
+                // false tells httplib the connection is finished/aborted.
+                return !client_gone;
             });
     }
 
@@ -527,9 +560,24 @@ struct Server::Impl {
         return eos_set;
     }
 
-    static void send_sse(httplib::DataSink& sink, const std::string& data) {
+    // Returns false if the client disconnected (or write failed) so callers
+    // can stop generation and release the model lock promptly.
+    static bool client_writable(httplib::DataSink& sink) {
+        if (sink.is_writable && !sink.is_writable()) {
+            return false;
+        }
+        return true;
+    }
+
+    static bool send_sse(httplib::DataSink& sink, const std::string& data) {
+        if (!client_writable(sink)) {
+            return false;
+        }
         std::string event = "data: " + data + "\n\n";
-        sink.write(event.data(), event.size());
+        if (!sink.write(event.data(), event.size())) {
+            return false;
+        }
+        return client_writable(sink);
     }
 
     static void send_error(httplib::Response& res, int status,
