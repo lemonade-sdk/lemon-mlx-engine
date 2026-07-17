@@ -24,6 +24,21 @@ mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
     return mx::matmul(x, mx::transpose(w));
 }
 
+// Forward declaration of the generic fallback (defined after the ROCm
+// path). The ROCm path delegates T>1 prefill to this function.
+// Note: default arguments are on the definition, not this decl.
+std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
+    const mx::array& inputs,
+    const mx::array& conv_weight,
+    const mx::array& qkv_weight,
+    const mx::array& z_weight,
+    const mx::array& dt_bias,
+    const mx::array& a_log,
+    const std::optional<mx::array>& state,
+    const MTPDeltaConfig& config,
+    const std::optional<mx::array>& beta_bias_weight,
+    const std::optional<mx::array>& a_weight);
+
 // ROCm-specific fused kernel implementation.
 // This path uses custom HIP kernels for maximum performance on AMD GPUs.
 #if defined(MLX_BUILD_ROCM)
@@ -172,10 +187,16 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_rocm(
         return {mx::reshape(normed, {B, S, H}), new_state};
     }
 
-    // General path: T>1 prefill — fall through to graph compose
+    // General path: T>1 prefill — use standard ops.
+    // The generic function handles this correctly on all platforms.
     (void)dt_bias;
     (void)a_log;
     (void)state;
+
+    return mtp_delta_fused_generic(
+        inputs, conv_weight, qkv_weight, z_weight,
+        dt_bias, a_log, state, config,
+        beta_bias_weight, a_weight);
 }
 #endif // MLX_BUILD_ROCM
 
