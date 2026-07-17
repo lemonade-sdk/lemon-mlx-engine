@@ -639,7 +639,7 @@ jobs:
                 {\"role\": \"system\", \"content\": \"You are a math assistant. Answer arithmetic questions with a single number.\"},
                 {\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}
               ],
-              \"max_tokens\": 32,
+              \"max_tokens\": 128,
               \"temperature\": 0.0,
               \"stream\": false
             }" 2>&1) || {

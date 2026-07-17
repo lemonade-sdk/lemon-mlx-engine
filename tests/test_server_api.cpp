@@ -42,22 +42,29 @@ struct ServerRunner {
         mlx_lm::ServerConfig config;
         config.host = "127.0.0.1";
         config.port = port;
-        config.default_params.max_tokens = 64;
+        config.default_params.max_tokens = 128;
         config.default_params.temperature = 0.0f; // deterministic
 
         server = std::make_unique<mlx_lm::Server>(manager, config);
 
         thread = std::thread([this]() {
-            ready.store(true);
             server->start();
         });
 
-        // Wait for server to be ready.
-        while (!ready.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Poll /health until the socket is actually accepting connections.
+        httplib::Client cli("127.0.0.1", port);
+        cli.set_connection_timeout(1);
+        cli.set_read_timeout(1);
+        bool up = false;
+        for (int i = 0; i < 200; ++i) {
+            if (auto res = cli.Get("/health"); res && res->status == 200) {
+                up = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-        // Give httplib a moment to bind the socket.
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ready.store(up);
+        REQUIRE(up);
     }
 
     ~ServerRunner() {
@@ -237,7 +244,8 @@ TEST_CASE("POST /v1/chat/completions auto-loads model and generates response", "
 
     auto manager = std::make_shared<mlx_lm::ModelManager>();
     manager->set_no_download(true);
-    manager->set_no_think(true);
+    // Keep thinking enabled: Qwen3.5 empty-think prefill often samples <|im_end|> first.
+    manager->set_no_think(false);
     ServerRunner runner(manager, TEST_PORT + 4);
 
     httplib::Client cli("127.0.0.1", TEST_PORT + 4);
@@ -249,7 +257,8 @@ TEST_CASE("POST /v1/chat/completions auto-loads model and generates response", "
         {"messages", json::array({
             {{"role", "user"}, {"content", "What is 2+2? Reply with just the number."}}
         })},
-        {"max_tokens", 32},
+        // Thinking models need enough budget to reach the answer inside the chain-of-thought.
+        {"max_tokens", 128},
         {"temperature", 0.0},
         {"stream", false}
     };
@@ -281,19 +290,19 @@ TEST_CASE("POST /v1/chat/completions streaming", "[server-api][inference]") {
 
     auto manager = std::make_shared<mlx_lm::ModelManager>();
     manager->set_no_download(true);
-    manager->set_no_think(true);
+    manager->set_no_think(false);
     ServerRunner runner(manager, TEST_PORT + 5);
 
     httplib::Client cli("127.0.0.1", TEST_PORT + 5);
     cli.set_connection_timeout(120);
-    cli.set_read_timeout(120);
+    cli.set_read_timeout(180);
 
     json req_body = {
         {"model", TEST_MODEL},
         {"messages", json::array({
             {{"role", "user"}, {"content", "What is 2+2? Reply with just the number."}}
         })},
-        {"max_tokens", 32},
+        {"max_tokens", 128},
         {"temperature", 0.0},
         {"stream", true}
     };
@@ -344,7 +353,7 @@ TEST_CASE("POST /v1/completions text completion", "[server-api][inference]") {
 
     auto manager = std::make_shared<mlx_lm::ModelManager>();
     manager->set_no_download(true);
-    manager->set_no_think(true);
+    manager->set_no_think(false);
     ServerRunner runner(manager, TEST_PORT + 6);
 
     httplib::Client cli("127.0.0.1", TEST_PORT + 6);

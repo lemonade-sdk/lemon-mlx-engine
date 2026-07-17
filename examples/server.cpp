@@ -195,8 +195,9 @@ int main(int argc, char* argv[]) {
                       << ", peak=" << format_bytes(mx::get_peak_memory())
                       << ", cache=" << format_bytes(mx::get_cache_memory()) << "\n";
 
-            if (args.no_think && ctx.template_extra_context) {
-                (*ctx.template_extra_context)["enable_thinking"] = false;
+            // Always set explicitly (same as chat.cpp / ModelManager).
+            if (ctx.template_extra_context) {
+                (*ctx.template_extra_context)["enable_thinking"] = !args.no_think;
             }
 
             auto container = std::make_shared<mlx_lm::ModelContainer>(std::move(ctx));
