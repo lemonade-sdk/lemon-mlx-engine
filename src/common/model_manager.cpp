@@ -86,9 +86,12 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
         ctx = load_llm(model_id);
     }
 
-    // Apply no-think if configured.
-    if (no_think_ && ctx.template_extra_context) {
-        (*ctx.template_extra_context)["enable_thinking"] = false;
+    // Qwen3.5 chat templates treat undefined enable_thinking as false and
+    // prefill an empty <think></think> block. That makes the 0.8B model
+    // greedily emit <|im_end|> immediately for many prompts. Match chat.cpp:
+    // default thinking ON unless --no-think.
+    if (ctx.template_extra_context) {
+        (*ctx.template_extra_context)["enable_thinking"] = !no_think_;
     }
 
     // Warmup: prime GPU allocator cache.
