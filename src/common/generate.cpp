@@ -996,8 +996,11 @@ std::optional<int> TokenIterator::next() {
     // Build-once pure-relaunch graph decode. Default OFF — eager decode is the
     // stable/faster path on gfx1151 (4-bit ~68 tok/s eager vs ~64 pure). Enable
     // with MLX_DECODE_GRAPH_PURE=1 when profiling launch-bound dGPUs (e.g. R9700).
-    static const bool pure_enabled =
-        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr;
+    // Opt-in only when exactly "1" — presence of =0 / =false must stay eager.
+    static const bool pure_enabled = [] {
+        const char* v = std::getenv("MLX_DECODE_GRAPH_PURE");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;
