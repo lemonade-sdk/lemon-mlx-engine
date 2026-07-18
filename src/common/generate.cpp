@@ -1006,11 +1006,11 @@ std::optional<int> TokenIterator::next() {
     static const bool g_sync_decode = std::getenv("MLX_SYNC_DECODE") != nullptr;
 
 #if defined(MLX_BUILD_ROCM)
-    // Build-once pure-relaunch graph decode. Default ON (opt-out with
-    // MLX_DECODE_GRAPH_PURE_OFF=1). Captures one full decode step and relaunches
-    // it per token — the path that reaches ~70 tok/s on discrete GPUs.
+    // Build-once pure-relaunch graph decode. Default OFF — eager decode is the
+    // stable/faster path on gfx1151 (4-bit ~68 tok/s eager vs ~64 pure). Enable
+    // with MLX_DECODE_GRAPH_PURE=1 when profiling launch-bound dGPUs (e.g. R9700).
     static const bool pure_enabled =
-        std::getenv("MLX_DECODE_GRAPH_PURE_OFF") == nullptr;
+        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr;
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;

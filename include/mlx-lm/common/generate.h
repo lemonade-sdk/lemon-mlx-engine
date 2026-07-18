@@ -352,7 +352,7 @@ private:
     int token_count_ = 0;
 
     // --- Pure-relaunch graph decode (build-once, deterministic arena) ---
-    // Default ON for ROCm (opt-out: MLX_DECODE_GRAPH_PURE_OFF=1). State machine:
+    // Default OFF; opt-in with MLX_DECODE_GRAPH_PURE=1. State machine:
     // 0 warmup, 1 record, 2 replay, 9 disabled this request.
     int pure_graph_state_ = 0;
     int pure_graph_cap_ = 0;      // reserved KV capacity

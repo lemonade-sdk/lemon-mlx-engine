@@ -59,7 +59,7 @@ Engine header: `include/mlx-lm/common/memory_phase.h`.
 |-----|--------|
 | `MLX_FREELIST_UTIL=0.5\|1.0` | Force freelist utilization |
 | `MLX_MEMORY_PHASE_DEBUG=1` | Phase / drop logging |
-| `MLX_DECODE_GRAPH_PURE_OFF=1` | Disable pure-graph (orthogonal) |
+| `MLX_DECODE_GRAPH_PURE=1` | Enable pure-graph decode (default off; eager is preferred) |
 
 ## Validation checklist
 
