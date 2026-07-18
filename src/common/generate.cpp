@@ -1,7 +1,6 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 
 #include <mlx-lm/common/generate.h>
-#include <mlx-lm/common/memory_phase.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx/mlx.h>
@@ -513,9 +512,6 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
     // (decode-mode off) so peak graph memory stays bounded.
     mlx::core::gpu_set_graph_decode_mode(false);
 #endif
-    // Stamp freelist allocations as Prefill so we can bulk-drop them before
-    // the decode loop (avoids prefill-sized slabs poisoning decode HBM).
-    set_memory_phase(MemoryPhase::Prefill);
 
     if (processor_.has_value()) {
         processor_->prompt(input.text.tokens);
@@ -549,15 +545,6 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
                                  {1, last_pos + 1, trunk_h.shape(2)});  // [1, 1, H]
         mx::eval(h_slice);
         mtp_trunk_hidden_ = h_slice;
-    }
-
-    // Ensure prefill GPU work has retired so freelist owns the dead workspace,
-    // then drop prefill-generation slabs and switch freelist policy to Decode.
-    mx::eval(y_.tokens);
-    size_t dropped = memory_end_prefill();
-    if (std::getenv("MLX_MEMORY_PHASE_DEBUG") && dropped > 0) {
-        std::cerr << "[mem-phase] end_prefill dropped " << dropped
-                  << " bytes from freelist\n";
     }
 }
 
@@ -1119,9 +1106,11 @@ GenerateCompletionInfo generate(
 
         token_count++;
 
-        // Do not clear_cache mid-decode: on ROCm pure-graph the freelist holds
-        // shapes the next token will reuse, and pure capture buffers must stay
-        // alive. Pressure is handled by phase drop at prefill end + allocator.
+        // Periodically clear the memory cache to reduce memory pressure.
+        if (token_count % 256 == 0) {
+            mx::clear_cache();
+        }
+
         if (on_token(token) == GenerateDisposition::stop) {
             break;
         }
@@ -1135,9 +1124,6 @@ GenerateCompletionInfo generate(
     auto now = std::chrono::steady_clock::now();
     double gen_time = std::chrono::duration<double>(now - start).count();
     info.generation_time = gen_time;
-
-    // Request complete — leave freelist policy neutral for the next call.
-    set_memory_phase(MemoryPhase::Idle);
 
     return info;
 }

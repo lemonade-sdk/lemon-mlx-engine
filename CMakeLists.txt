@@ -32,10 +32,9 @@ endif()
 # MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
-    # Phase-scoped memory (prefill→decode freelist drop) lives on this branch.
-    # Merge back to rocm-support once validated.
+    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        rocm-support-memory
+    GIT_TAG        rocm-support
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
@@ -257,10 +256,6 @@ if(MLX_LM_BUILD_EXAMPLES)
 
         add_executable(test_arena examples/test_arena.cpp)
         target_link_libraries(test_arena PRIVATE mlx)
-
-        add_executable(test_memory_phase examples/test_memory_phase.cpp)
-        target_link_libraries(test_memory_phase PRIVATE mlx)
-        target_compile_definitions(test_memory_phase PRIVATE MLX_BUILD_ROCM)
     endif()
 
     add_executable(test_sdpa_ref examples/test_sdpa_ref.cpp)
