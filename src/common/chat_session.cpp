@@ -218,10 +218,7 @@ void ChatSession::generate_impl(
 
             generated_count++;
 
-            // Periodically clear the memory cache.
-            if (generated_count % 256 == 0) {
-                mx::clear_cache();
-            }
+            // Avoid mid-decode clear_cache (hurts freelist reuse / pure-graph).
 
             // Decode token through streaming detokenizer
             detokenizer.append(token_id);

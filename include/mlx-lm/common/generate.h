@@ -290,6 +290,17 @@ public:
         std::vector<KVCache> cache,
         const GenerateParameters& params);
 
+    // Tears down pure-graph capture/arena if this iterator armed them. Leaving
+    // the decode arena active after a request makes the *next* prefill allocate
+    // from the frozen arena and segfaults / garbles multi-request servers.
+    ~TokenIterator();
+
+    // Non-copyable / non-movable: pure-graph capture/arena is owned here.
+    TokenIterator(const TokenIterator&) = delete;
+    TokenIterator& operator=(const TokenIterator&) = delete;
+    TokenIterator(TokenIterator&&) = delete;
+    TokenIterator& operator=(TokenIterator&&) = delete;
+
     // Generate the next token. Returns nullopt when max_tokens is reached.
     // The caller is responsible for checking EOS conditions.
     std::optional<int> next();
@@ -341,17 +352,19 @@ private:
     int token_count_ = 0;
 
     // --- Pure-relaunch graph decode (build-once, deterministic arena) ---
-    // State machine: 0 warmup, 1 record parity A, 2 record parity B, 3 replay,
-    // 9 disabled. Two graphs (one per pos&1) bake the GDN ping-pong state slots.
+    // Default ON for ROCm (opt-out: MLX_DECODE_GRAPH_PURE_OFF=1). State machine:
+    // 0 warmup, 1 record, 2 replay, 9 disabled this request.
     int pure_graph_state_ = 0;
     int pure_graph_cap_ = 0;      // reserved KV capacity
     int pure_pos_ = 0;            // host mirror of the device decode position
     // Logits array recorded during the capture token; the captured exec's
-    // baked output buffer is overwritten by each replay, so re-reading it
-    // (with a forced copy) yields the current token's logits.
+    // baked output buffer is overwritten by each replay, so the sample must be
+    // materialised before the next relaunch.
     std::optional<mlx::core::array> pure_logits_;
     // Run one decode step under the pure-graph path; returns the sampled token.
     mlx::core::array step_pure_graph(const LMInput::Text& previous);
+    // Release HIP capture + decode arena + device-pos flag (idempotent).
+    void teardown_pure_graph_();
 
     // KV cache quantization parameters.
     std::optional<int> kv_bits_;

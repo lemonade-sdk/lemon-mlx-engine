@@ -9,6 +9,7 @@
 #include <mlx-lm/common/model_container.h>
 #include <mlx/mlx.h>
 #include <functional>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -520,6 +521,276 @@ TEST_CASE("generate_text without a cancel predicate runs to completion", "[gener
 
     REQUIRE(text_callbacks > 0);
     REQUIRE(info.generation_token_count > 0);
+}
+
+// ===== TokenIterator emission contract =====
+//
+// prepare() samples the first generated token into y_. next() always launches
+// the *next* forward, then returns the *previous* sample (pipeline). Emitting
+// the newly sampled token instead drops token 0 — live ROCm pure-graph bug:
+// "Maxwell" -> "well", "2+2" -> empty content (only EOS survived).
+
+// Fake model that samples a deterministic ascending sequence under argmax:
+// call N produces token (kFirstToken + N). prepare-via-tokens does one call
+// (token kFirstToken), then each next() does one more call.
+static mlx_lm::ModelContext make_sequenced_context(
+    int vocab_size,
+    int first_token,
+    std::shared_ptr<int> call_count,
+    bool non_empty_cache = false)
+{
+    mlx_lm::ModelContext ctx;
+    ctx.model_id = "sequenced-fake-model";
+    ctx.new_cache_fn = [non_empty_cache](const mlx_lm::GenerateParameters&) {
+        // Non-empty cache is what arms the ROCm pure-graph path in next().
+        // The pure-graph kernels are not exercised here (empty KV data); we
+        // only need the branch condition for contract tests on ROCm builds.
+        if (non_empty_cache) {
+            return std::vector<mlx_lm::KVCache>{mlx_lm::KVCache{mlx_lm::KVCacheSimple{}}};
+        }
+        return std::vector<mlx_lm::KVCache>{};
+    };
+    ctx.prepare_fn = [](const mlx_lm::LMInput& input, std::vector<mlx_lm::KVCache>&, int) {
+        // Remaining tokens -> prepare() runs step() once to sample token 0.
+        return mlx_lm::PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [vocab_size, first_token, call_count](
+                      const mlx_lm::LMInput::Text&,
+                      std::vector<mlx_lm::KVCache>*,
+                      const mlx_lm::LMOutput::State*) {
+        int n = (*call_count)++;
+        int tok = first_token + n;
+        if (tok < 0 || tok >= vocab_size) {
+            tok = vocab_size - 1;
+        }
+        std::vector<float> logits(static_cast<size_t>(vocab_size), 0.0f);
+        logits[static_cast<size_t>(tok)] = 10.0f;
+        return mlx_lm::LMOutput(
+            mx::array(logits.data(), {1, 1, vocab_size}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& tokens) {
+        std::string s;
+        for (int t : tokens) s += static_cast<char>('A' + (t % 26));
+        return s;
+    };
+    return ctx;
+}
+
+// Also exercise the prepare-returns-logits path (used by many VLMs and by
+// llm_default_prepare after the last window). First sample is convert_to_token
+// without a call_fn; subsequent samples come from call_fn.
+static mlx_lm::ModelContext make_sequenced_logits_prepare_context(
+    int vocab_size,
+    int first_token,
+    std::shared_ptr<int> call_count)
+{
+    mlx_lm::ModelContext ctx;
+    ctx.model_id = "sequenced-logits-prepare";
+    ctx.new_cache_fn = [](const mlx_lm::GenerateParameters&) {
+        return std::vector<mlx_lm::KVCache>{};
+    };
+    ctx.prepare_fn = [vocab_size, first_token](
+                         const mlx_lm::LMInput&,
+                         std::vector<mlx_lm::KVCache>&,
+                         int) {
+        std::vector<float> logits(static_cast<size_t>(vocab_size), 0.0f);
+        logits[static_cast<size_t>(first_token)] = 10.0f;
+        return mlx_lm::PrepareResult::logits(
+            mlx_lm::LMOutput(mx::array(logits.data(), {1, 1, vocab_size}, mx::float32)));
+    };
+    ctx.call_fn = [vocab_size, first_token, call_count](
+                      const mlx_lm::LMInput::Text&,
+                      std::vector<mlx_lm::KVCache>*,
+                      const mlx_lm::LMOutput::State*) {
+        // After prepare sampled first_token, decode calls start at first_token+1.
+        int n = (*call_count)++;
+        int tok = first_token + 1 + n;
+        if (tok < 0 || tok >= vocab_size) tok = vocab_size - 1;
+        std::vector<float> logits(static_cast<size_t>(vocab_size), 0.0f);
+        logits[static_cast<size_t>(tok)] = 10.0f;
+        return mlx_lm::LMOutput(
+            mx::array(logits.data(), {1, 1, vocab_size}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>&) { return std::string("x"); };
+    return ctx;
+}
+
+TEST_CASE("TokenIterator emits the first prepared token (tokens prepare path)",
+          "[generate][first_token]") {
+    constexpr int kVocab = 32;
+    constexpr int kFirst = 5;
+    constexpr int kMax = 4;
+    auto calls = std::make_shared<int>(0);
+    auto ctx = make_sequenced_context(kVocab, kFirst, calls, /*non_empty_cache=*/false);
+
+    auto params = greedy_params(kMax);
+    mlx_lm::LMInput input(mx::array({1, 2, 3}, {3}, mx::int32));
+
+    std::vector<int> emitted;
+    mlx_lm::generate(
+        ctx, input, params, /*eos_token_ids=*/{},
+        [&](int token) {
+            emitted.push_back(token);
+            return mlx_lm::GenerateDisposition::more;
+        });
+
+    REQUIRE(emitted.size() == static_cast<size_t>(kMax));
+    // Must start at the prefill sample, not the second decode sample.
+    CHECK(emitted[0] == kFirst);
+    CHECK(emitted[1] == kFirst + 1);
+    CHECK(emitted[2] == kFirst + 2);
+    CHECK(emitted[3] == kFirst + 3);
+}
+
+TEST_CASE("TokenIterator emits the first prepared token (logits prepare path)",
+          "[generate][first_token]") {
+    constexpr int kVocab = 32;
+    constexpr int kFirst = 7;
+    constexpr int kMax = 3;
+    auto calls = std::make_shared<int>(0);
+    auto ctx = make_sequenced_logits_prepare_context(kVocab, kFirst, calls);
+
+    auto params = greedy_params(kMax);
+    mlx_lm::LMInput input(mx::array({9, 8}, {2}, mx::int32));
+
+    std::vector<int> emitted;
+    mlx_lm::generate(
+        ctx, input, params, /*eos_token_ids=*/{},
+        [&](int token) {
+            emitted.push_back(token);
+            return mlx_lm::GenerateDisposition::more;
+        });
+
+    REQUIRE(emitted.size() == static_cast<size_t>(kMax));
+    CHECK(emitted[0] == kFirst);
+    CHECK(emitted[1] == kFirst + 1);
+    CHECK(emitted[2] == kFirst + 2);
+}
+
+// When the first sample is EOS, generation must stop with zero content tokens
+// after the caller filters EOS — not skip EOS and emit the *next* token.
+TEST_CASE("TokenIterator first-token EOS is not skipped", "[generate][first_token]") {
+    constexpr int kVocab = 16;
+    constexpr int kEos = 2;
+    // Force every sample to EOS (including prepare's first sample).
+    auto calls = std::make_shared<int>(0);
+    mlx_lm::ModelContext ctx;
+    ctx.model_id = "always-eos";
+    ctx.new_cache_fn = [](const mlx_lm::GenerateParameters&) {
+        return std::vector<mlx_lm::KVCache>{};
+    };
+    ctx.prepare_fn = [](const mlx_lm::LMInput& input, std::vector<mlx_lm::KVCache>&, int) {
+        return mlx_lm::PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const mlx_lm::LMInput::Text&, std::vector<mlx_lm::KVCache>*,
+                     const mlx_lm::LMOutput::State*) {
+        std::vector<float> logits(kVocab, 0.0f);
+        logits[kEos] = 10.0f;
+        return mlx_lm::LMOutput(mx::array(logits.data(), {1, 1, kVocab}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>&) { return std::string("x"); };
+
+    auto params = greedy_params(8);
+    mlx_lm::LMInput input(mx::array({1}, {1}, mx::int32));
+
+    std::vector<int> emitted;
+    mlx_lm::generate(
+        ctx, input, params, /*eos_token_ids=*/{kEos},
+        [&](int token) {
+            emitted.push_back(token);
+            return mlx_lm::GenerateDisposition::more;
+        });
+
+    // EOS is observed by generate() and stops without invoking on_token.
+    REQUIRE(emitted.empty());
+}
+
+// Regression for the live "Maxwell" / empty "2+2" failure mode: if the first
+// real content token is dropped and the second is EOS, content is empty even
+// though prepare() produced a good sample.
+TEST_CASE("TokenIterator does not drop content when second sample is EOS",
+          "[generate][first_token]") {
+    constexpr int kVocab = 32;
+    constexpr int kContent = 11;  // "answer"
+    constexpr int kEos = 2;
+    auto calls = std::make_shared<int>(0);
+
+    mlx_lm::ModelContext ctx;
+    ctx.model_id = "content-then-eos";
+    ctx.new_cache_fn = [](const mlx_lm::GenerateParameters&) {
+        return std::vector<mlx_lm::KVCache>{};
+    };
+    ctx.prepare_fn = [](const mlx_lm::LMInput& input, std::vector<mlx_lm::KVCache>&, int) {
+        return mlx_lm::PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [calls](const mlx_lm::LMInput::Text&, std::vector<mlx_lm::KVCache>*,
+                          const mlx_lm::LMOutput::State*) {
+        int n = (*calls)++;
+        std::vector<float> logits(kVocab, 0.0f);
+        // prepare step -> content; first next() step -> EOS
+        logits[n == 0 ? kContent : kEos] = 10.0f;
+        return mlx_lm::LMOutput(mx::array(logits.data(), {1, 1, kVocab}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& tokens) {
+        std::string s;
+        for (int t : tokens) {
+            if (t == kContent) s += "4";
+            else s += "?";
+        }
+        return s;
+    };
+
+    auto params = greedy_params(8);
+    mlx_lm::LMInput input(mx::array({1, 2, 3}, {3}, mx::int32));
+
+    std::vector<int> emitted;
+    std::string text;
+    mlx_lm::generate_text(
+        ctx, input, params, /*eos_token_ids=*/{kEos},
+        [&](const std::string& chunk, int token) {
+            emitted.push_back(token);
+            text += chunk;
+            return mlx_lm::GenerateDisposition::more;
+        });
+
+    REQUIRE(emitted.size() == 1);
+    CHECK(emitted[0] == kContent);
+    CHECK(text == "4");
+}
+
+// When pure-graph is armed (non-empty cache on ROCm), the emission contract
+// must still hold. On non-ROCm builds this is the same as the empty-cache path.
+TEST_CASE("TokenIterator first-token contract with non-empty cache",
+          "[generate][first_token]") {
+    constexpr int kVocab = 32;
+    constexpr int kFirst = 4;
+    constexpr int kMax = 3;
+    auto calls = std::make_shared<int>(0);
+    auto ctx = make_sequenced_context(kVocab, kFirst, calls, /*non_empty_cache=*/true);
+
+    auto params = greedy_params(kMax);
+    mlx_lm::LMInput input(mx::array({1}, {1}, mx::int32));
+
+    std::vector<int> emitted;
+    // Pure-graph may fall back or crash if the ROCm capture path is forced with
+    // an empty fake model; force the eager pipeline when the env allows.
+    // The contract under test is independent of capture: emit previous_y.
+#if defined(MLX_BUILD_ROCM)
+    // Ensure pure graph is allowed if the build enables it; the fake model has
+    // no weights so capture typically disables (state 9) and falls back to step().
+    // Either path must still emit kFirst first.
+#endif
+    mlx_lm::generate(
+        ctx, input, params, /*eos_token_ids=*/{},
+        [&](int token) {
+            emitted.push_back(token);
+            return mlx_lm::GenerateDisposition::more;
+        });
+
+    REQUIRE(emitted.size() == static_cast<size_t>(kMax));
+    CHECK(emitted[0] == kFirst);
+    CHECK(emitted[1] == kFirst + 1);
+    CHECK(emitted[2] == kFirst + 2);
 }
 
 // ===== MTPHead draft-token shape smoke =====

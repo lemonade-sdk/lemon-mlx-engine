@@ -385,6 +385,10 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
     // relaunches) — never recorded graph nodes.
     mc::gpu_set_graph_decode_mode(false);
     mx::array prev_tok = previous.tokens;
+    // Ensure the previous sample is materialised before the in-place device
+    // copy; a lazy token here can leave the fixed input buffer stale and
+    // desync the autoregressive chain on the first replay.
+    mx::eval(prev_tok);
     mlx_lm::set_graph_decode_input_from(prev_tok);  // device copy -> fixed buffer
     if (pure_graph_state_ == 0) {
         mlx_lm::set_graph_external_pos(true);
@@ -415,11 +419,14 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
 
     if (!noreplay && pure_graph_state_ == replay_state && pure_logits_.has_value()) {
         // REPLAY: input/pos already set above. Relaunch the recorded exec, then
-        // read the freshly-overwritten logits buffer (convert_to_token's sample
-        // kernel reads it at launch time).
+        // sample from the logits buffer the exec just overwrote.
         mc::decode_arena_reset_to_floor();   // keep recorded buffers; sample above
         if (mc::decode_capture_replay(0)) {
             token = convert_to_token(*pure_logits_);
+            // CRITICAL: materialise the sample before this function returns.
+            // The next relaunch overwrites pure_logits_'s device buffer in place
+            // without MLX array-versioning; a lazy sample would race that write.
+            mx::eval(token);
         } else {
             disable();  // capture lost -> rebuild via the eager fallback below
         }
@@ -552,6 +559,29 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
         std::cerr << "[mem-phase] end_prefill dropped " << dropped
                   << " bytes from freelist\n";
     }
+}
+
+// ---------------------------------------------------------------------------
+// TokenIterator — pure-graph teardown / destructor
+// ---------------------------------------------------------------------------
+
+void TokenIterator::teardown_pure_graph_() {
+#if defined(MLX_BUILD_ROCM)
+    // Idempotent. Must run even after a successful pure generation: leaving the
+    // decode arena active makes the next request's prefill allocate out of the
+    // frozen capture arena (multi-request server segfault / garbage).
+    mlx_lm::set_graph_external_pos(false);
+    mlx::core::decode_capture_destroy();
+    mlx::core::decode_arena_end();
+    pure_logits_.reset();
+    pure_graph_state_ = 0;
+    pure_graph_cap_ = 0;
+    pure_pos_ = 0;
+#endif
+}
+
+TokenIterator::~TokenIterator() {
+    teardown_pure_graph_();
 }
 
 // ---------------------------------------------------------------------------
@@ -976,7 +1006,9 @@ std::optional<int> TokenIterator::next() {
     static const bool g_sync_decode = std::getenv("MLX_SYNC_DECODE") != nullptr;
 
 #if defined(MLX_BUILD_ROCM)
-    // Build-once pure-relaunch graph decode (opt-in, qwen35-moe device-pos path).
+    // Build-once pure-relaunch graph decode. Default ON (opt-out with
+    // MLX_DECODE_GRAPH_PURE_OFF=1). Captures one full decode step and relaunches
+    // it per token — the path that reaches ~70 tok/s on discrete GPUs.
     static const bool pure_enabled =
         std::getenv("MLX_DECODE_GRAPH_PURE_OFF") == nullptr;
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
@@ -987,12 +1019,16 @@ std::optional<int> TokenIterator::next() {
                 ? std::max(0, max_tokens_.value() - token_count_) : 256;
             pure_graph_cap_ = off + remaining + 8;
         }
+        // Emit-previous pipeline: prepare() sampled token 0 into y_;
+        // step_pure_graph materialises the *new* sample (pure_logits_ is
+        // overwritten on the next relaunch). previous_y was already eval'd when
+        // it was stored (prepare or prior step), so item() is host-side only.
         auto previous_y = y_;
         auto token = step_pure_graph(previous_y);
-        y_ = LMInput::Text(token);
+        y_ = LMInput::Text(std::move(token));
         token_count_++;
         measure_prefill_boundary_();
-        return token.item<int32_t>();
+        return previous_y.tokens.item<int32_t>();
     }
 #endif
 
@@ -1001,10 +1037,14 @@ std::optional<int> TokenIterator::next() {
     y_ = LMInput::Text(token);
     if (g_sync_decode) {
         // Diagnostic: fully retire each forward before building the next.
+        // Still emit previous_y — sync only forces the new sample to complete
+        // before we hand control back; it must not change which token is
+        // reported to the caller (see pure-graph first-token drop above).
         mx::eval(token);
         token_count_++;
         measure_prefill_boundary_();
-        return token.item<int32_t>();
+        mx::eval(previous_y.tokens);
+        return previous_y.tokens.item<int32_t>();
     }
     mx::async_eval(token);
     token_count_++;
@@ -1079,11 +1119,9 @@ GenerateCompletionInfo generate(
 
         token_count++;
 
-        // Periodically clear the memory cache to reduce memory pressure.
-        if (token_count % 256 == 0) {
-            mx::clear_cache();
-        }
-
+        // Do not clear_cache mid-decode: on ROCm pure-graph the freelist holds
+        // shapes the next token will reuse, and pure capture buffers must stay
+        // alive. Pressure is handled by phase drop at prefill end + allocator.
         if (on_token(token) == GenerateDisposition::stop) {
             break;
         }
