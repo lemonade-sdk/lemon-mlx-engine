@@ -1,0 +1,2 @@
+C1_VERDICT=PASS
+note=turn1 OK; turn2 Ada in C1-chat-loop.log

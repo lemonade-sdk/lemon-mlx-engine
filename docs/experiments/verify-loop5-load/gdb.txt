@@ -1,0 +1,78 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7fff1c5ff6c0 (LWP 1507616)]
+[New Thread 0x7fff1bdfe6c0 (LWP 1507617)]
+[New Thread 0x7fff1b5fd6c0 (LWP 1507618)]
+[New Thread 0x7fff1adfc6c0 (LWP 1507619)]
+[New Thread 0x7fff1a5fb6c0 (LWP 1507620)]
+[New Thread 0x7fff19dfa6c0 (LWP 1507621)]
+[New Thread 0x7fff195f96c0 (LWP 1507622)]
+[New Thread 0x7fff18df86c0 (LWP 1507623)]
+[New Thread 0x7fff185f76c0 (LWP 1507624)]
+[New Thread 0x7fff17df66c0 (LWP 1507625)]
+[New Thread 0x7fff175f56c0 (LWP 1507626)]
+[New Thread 0x7fff16df46c0 (LWP 1507627)]
+[New Thread 0x7fff165f36c0 (LWP 1507628)]
+[New Thread 0x7fff15df26c0 (LWP 1507629)]
+[New Thread 0x7fff155f16c0 (LWP 1507630)]
+[New Thread 0x7fff14df06c0 (LWP 1507631)]
+[New Thread 0x7fff145ef6c0 (LWP 1507632)]
+[New Thread 0x7fff13dee6c0 (LWP 1507633)]
+[New Thread 0x7fff135ed6c0 (LWP 1507634)]
+[New Thread 0x7fff12dec6c0 (LWP 1507635)]
+[New Thread 0x7fff125eb6c0 (LWP 1507636)]
+[New Thread 0x7fff11dea6c0 (LWP 1507637)]
+[New Thread 0x7fff115e96c0 (LWP 1507638)]
+Device: ROCm GPU
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[New Thread 0x7fff087ff6c0 (LWP 1507640)]
+[New Thread 0x7fff07ffe6c0 (LWP 1507641)]
+[New Thread 0x7fff074ff6c0 (LWP 1507642)]
+[Thread 0x7fff074ff6c0 (LWP 1507642) exited]
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[New Thread 0x7fff04bff6c0 (LWP 1507643)]
+[New Thread 0x7ffdf67ff6c0 (LWP 1507647)]
+[New Thread 0x7ffdf5ffe6c0 (LWP 1507648)]
+[New Thread 0x7ffdf57fd6c0 (LWP 1507649)]
+[New Thread 0x7ffdf4ffc6c0 (LWP 1507650)]
+[New Thread 0x7ffdf47fb6c0 (LWP 1507651)]
+[New Thread 0x7ffdf29ff6c0 (LWP 1507652)]
+[New Thread 0x7ffdf21fe6c0 (LWP 1507653)]
+[New Thread 0x7ffdf19fd6c0 (LWP 1507654)]
+[New Thread 0x7ffdf11fc6c0 (LWP 1507655)]
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)
+
+Thread 1 "server" received signal SIGSEGV, Segmentation fault.
+0x00007ffff4313a6d in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#0  0x00007ffff4313a6d in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#1  0x00007ffff417d87a in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#2  0x00007ffff417dfbd in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#3  0x00007ffff41bec31 in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#4  0x00007ffff4186efc in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#5  0x00007ffff4187733 in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#6  0x00007ffff4276805 in hipLaunchKernel () from /opt/rocm/lib/libamdhip64.so.7
+#7  0x0000555556814b24 in mlx::core::rocm::CommandEncoder::add_kernel_node_raw(void*, dim3, dim3, unsigned int, void**) ()
+#8  0x0000555556cb9dec in void mlx::core::rocm::CommandEncoder::add_kernel_node_ex<void (unsigned int const*, unsigned int*, long, mlx::core::rocm::hip_array<int, 10>, mlx::core::rocm::hip_array<long, 10>, mlx::core::rocm::hip_array<long, 10>, int), unsigned int const*&, unsigned int*&, long&, mlx::core::rocm::hip_array<int, 10>&, mlx::core::rocm::hip_array<long, 10>&, mlx::core::rocm::hip_array<long, 10>&, int&>(void (*)(unsigned int const*, unsigned int*, long, mlx::core::rocm::hip_array<int, 10>, mlx::core::rocm::hip_array<long, 10>, mlx::core::rocm::hip_array<long, 10>, int), dim3, dim3, unsigned int, unsigned int const*&, unsigned int*&, long&, mlx::core::rocm::hip_array<int, 10>&, mlx::core::rocm::hip_array<long, 10>&, mlx::core::rocm::hip_array<long, 10>&, int&) ()
+#9  0x0000555556c8bf47 in void mlx::core::dispatch_all_types<mlx::core::copy_general(mlx::core::rocm::CommandEncoder&, mlx::core::CopyType, mlx::core::array const&, mlx::core::array&, long, long, mlx::core::SmallVector<int, 10ul, std::allocator<int> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&)::{lambda(auto:1)#1}>(mlx::core::Dtype, mlx::core::copy_general(mlx::core::rocm::CommandEncoder&, mlx::core::CopyType, mlx::core::array const&, mlx::core::array&, long, long, mlx::core::SmallVector<int, 10ul, std::allocator<int> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&)::{lambda(auto:1)#1}&&) ()
+#10 0x0000555556c89357 in mlx::core::copy_general(mlx::core::rocm::CommandEncoder&, mlx::core::CopyType, mlx::core::array const&, mlx::core::array&, long, long, mlx::core::SmallVector<int, 10ul, std::allocator<int> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&) ()
+#11 0x0000555556bde29b in mlx::core::copy_gpu_inplace(mlx::core::array const&, mlx::core::array&, mlx::core::SmallVector<int, 10ul, std::allocator<int> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&, mlx::core::SmallVector<long, 10ul, std::allocator<long> > const&, long, long, mlx::core::CopyType, mlx::core::Stream const&, std::optional<mlx::core::array>, std::optional<mlx::core::array>) ()
+#12 0x00005555568434fa in mlx::core::copy_gpu_inplace(mlx::core::array const&, mlx::core::array&, mlx::core::CopyType, mlx::core::Stream const&) ()
+#13 0x0000555556850796 in mlx::core::concatenate_gpu(std::vector<mlx::core::array, std::allocator<mlx::core::array> > const&, mlx::core::array&, int, mlx::core::Stream const&) ()
+#14 0x00005555568250bc in mlx::core::gpu::eval(mlx::core::array&) ()
+#15 0x0000555555cd0595 in mlx::core::eval_impl(std::vector<mlx::core::array, std::allocator<mlx::core::array> >, bool) ()
+#16 0x0000555555cd1549 in mlx::core::eval(std::vector<mlx::core::array, std::allocator<mlx::core::array> >) ()
+#17 0x00005555557dcfa7 in void mlx::core::eval<mlx::core::array&, void>(mlx::core::array&) ()
+#18 0x00005555559493eb in mlx_lm::fuse_quant_projections(std::vector<mlx::core::array const*, std::allocator<mlx::core::array const*> > const&, std::optional<mlx::core::array>&) [clone .isra.0] ()
+#19 0x000055555594ab09 in mlx_lm::Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() ()
+#20 0x000055555594abc9 in mlx_lm::Qwen35MoEGatedDeltaNet::operator()(mlx::core::array const&, std::optional<mlx::core::array> const&, mlx_lm::MambaCache*) ()
+#21 0x00005555559502c2 in mlx_lm::Qwen35MoEDecoderLayer::operator()(mlx::core::array const&, mlx_lm::AttentionMask const&, std::optional<mlx::core::array> const&, mlx_lm::KVCache*) ()
+#22 0x0000555555951a38 in mlx_lm::Qwen35MoEModelInner::forward_prenorm(mlx::core::array const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*) ()
+#23 0x0000555555952263 in mlx_lm::Qwen35MoEModel::call_impl(mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*, mlx_lm::LMOutput::State const*) ()
+#24 0x0000555555889f7b in std::_Function_handler<mlx_lm::LMOutput (mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*, mlx_lm::LMOutput::State const*), mlx_lm::ModelContext::from_model_owned<mlx_lm::Qwen35MoEModel>(std::shared_ptr<mlx_lm::Qwen35MoEModel>)::{lambda(mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*, mlx_lm::LMOutput::State const*)#1}>::_M_invoke(std::_Any_data const&, mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*&&, mlx_lm::LMOutput::State const*&&) ()
+#25 0x00005555557d7dc8 in main ()

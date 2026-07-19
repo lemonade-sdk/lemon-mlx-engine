@@ -1,0 +1,82 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7fff1c5ff6c0 (LWP 1533131)]
+[New Thread 0x7fff1bdfe6c0 (LWP 1533132)]
+[New Thread 0x7fff1b5fd6c0 (LWP 1533133)]
+[New Thread 0x7fff1adfc6c0 (LWP 1533134)]
+[New Thread 0x7fff1a5fb6c0 (LWP 1533135)]
+[New Thread 0x7fff19dfa6c0 (LWP 1533136)]
+[New Thread 0x7fff195f96c0 (LWP 1533137)]
+[New Thread 0x7fff18df86c0 (LWP 1533138)]
+[New Thread 0x7fff185f76c0 (LWP 1533139)]
+[New Thread 0x7fff17df66c0 (LWP 1533140)]
+[New Thread 0x7fff175f56c0 (LWP 1533141)]
+[New Thread 0x7fff16df46c0 (LWP 1533142)]
+[New Thread 0x7fff165f36c0 (LWP 1533143)]
+[New Thread 0x7fff15df26c0 (LWP 1533144)]
+[New Thread 0x7fff155f16c0 (LWP 1533145)]
+[New Thread 0x7fff14df06c0 (LWP 1533146)]
+[New Thread 0x7fff145ef6c0 (LWP 1533147)]
+[New Thread 0x7fff13dee6c0 (LWP 1533148)]
+[New Thread 0x7fff135ed6c0 (LWP 1533149)]
+[New Thread 0x7fff12dec6c0 (LWP 1533150)]
+[New Thread 0x7fff125eb6c0 (LWP 1533151)]
+[New Thread 0x7fff11dea6c0 (LWP 1533152)]
+[New Thread 0x7fff115e96c0 (LWP 1533153)]
+Device: ROCm GPU
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[New Thread 0x7fff087ff6c0 (LWP 1533159)]
+[New Thread 0x7ffeffdff6c0 (LWP 1533160)]
+[New Thread 0x7fff07cff6c0 (LWP 1533161)]
+[Thread 0x7fff07cff6c0 (LWP 1533161) exited]
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[New Thread 0x7fff053ff6c0 (LWP 1533175)]
+[New Thread 0x7ffefe3ff6c0 (LWP 1533186)]
+[New Thread 0x7ffefdbfe6c0 (LWP 1533187)]
+[New Thread 0x7ffefd3fd6c0 (LWP 1533188)]
+[New Thread 0x7ffefcbfc6c0 (LWP 1533189)]
+[New Thread 0x7ffdf7dff6c0 (LWP 1533190)]
+[New Thread 0x7ffdf63ff6c0 (LWP 1533191)]
+[New Thread 0x7ffdf5bfe6c0 (LWP 1533192)]
+[New Thread 0x7ffdf53fd6c0 (LWP 1533193)]
+[New Thread 0x7ffdf4bfc6c0 (LWP 1533194)]
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.2 GB, peak=18.3 GB, cache=10.5 GB
+Endpoints:
+  GET  /health
+  GET  /v1/models
+  POST /v1/chat/completions
+  POST /v1/completions
+  POST /load
+  POST /unload
+Server listening on http://127.0.0.1:8099
+[New Thread 0x7ff63b9ff6c0 (LWP 1534264)]
+[New Thread 0x7ff63b1fe6c0 (LWP 1534265)]
+[New Thread 0x7ff63a9fd6c0 (LWP 1534266)]
+[New Thread 0x7ff63a1fc6c0 (LWP 1534267)]
+[New Thread 0x7ff6399fb6c0 (LWP 1534268)]
+[New Thread 0x7ff6391fa6c0 (LWP 1534269)]
+[New Thread 0x7ff6389f96c0 (LWP 1534270)]
+[New Thread 0x7ff6381f86c0 (LWP 1534271)]
+[New Thread 0x7ff6379f76c0 (LWP 1534272)]
+[New Thread 0x7ff6371f66c0 (LWP 1534273)]
+[New Thread 0x7ff6369f56c0 (LWP 1534274)]
+[New Thread 0x7ff6361f46c0 (LWP 1534275)]
+[New Thread 0x7ff6359f36c0 (LWP 1534276)]
+[New Thread 0x7ff6351f26c0 (LWP 1534277)]
+[New Thread 0x7ff6349f16c0 (LWP 1534278)]
+[New Thread 0x7ff6341f06c0 (LWP 1534279)]
+[New Thread 0x7ff6339ef6c0 (LWP 1534280)]
+[New Thread 0x7ff6331ee6c0 (LWP 1534281)]
+[New Thread 0x7ff6329ed6c0 (LWP 1534282)]
+[New Thread 0x7ff6321ec6c0 (LWP 1534283)]
+[New Thread 0x7ff6319eb6c0 (LWP 1534284)]
+[New Thread 0x7ff6311ea6c0 (LWP 1534285)]
+[New Thread 0x7ff6309e96c0 (LWP 1534286)]

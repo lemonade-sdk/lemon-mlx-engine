@@ -26,7 +26,8 @@ namespace mlx_lm {
 ///
 /// ChatSession manages:
 ///   - Multi-turn message history
-///   - KV cache persistence across turns (avoids re-processing earlier turns)
+///   - Per-turn full re-prefill of the chat-templated history (fresh KV each
+///     turn — correctness over residual KV reuse; matches HTTP multi-turn)
 ///   - Streaming token-by-token output via callbacks
 ///
 /// Thread safety: ChatSession itself is NOT thread-safe. Each session should be
@@ -127,11 +128,11 @@ public:
     void set_generate_parameters(const GenerateParameters& params) { generate_params_ = params; }
 
 private:
-    /// Internal cache state -- mirrors Swift's Cache enum.
+    /// Session conversation state (KV is not retained across turns).
     enum class CacheState {
-        Empty,     // No cache yet
-        KVCache,   // Active KV cache from previous turns
-        History,   // Re-hydration: replay message history into a fresh cache
+        Empty,     // No conversation yet
+        KVCache,   // Has message history in messages_ (fresh KV each generate)
+        History,   // Re-hydration: pending_history_ not yet folded into messages_
     };
 
     /// Core generation implementation shared by all respond/stream methods.

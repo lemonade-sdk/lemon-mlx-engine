@@ -167,6 +167,12 @@ static bool fuse_quant_projections(
     std::optional<mx::array>& dst)
 {
     if (dst.has_value()) return true;
+    // ROCm: concatenating packed quant weights then hipLaunchKernel has
+    // SIGSEGV'd during warmup on gfx115x (see verify-loop5-load gdb). Default
+    // keep separate matmuls (eager-safe). Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
+    if (std::getenv("MLX_ENABLE_QUANT_FUSE") == nullptr) {
+        return false;
+    }
     auto& reg = QuantizedWeightRegistry::instance();
     std::vector<const QuantizationInfo*> qis;
     qis.reserve(srcs.size());
@@ -189,6 +195,29 @@ static bool fuse_quant_projections(
         ws.push_back(*srcs[i]);
         ss.push_back(qis[i]->scales);
         if (have_biases) bs.push_back(*qis[i]->biases);
+    }
+    // Guard shapes before concatenate: mismatched non-axis-0 dims have been
+    // observed to SIGSEGV inside hipLaunchKernel on ROCm rather than throw.
+    // Fail soft → caller keeps separate matmuls (eager path stays usable).
+    auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
+        if (arrs.empty()) return false;
+        for (size_t i = 1; i < arrs.size(); ++i) {
+            if (arrs[i].ndim() != arrs[0].ndim() || arrs[i].ndim() < 1) {
+                return false;
+            }
+            for (int d = 1; d < arrs[0].ndim(); ++d) {
+                if (arrs[i].shape(d) != arrs[0].shape(d)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    if (!concat_axis0_ok(ws) || !concat_axis0_ok(ss)) {
+        return false;
+    }
+    if (have_biases && !concat_axis0_ok(bs)) {
+        return false;
     }
     auto w = mx::concatenate(ws, 0);
     auto s = mx::concatenate(ss, 0);
@@ -369,6 +398,29 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
       out_proj_weight_(mx::zeros({args.hidden_size, value_dim_}))
 {}
 
+void Qwen35MoEGatedDeltaNet::materialize_decode_constants() {
+    // Idempotent: first T=1 step may also fill these if load skipped them.
+    const auto dtype = a_log_.dtype();
+    if (!q_norm_w_.has_value()) {
+        float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
+        q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
+        k_norm_w_ = mx::full({head_k_dim_}, inv_scale, dtype);
+    }
+    if (!a_log_f32_.has_value()) {
+        a_log_f32_ = mx::astype(a_log_, mx::float32);
+        dt_bias_f32_ = mx::astype(dt_bias_, mx::float32);
+    }
+    // Single load-time eval (not mid-forward during first decode token).
+    std::vector<mx::array> to_eval;
+    if (q_norm_w_.has_value()) to_eval.push_back(*q_norm_w_);
+    if (k_norm_w_.has_value()) to_eval.push_back(*k_norm_w_);
+    if (a_log_f32_.has_value()) to_eval.push_back(*a_log_f32_);
+    if (dt_bias_f32_.has_value()) to_eval.push_back(*dt_bias_f32_);
+    if (!to_eval.empty()) {
+        mx::eval(to_eval);
+    }
+}
+
 // Build the fused in_proj weight once: concatenate the qkv/z/b/a quantized
 // weights (and their scales/biases) along the output axis and register the
 // result so linear_fwd routes it through a single quantized_matmul. They share
@@ -454,11 +506,10 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, 1, conv_dim_}),
                                   {B, 1, num_v_heads_, head_v_dim_});
 
-        // Q/K norms; the norm weights are constant — build once, reuse.
-        if (!q_norm_w_.has_value()) {
-            float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
-            q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
-            k_norm_w_ = mx::full({head_k_dim_}, inv_scale, dtype);
+        // Q/K norms + a_log/dt_bias f32: prefer load-time materialize_decode_constants().
+        // Fallback if that was skipped (e.g. tests without full load_weights).
+        if (!q_norm_w_.has_value() || !a_log_f32_.has_value()) {
+            materialize_decode_constants();
         }
         // GDN decode step. MLX_GDN_NO_FUSED=1 -> inline mx::compile recurrence.
         // MLX_GDN_NO_FUSED2=1 -> the per-op fused path (rms_norm + beta/g +
@@ -486,12 +537,6 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             auto c = mx::sum(mx::abs(mx::astype(ssm_state, mx::float32)));
             mx::eval(c);
             fprintf(stderr, "[st] read_ssm %.6e\n", c.item<float>());
-        }
-
-        if (!a_log_f32_.has_value()) {
-            a_log_f32_ = mx::astype(a_log_, mx::float32);
-            dt_bias_f32_ = mx::astype(dt_bias_, mx::float32);
-            mx::eval(*a_log_f32_, *dt_bias_f32_);
         }
 
         if (use_fused_gdn) {
@@ -1208,10 +1253,26 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
             lm_head_weight_ = std::nullopt;
         }
     }
-    // Wire MTPHead if we have MTP weights.
+    // Wire MTPHead if we have MTP weights. Optional for the eager / no-MTP
+    // product path: building the head can crash or mis-infer dims on some
+    // hybrid checkpoints. Set MLX_LOAD_MTP_HEAD=1 to enable (needed before
+    // --use-mtp decode). Without a head, TokenIterator falls back to plain step().
     if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
-        build_mtp_head();
+        if (std::getenv("MLX_LOAD_MTP_HEAD") == nullptr) {
+            std::cerr << "[MTP] skipping optional MTP head build "
+                         "(set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)\n";
+        } else {
+            try {
+                build_mtp_head();
+            } catch (const std::exception& e) {
+                std::cerr << "[MTP] head build failed (continuing without head): "
+                          << e.what() << "\n";
+            }
+        }
     }
+
+    // Prefetch GDN T=1 decode constants off the hot path (bf16→f32 + norm fills).
+    model_.materialize_gdn_decode_constants();
 }
 
 void Qwen35MoEModel::build_mtp_head() {

@@ -1,0 +1,1 @@
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"1 2 3 4","role":"assistant"}}],"created":1784498034,"id":"chatcmpl-b6b67f3868abbb6d","model":"LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit","object":"chat.completion","usage":{"completion_tokens":9,"prompt_tokens":32,"total_tokens":41}}
