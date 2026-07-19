@@ -473,3 +473,236 @@ TEST_CASE("CORS headers are present", "[server-api][endpoints]") {
     REQUIRE(res->has_header("Access-Control-Allow-Origin"));
     REQUIRE(res->get_header_value("Access-Control-Allow-Origin") == "*");
 }
+
+// ---------------------------------------------------------------------------
+// OpenAI tools (parse/emit only — never execute)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("tools request increases prompt_tokens vs no tools", "[server-api][tools]") {
+    if (!model_is_cached()) SKIP("Model not cached: " << TEST_MODEL);
+
+    auto manager = std::make_shared<mlx_lm::ModelManager>();
+    manager->set_no_download(true);
+    manager->set_no_think(true);
+    ServerRunner runner(manager, TEST_PORT + 20);
+
+    httplib::Client cli("127.0.0.1", TEST_PORT + 20);
+    cli.set_connection_timeout(120);
+    cli.set_read_timeout(180);
+
+    json tools = json::array({
+        {
+            {"type", "function"},
+            {"function",
+             {
+                 {"name", "get_weather"},
+                 {"description", "Get the weather for a city. This schema is intentionally long so it expands the prompt."},
+                 {"parameters",
+                  {{"type", "object"},
+                   {"properties",
+                    {{"city", {{"type", "string"}, {"description", "City name"}}},
+                     {"units", {{"type", "string"}, {"description", "celsius or fahrenheit"}}}}},
+                   {"required", json::array({"city"})}}},
+             }},
+        },
+    });
+
+    json base_msgs = json::array({
+        {{"role", "user"}, {"content", "Say hi."}},
+    });
+
+    json without = {
+        {"model", TEST_MODEL},
+        {"messages", base_msgs},
+        {"max_tokens", 8},
+        {"temperature", 0.0},
+        {"stream", false},
+    };
+    json with = without;
+    with["tools"] = tools;
+    with["tool_choice"] = "auto";
+
+    auto res0 = cli.Post("/v1/chat/completions", without.dump(), "application/json");
+    REQUIRE(res0);
+    REQUIRE(res0->status == 200);
+    auto body0 = json::parse(res0->body);
+    int pt0 = body0["usage"]["prompt_tokens"].get<int>();
+
+    auto res1 = cli.Post("/v1/chat/completions", with.dump(), "application/json");
+    REQUIRE(res1);
+    REQUIRE(res1->status == 200);
+    auto body1 = json::parse(res1->body);
+    int pt1 = body1["usage"]["prompt_tokens"].get<int>();
+
+    INFO("prompt without tools=" << pt0 << " with tools=" << pt1);
+    REQUIRE(pt1 > pt0);
+}
+
+TEST_CASE("tool_choice none does not force tool_calls finish", "[server-api][tools]") {
+    if (!model_is_cached()) SKIP("Model not cached: " << TEST_MODEL);
+
+    auto manager = std::make_shared<mlx_lm::ModelManager>();
+    manager->set_no_download(true);
+    manager->set_no_think(true);
+    ServerRunner runner(manager, TEST_PORT + 21);
+
+    httplib::Client cli("127.0.0.1", TEST_PORT + 21);
+    cli.set_connection_timeout(120);
+    cli.set_read_timeout(180);
+
+    json tools = json::array({
+        {
+            {"type", "function"},
+            {"function",
+             {
+                 {"name", "calculator_calculate"},
+                 {"description", "Evaluate a math expression"},
+                 {"parameters",
+                  {{"type", "object"},
+                   {"properties", {{"expression", {{"type", "string"}}}}},
+                   {"required", json::array({"expression"})}}},
+             }},
+        },
+    });
+
+    json req_body = {
+        {"model", TEST_MODEL},
+        {"messages",
+         json::array({
+             {{"role", "user"},
+              {"content", "Use the calculator tool with expression 1+1. Only call the tool."}},
+         })},
+        {"tools", tools},
+        {"tool_choice", "none"},
+        {"max_tokens", 64},
+        {"temperature", 0.0},
+        {"stream", false},
+    };
+
+    auto res = cli.Post("/v1/chat/completions", req_body.dump(), "application/json");
+    REQUIRE(res);
+    REQUIRE(res->status == 200);
+    auto body = json::parse(res->body);
+    auto finish = body["choices"][0]["finish_reason"].get<std::string>();
+    REQUIRE((finish == "stop" || finish == "length"));
+    // tool_choice=none must not emit structured tool_calls
+    if (body["choices"][0]["message"].contains("tool_calls")) {
+        REQUIRE(body["choices"][0]["message"]["tool_calls"].empty());
+    }
+}
+
+TEST_CASE("tools validation rejects oversized tools array", "[server-api][tools]") {
+    auto manager = std::make_shared<mlx_lm::ModelManager>();
+    manager->set_no_download(true);
+    ServerRunner runner(manager, TEST_PORT + 22);
+
+    httplib::Client cli("127.0.0.1", TEST_PORT + 22);
+    cli.set_connection_timeout(5);
+
+    json tools = json::array();
+    for (int i = 0; i < 100; ++i) {
+        tools.push_back({
+            {"type", "function"},
+            {"function", {{"name", "t" + std::to_string(i)}, {"parameters", {{"type", "object"}}}}},
+        });
+    }
+    json req_body = {
+        {"model", TEST_MODEL},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"tools", tools},
+    };
+    auto res = cli.Post("/v1/chat/completions", req_body.dump(), "application/json");
+    REQUIRE(res);
+    REQUIRE(res->status == 400);
+}
+
+TEST_CASE("role tool message returns 400 in v1", "[server-api][tools]") {
+    auto manager = std::make_shared<mlx_lm::ModelManager>();
+    manager->set_no_download(true);
+    ServerRunner runner(manager, TEST_PORT + 23);
+
+    httplib::Client cli("127.0.0.1", TEST_PORT + 23);
+    cli.set_connection_timeout(5);
+
+    json req_body = {
+        {"model", TEST_MODEL},
+        {"messages",
+         json::array({
+             {{"role", "user"}, {"content", "hi"}},
+             {{"role", "tool"}, {"content", "result"}},
+         })},
+    };
+    auto res = cli.Post("/v1/chat/completions", req_body.dump(), "application/json");
+    REQUIRE(res);
+    REQUIRE(res->status == 400);
+}
+
+TEST_CASE("POST tools may return tool_calls (model dependent)", "[server-api][tools][inference]") {
+    if (!model_is_cached()) SKIP("Model not cached: " << TEST_MODEL);
+
+    auto manager = std::make_shared<mlx_lm::ModelManager>();
+    manager->set_no_download(true);
+    manager->set_no_think(true);
+    ServerRunner runner(manager, TEST_PORT + 24);
+
+    httplib::Client cli("127.0.0.1", TEST_PORT + 24);
+    cli.set_connection_timeout(120);
+    cli.set_read_timeout(180);
+
+    json tools = json::array({
+        {
+            {"type", "function"},
+            {"function",
+             {
+                 {"name", "calculator_calculate"},
+                 {"description", "Evaluate a math expression"},
+                 {"parameters",
+                  {{"type", "object"},
+                   {"properties", {{"expression", {{"type", "string"}}}}},
+                   {"required", json::array({"expression"})}}},
+             }},
+        },
+    });
+
+    json req_body = {
+        {"model", TEST_MODEL},
+        {"messages",
+         json::array({
+             {{"role", "user"},
+              {"content",
+               "You must call the calculator_calculate tool with expression exactly \"1+1\". "
+               "Do not answer in plain text."}},
+         })},
+        {"tools", tools},
+        {"tool_choice", "auto"},
+        {"max_tokens", 128},
+        {"temperature", 0.0},
+        {"stream", false},
+    };
+
+    auto res = cli.Post("/v1/chat/completions", req_body.dump(), "application/json");
+    REQUIRE(res);
+    REQUIRE(res->status == 200);
+    auto body = json::parse(res->body);
+    auto& msg = body["choices"][0]["message"];
+    auto finish = body["choices"][0]["finish_reason"].get<std::string>();
+    INFO("finish=" << finish << " body=" << body.dump());
+
+    // 0.8B may not always emit tools; when it does, shape must be correct.
+    if (finish == "tool_calls") {
+        REQUIRE(msg.contains("tool_calls"));
+        REQUIRE(msg["tool_calls"].is_array());
+        REQUIRE(!msg["tool_calls"].empty());
+        auto& tc = msg["tool_calls"][0];
+        REQUIRE(tc["type"] == "function");
+        REQUIRE(tc["function"]["name"].is_string());
+        REQUIRE(tc["function"]["arguments"].is_string());
+        // arguments must be parseable JSON
+        auto args = json::parse(tc["function"]["arguments"].get<std::string>());
+        REQUIRE(args.is_object());
+        REQUIRE(!tc["id"].get<std::string>().empty());
+    } else {
+        // Soft pass: plumbing worked; reliability gate is 4B elsewhere.
+        REQUIRE((finish == "stop" || finish == "length"));
+    }
+}

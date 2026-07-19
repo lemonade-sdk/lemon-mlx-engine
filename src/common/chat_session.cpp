@@ -169,7 +169,7 @@ void ChatSession::generate_impl(
             throw std::runtime_error(
                 "ChatSession: apply_chat_template_fn is not set on ModelContext");
         }
-        auto tokens = ctx.apply_chat_template_fn(raw_messages);
+        auto tokens = ctx.apply_chat_template_fn(raw_messages, /*tools=*/nullptr);
 
         if (tokens.empty()) {
             throw std::runtime_error("ChatSession: chat template produced no tokens");
