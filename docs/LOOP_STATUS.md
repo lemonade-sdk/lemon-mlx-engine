@@ -33,6 +33,12 @@
 - Pure-graph quality work (operator not using graph)
 - Full OWUI Memory/tools product work (client-heavy)
 
+## Loop4 notes
+
+- Unit tests re-run: chat_session / thinking_budget / stop_sequences **green**
+- Empirical 35B server load: **segfault** during model load (see `docs/experiments/verify-loop4-smoke/`) — not decode path
+- PR: open against `feat/openai-tools-server` for clean correctness stack
+
 ## Open / next loop
 
 - Empirical CLI multi-turn / thinking smoke on canonical 35B if VRAM free

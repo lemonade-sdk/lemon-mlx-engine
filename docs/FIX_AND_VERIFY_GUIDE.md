@@ -547,6 +547,8 @@ All of:
 | Doc | Use |
 |-----|-----|
 | `docs/ISSUE_OPENWEBUI_GIBBERISH_KV_ANALYSIS.md` | Full diagnosis |
+| `docs/OWUI_OPS_CHECKLIST.md` | OpenWebUI H0 backend gate + Memory/tools posture |
+| `docs/LOOP_STATUS.md` | Branch progress (eager no-MTP track) |
 | `docs/experiments/gibberish-isolation-2026-07-19/` | No-think baselines |
 | `docs/experiments/gibberish-isolation-thinking-on-2026-07-19/` | Thinking-ON + feat vs main |
 | This file | **Fix + verify only** |
