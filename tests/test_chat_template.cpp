@@ -161,6 +161,42 @@ TEST_CASE("ChatTemplate enable_thinking=false suppresses thinking", "[chat_templ
     CHECK(result.find("<think>\n\n</think>") != std::string::npos);
 }
 
+TEST_CASE("ChatTemplate injects tools into prompt when tools provided", "[chat_template][tools]") {
+    auto config = make_qwen3_config();
+    ChatTemplate tmpl(QWEN3_TEMPLATE, config);
+
+    std::vector<Message> messages = {
+        {{"role", "user"}, {"content", "What is the weather?"}},
+    };
+
+    nlohmann::json tools = nlohmann::json::array({
+        {
+            {"type", "function"},
+            {"function",
+             {
+                 {"name", "get_weather"},
+                 {"description", "Get weather for a city"},
+                 {"parameters",
+                  {{"type", "object"},
+                   {"properties",
+                    {{"city", {{"type", "string"}, {"description", "City name"}}}}},
+                   {"required", nlohmann::json::array({"city"})}}},
+             }},
+        },
+    });
+
+    auto without = tmpl.apply(messages, true, {}, nullptr);
+    auto with = tmpl.apply(messages, true, {}, &tools);
+
+    // Tools must increase prompt content (schemas present).
+    CHECK(with.size() > without.size());
+    CHECK(with.find("get_weather") != std::string::npos);
+    // Qwen tools branch typically uses tools markup or tool schema text.
+    CHECK((with.find("tool") != std::string::npos ||
+           with.find("Tool") != std::string::npos ||
+           with.find("get_weather") != std::string::npos));
+}
+
 // ===========================================================================
 // load_chat_template Tests
 // ===========================================================================

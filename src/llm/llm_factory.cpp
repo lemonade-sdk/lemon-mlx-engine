@@ -293,6 +293,7 @@ ModelContext load_llm_from_directory(
         std::cerr << "[MTP] Delta model detected via load_llm, redirecting to load_mtp_delta_model\n";
         auto ctx = load_mtp_delta_model(model_id);
         ctx.model_id = model_id;
+        ctx.model_type = model_type;
 
         if (!ctx.eos_token_ids.has_value()) {
             if (config_json.contains("text_config") && config_json["text_config"].contains("eos_token_id")) {
@@ -326,8 +327,10 @@ ModelContext load_llm_from_directory(
             auto extra_ctx = std::make_shared<nlohmann::json>();
             ctx.template_extra_context = extra_ctx;
             ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
-                const std::vector<Message>& messages) -> std::vector<int> {
-                auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
+                const std::vector<Message>& messages,
+                const nlohmann::json* tools) -> std::vector<int> {
+                auto rendered = shared_tmpl->apply(
+                    messages, /*add_generation_prompt=*/true, *extra_ctx, tools);
                 return tokenizer->encode(rendered);
             };
         }
@@ -350,6 +353,7 @@ ModelContext load_llm_from_directory(
     // Quantized weights stay packed (uint32) and use quantized_matmul at runtime.
     auto ctx = it->second(config_json.dump(), std::move(weights), base_config);
     ctx.model_id = config.id.empty() ? model_directory : config.id;
+    ctx.model_type = base_config.model_type;
 
     if (base_config.eos_token_ids.has_value()) {
         ctx.eos_token_ids = base_config.eos_token_ids->values;
@@ -397,8 +401,10 @@ ModelContext load_llm_from_directory(
         ctx.template_extra_context = extra_ctx;
 
         ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
-            const std::vector<Message>& messages) -> std::vector<int> {
-            auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
+            const std::vector<Message>& messages,
+            const nlohmann::json* tools) -> std::vector<int> {
+            auto rendered = shared_tmpl->apply(
+                messages, /*add_generation_prompt=*/true, *extra_ctx, tools);
             return tokenizer->encode(rendered);
         };
     } else if (tokenizer) {
@@ -613,8 +619,10 @@ ModelContext load_mtp_delta_model(
         auto extra_ctx = std::make_shared<nlohmann::json>();
         ctx.template_extra_context = extra_ctx;
         ctx.apply_chat_template_fn = [shared_tmpl, tokenizer, extra_ctx](
-            const std::vector<Message>& messages) -> std::vector<int> {
-            auto rendered = shared_tmpl->apply(messages, /*add_generation_prompt=*/true, *extra_ctx);
+            const std::vector<Message>& messages,
+            const nlohmann::json* tools) -> std::vector<int> {
+            auto rendered = shared_tmpl->apply(
+                messages, /*add_generation_prompt=*/true, *extra_ctx, tools);
             return tokenizer->encode(rendered);
         };
     }
