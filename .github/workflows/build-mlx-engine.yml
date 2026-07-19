@@ -391,7 +391,8 @@ jobs:
             hip_device: 0          # gfx1151 APU (HIP device 0); R9700 is device 1
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false
-            no_think: false
+            # Must be true: thinking-on + floor 4096 OOM/kills short smoke (max_tokens 5/128).
+            no_think: true
           # Temporarily disabled: the GPU MTP smoke test (Qwen3.5-4B-MTP-4bit)
           # fails the server/health step on the self-hosted runner. Re-enable
           # once MTP inference on ROCm is fixed.
@@ -410,7 +411,7 @@ jobs:
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false
-            no_think: false
+            no_think: true
           # Temporarily disabled along with the GPU MTP test (see above).
           # - os: ubuntu-cpu-mtp
           #   artifact: mlx-engine-ubuntu-cpu-x64
@@ -426,7 +427,7 @@ jobs:
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false
-            no_think: false
+            no_think: true
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
@@ -535,10 +536,12 @@ jobs:
           MTP_FLAG="--use-mtp --n-draft-tokens 3"
         fi
 
-        # Disable thinking/reasoning for deterministic, fast answers in smoke tests
-        NO_THINK_FLAG=""
-        if [ "${{ matrix.no_think }}" = "true" ]; then
-          NO_THINK_FLAG="--no-think"
+        # Disable thinking for arithmetic smoke. Qwen defaults thinking ON; with
+        # thinking_budget_floor (product), client max_tokens 5/128 become 4096 and
+        # OOM/kill small CPU/mac runners. Product floor stays; smoke is no-think.
+        NO_THINK_FLAG="--no-think"
+        if [ "${{ matrix.no_think }}" = "false" ]; then
+          NO_THINK_FLAG=""
         fi
 
         # Increase readiness timeout for MTP models
@@ -610,7 +613,8 @@ jobs:
           exit 1
         fi
 
-        # Best-effort model warm-up (discard result)
+        # Best-effort model warm-up (discard result). enable_thinking false so
+        # floor cannot raise max_tokens even if server started without --no-think.
         echo "Sending warm-up request..."
         curl -s --max-time 120 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
@@ -619,6 +623,7 @@ jobs:
             \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}],
             \"max_tokens\": 5,
             \"temperature\": 0.0,
+            \"enable_thinking\": false,
             \"stream\": false
           }" 2>/dev/null || echo "Warm-up request skipped (non-fatal)"
 
@@ -641,6 +646,7 @@ jobs:
               ],
               \"max_tokens\": 128,
               \"temperature\": 0.0,
+              \"enable_thinking\": false,
               \"stream\": false
             }" 2>&1) || {
             echo "Attempt $ATTEMPT: chat completion request failed"

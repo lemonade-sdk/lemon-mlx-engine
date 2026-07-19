@@ -303,6 +303,7 @@ jobs:
             "messages": [{"role": "user", "content": "What is 2+2? Reply with just the number."}],
             "max_tokens": 32,
             "temperature": 0.0,
+            "enable_thinking": false,
             "stream": false
           }')
 

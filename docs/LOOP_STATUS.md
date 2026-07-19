@@ -119,12 +119,20 @@
 | No MTP / pure-graph | held |
 | Live server (if up) S1 spot-check | see `verify-loop10-pin/` |
 
+## Loop11 — CI smoke vs thinking floor
+
+| Item | Status |
+|------|--------|
+| Root cause | `test-simple-math` had `no_think: false` → floor `5→4096` / `128→4096` OOM-kill |
+| Fix | matrix `no_think: true`; smoke defaults `--no-think`; curl `enable_thinking: false` |
+| Product `thinking_budget.h` floor | **unchanged** |
+| Evidence pack | `docs/experiments/verify-loop11-ci-smoke/` |
+
 ## Open / next
 
-- Optional: OWUI UI L7 (curl H0 green)
-- Optional: pure-mlx microbench dual-load (mlx tree / #13)
-- Optional: large isolation packs commit
-- CI green watch on PR #63
+- Watch PR #63 CI for smoke green after loop11
+- Optional: OWUI UI L7
+- Optional: pure-mlx dual-load microbench (mlx #13)
 - MTP / pure-graph still deferred
 - **Never** two full 35B MLX processes on 890M
 
