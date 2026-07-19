@@ -205,6 +205,65 @@ ToolCallFormat resolve_tool_format(const ModelContext& ctx) {
     return ToolCallFormat::json;
 }
 
+// Per-request thinking policy (tools × enable_thinking).
+// Precedence: request explicit enable_thinking >
+//             tools inject (non-empty tools && tool_choice != none) ⇒ OFF >
+//             process/load default already in template_extra_context.
+// Mutates shared template_extra_context under ModelContainer::perform mutex.
+// Caller MUST restore previous value after apply_chat_template_fn (RAII below)
+// so tools_auto does not sticky-disable thinking for later non-tools requests.
+struct ThinkingContextGuard {
+    nlohmann::json* ctx = nullptr;
+    bool had_prev = false;
+    bool prev_value = true;
+
+    ThinkingContextGuard(ModelContext& model_ctx,
+                         bool inject_tools,
+                         const std::optional<bool>& request_enable_thinking) {
+        if (!model_ctx.template_extra_context) {
+            return;
+        }
+        ctx = model_ctx.template_extra_context.get();
+        if (ctx->contains("enable_thinking") &&
+            (*ctx)["enable_thinking"].is_boolean()) {
+            had_prev = true;
+            prev_value = (*ctx)["enable_thinking"].get<bool>();
+        }
+        bool thinking;
+        const char* reason = "process_default";
+        if (request_enable_thinking.has_value()) {
+            thinking = *request_enable_thinking;
+            reason = "client";
+        } else if (inject_tools) {
+            thinking = false;
+            reason = "tools_auto";
+        } else if (had_prev) {
+            thinking = prev_value;
+            reason = "process_default";
+        } else {
+            thinking = true;
+            reason = "process_default";
+        }
+        (*ctx)["enable_thinking"] = thinking;
+        std::cerr << "[server] effective_thinking=" << (thinking ? "on" : "off")
+                  << " reason=" << reason << std::endl;
+    }
+
+    ~ThinkingContextGuard() {
+        if (!ctx) {
+            return;
+        }
+        if (had_prev) {
+            (*ctx)["enable_thinking"] = prev_value;
+        } else {
+            ctx->erase("enable_thinking");
+        }
+    }
+
+    ThinkingContextGuard(const ThinkingContextGuard&) = delete;
+    ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
+};
+
 } // namespace
 
 
@@ -452,17 +511,22 @@ struct Server::Impl {
             model->perform([&](ModelContext& ctx) {
                 WiredLimitGuard wired_guard;
 
-                auto raw_messages = to_raw_messages(chat_req.messages);
-                const nlohmann::json* tools_ptr =
-                    (inject_tools && chat_req.tools.has_value()) ? &*chat_req.tools
-                                                                : nullptr;
-
                 std::vector<int> tokens;
-                if (ctx.apply_chat_template_fn) {
-                    tokens = ctx.apply_chat_template_fn(raw_messages, tools_ptr);
-                } else {
-                    tokens = ctx.encode_fn(chat_req.messages.back().content);
-                }
+                {
+                    ThinkingContextGuard thinking_guard(
+                        ctx, inject_tools, chat_req.enable_thinking);
+                    auto raw_messages = to_raw_messages(chat_req.messages);
+                    const nlohmann::json* tools_ptr =
+                        (inject_tools && chat_req.tools.has_value())
+                            ? &*chat_req.tools
+                            : nullptr;
+
+                    if (ctx.apply_chat_template_fn) {
+                        tokens = ctx.apply_chat_template_fn(raw_messages, tools_ptr);
+                    } else {
+                        tokens = ctx.encode_fn(chat_req.messages.back().content);
+                    }
+                } // restore process thinking default after template apply
 
                 if (tokens.empty()) {
                     throw std::runtime_error("tokenization produced no tokens");
@@ -573,18 +637,24 @@ struct Server::Impl {
                     model->perform([&](ModelContext& ctx) {
                         WiredLimitGuard wired_guard;
 
-                        auto raw_messages = to_raw_messages(chat_req.messages);
-                        const nlohmann::json* tools_ptr =
-                            (inject_tools && chat_req.tools.has_value())
-                                ? &*chat_req.tools
-                                : nullptr;
-
                         std::vector<int> tokens;
-                        if (ctx.apply_chat_template_fn) {
-                            tokens = ctx.apply_chat_template_fn(raw_messages, tools_ptr);
-                        } else {
-                            tokens = ctx.encode_fn(chat_req.messages.back().content);
-                        }
+                        {
+                            ThinkingContextGuard thinking_guard(
+                                ctx, inject_tools, chat_req.enable_thinking);
+                            auto raw_messages = to_raw_messages(chat_req.messages);
+                            const nlohmann::json* tools_ptr =
+                                (inject_tools && chat_req.tools.has_value())
+                                    ? &*chat_req.tools
+                                    : nullptr;
+
+                            if (ctx.apply_chat_template_fn) {
+                                tokens =
+                                    ctx.apply_chat_template_fn(raw_messages, tools_ptr);
+                            } else {
+                                tokens =
+                                    ctx.encode_fn(chat_req.messages.back().content);
+                            }
+                        } // restore process thinking default after template apply
 
                         if (tokens.empty()) {
                             throw std::runtime_error("tokenization produced no tokens");

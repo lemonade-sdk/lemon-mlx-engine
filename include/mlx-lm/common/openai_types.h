@@ -106,6 +106,9 @@ struct ChatCompletionRequest {
     // Kept as JSON for zero-loss schema passthrough into chat templates.
     std::optional<nlohmann::json> tools;
     ToolChoice tool_choice;
+    // Optional request-level thinking override (null = use policy default).
+    // Precedence: request > tools-inject auto-off > process --no-think / load default.
+    std::optional<bool> enable_thinking;
 };
 
 inline void to_json(nlohmann::json& j, const ChatCompletionRequest& r) {
@@ -122,6 +125,9 @@ inline void to_json(nlohmann::json& j, const ChatCompletionRequest& r) {
     };
     if (r.tools.has_value()) {
         j["tools"] = *r.tools;
+    }
+    if (r.enable_thinking.has_value()) {
+        j["enable_thinking"] = *r.enable_thinking;
     }
     switch (r.tool_choice.mode) {
         case ToolChoice::Mode::None:
@@ -174,6 +180,16 @@ inline void from_json(const nlohmann::json& j, ChatCompletionRequest& r) {
     r.tools = std::nullopt;
     if (j.contains("tools") && !j.at("tools").is_null()) {
         r.tools = j.at("tools");
+    }
+    r.enable_thinking = std::nullopt;
+    if (j.contains("enable_thinking") && j.at("enable_thinking").is_boolean()) {
+        r.enable_thinking = j.at("enable_thinking").get<bool>();
+    } else if (j.contains("chat_template_kwargs") &&
+               j.at("chat_template_kwargs").is_object() &&
+               j.at("chat_template_kwargs").contains("enable_thinking") &&
+               j.at("chat_template_kwargs").at("enable_thinking").is_boolean()) {
+        r.enable_thinking =
+            j.at("chat_template_kwargs").at("enable_thinking").get<bool>();
     }
     r.tool_choice = ToolChoice{};
     if (j.contains("tool_choice") && !j.at("tool_choice").is_null()) {
