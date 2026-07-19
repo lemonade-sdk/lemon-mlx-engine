@@ -67,3 +67,12 @@
   --host 127.0.0.1 --port 8080
 # thinking on by default → budget floor ≥4096 unless client already higher
 ```
+
+## Continue session — load path (eager)
+
+| Fix | Status |
+|-----|--------|
+| Skip MTP head unless `MLX_LOAD_MTP_HEAD=1` | **done** |
+| Quant fuse opt-in `MLX_ENABLE_QUANT_FUSE=1` (default off) | **done** |
+| 35B smoke | **PASS** answer `4` (see verify-loop5-load) |
+
