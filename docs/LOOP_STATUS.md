@@ -119,21 +119,32 @@
 | No MTP / pure-graph | held |
 | Live server (if up) S1 spot-check | see `verify-loop10-pin/` |
 
-## Loop11 — CI smoke vs thinking floor
+## Loop11 — CI smoke vs thinking floor (emergency)
 
 | Item | Status |
 |------|--------|
-| Root cause | `test-simple-math` had `no_think: false` → floor `5→4096` / `128→4096` OOM-kill |
-| Fix | matrix `no_think: true`; smoke defaults `--no-think`; curl `enable_thinking: false` |
-| Product `thinking_budget.h` floor | **unchanged** |
-| Evidence pack | `docs/experiments/verify-loop11-ci-smoke/` |
+| Root cause | thinking-on + `max_tokens: 5` → floor 4096 OOM |
+| Interim | no-think-only smoke (stabilized runners) |
+| Product floor | **unchanged** |
+
+## Loop12 — dual CI lanes restored (operator: keep thinking visible)
+
+Clear Thought consensus: **do not drop thinking from CI**; dual independent variables.
+
+| Lane | matrix.mode | Flags | Purpose |
+|------|-------------|-------|---------|
+| **no-think** | `no-think` | `--no-think`, `enable_thinking: false`, max_tokens 128 | Fast gate: answer `4` |
+| **thinking** | `thinking` | thinking on, max_tokens **4096**, floor probe 64→4096 | Analysis + floor log + answer `4` (strip CoT) |
+
+| MTP | Status |
+|-----|--------|
+| `--use-mtp` CI / product enable | **Still deferred** until Stream(cpu,0) fixed |
 
 ## Open / next
 
-- Watch PR #63 CI for smoke green after loop11
-- Optional: OWUI UI L7
-- Optional: pure-mlx dual-load microbench (mlx #13)
-- MTP / pure-graph still deferred
+- Watch PR #63 for dual-lane smoke green
+- MTP stream fix only when operator enables that epic
+- Optional OWUI UI L7
 - **Never** two full 35B MLX processes on 890M
 
 ## Operator posture

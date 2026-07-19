@@ -371,7 +371,9 @@ jobs:
         retention-days: 30
 
   test-simple-math:
-    name: test-simple-math-${{ matrix.os }}
+    # Dual lanes (Clear Thought / operator): no-think (fast gate) AND thinking
+    # (analysis). Never mix thinking-on with max_tokens 5 (floor→4096 OOM).
+    name: test-simple-math-${{ matrix.os }}-${{ matrix.mode }}
     needs: [build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
     if: |
       always() &&
@@ -384,50 +386,103 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # --- no-think lane (fast arithmetic) ---
           - os: ubuntu-rocm
+            mode: no-think
             artifact: mlx-engine-ubuntu-rocm-x64
             runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
             install_rocm: true
             hip_device: 0          # gfx1151 APU (HIP device 0); R9700 is device 1
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false
-            # Must be true: thinking-on + floor 4096 OOM/kills short smoke (max_tokens 5/128).
             no_think: true
-          # Temporarily disabled: the GPU MTP smoke test (Qwen3.5-4B-MTP-4bit)
-          # fails the server/health step on the self-hosted runner. Re-enable
-          # once MTP inference on ROCm is fixed.
-          # - os: ubuntu-mtp
-          #   artifact: mlx-engine-ubuntu-rocm-x64
-          #   runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
-          #   install_rocm: true
-          #   hip_device: 0          # gfx1151 APU (HIP device 0); R9700 is device 1
-          #   model: mlx-community/Qwen3.5-4B-MTP-4bit
-          #   use_mtp: true
-          #   no_think: true
-          #   timeout_minutes: 30
+            enable_thinking: false
+            infer_max_tokens: 128
+            infer_curl_max_time: 180
+            probe_floor: false
           - os: ubuntu-cpu
+            mode: no-think
             artifact: mlx-engine-ubuntu-cpu-x64
             runs_on: '"ubuntu-22.04"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false
             no_think: true
-          # Temporarily disabled along with the GPU MTP test (see above).
-          # - os: ubuntu-cpu-mtp
-          #   artifact: mlx-engine-ubuntu-cpu-x64
-          #   runs_on: '"ubuntu-22.04"'
-          #   install_rocm: false
-          #   model: mlx-community/Qwen3.5-4B-MTP-4bit
-          #   use_mtp: true
-          #   no_think: true
-          #   timeout_minutes: 30
+            enable_thinking: false
+            infer_max_tokens: 128
+            infer_curl_max_time: 180
+            probe_floor: false
           - os: macos-arm64
+            mode: no-think
             artifact: mlx-engine-macos-arm64
             runs_on: '"macos-15"'
             install_rocm: false
             model: mlx-community/Qwen3.5-0.8B-4bit
             use_mtp: false
             no_think: true
+            enable_thinking: false
+            infer_max_tokens: 128
+            infer_curl_max_time: 180
+            probe_floor: false
+          # --- thinking lane (analysis; real CoT budget, product floor intact) ---
+          # Self-hosted ROCm first for full gen; GH-hosted CPU/mac also covered
+          # with longer timeouts so both modes remain visible in CI.
+          - os: ubuntu-rocm
+            mode: thinking
+            artifact: mlx-engine-ubuntu-rocm-x64
+            runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
+            install_rocm: true
+            hip_device: 0
+            model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+            no_think: false
+            enable_thinking: true
+            infer_max_tokens: 4096
+            infer_curl_max_time: 600
+            probe_floor: true
+            timeout_minutes: 40
+          - os: ubuntu-cpu
+            mode: thinking
+            artifact: mlx-engine-ubuntu-cpu-x64
+            runs_on: '"ubuntu-22.04"'
+            install_rocm: false
+            model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+            no_think: false
+            enable_thinking: true
+            infer_max_tokens: 4096
+            infer_curl_max_time: 600
+            probe_floor: true
+            timeout_minutes: 40
+          - os: macos-arm64
+            mode: thinking
+            artifact: mlx-engine-macos-arm64
+            runs_on: '"macos-15"'
+            install_rocm: false
+            model: mlx-community/Qwen3.5-0.8B-4bit
+            use_mtp: false
+            no_think: false
+            enable_thinking: true
+            infer_max_tokens: 4096
+            infer_curl_max_time: 600
+            probe_floor: true
+            timeout_minutes: 40
+          # MTP decode still deferred (Stream(cpu,0) / --use-mtp). Re-enable when
+          # engine MTP path is fixed; keep separate from thinking lanes.
+          # - os: ubuntu-rocm
+          #   mode: mtp-no-think
+          #   artifact: mlx-engine-ubuntu-rocm-x64
+          #   runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
+          #   install_rocm: true
+          #   hip_device: 0
+          #   model: mlx-community/Qwen3.5-4B-MTP-4bit
+          #   use_mtp: true
+          #   no_think: true
+          #   enable_thinking: false
+          #   infer_max_tokens: 128
+          #   infer_curl_max_time: 300
+          #   probe_floor: false
+          #   timeout_minutes: 30
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
@@ -536,13 +591,19 @@ jobs:
           MTP_FLAG="--use-mtp --n-draft-tokens 3"
         fi
 
-        # Disable thinking for arithmetic smoke. Qwen defaults thinking ON; with
-        # thinking_budget_floor (product), client max_tokens 5/128 become 4096 and
-        # OOM/kill small CPU/mac runners. Product floor stays; smoke is no-think.
+        # Dual lanes: no-think (matrix.no_think=true) vs thinking (false).
+        # Product thinking_budget floor stays; thinking lane must use max_tokens>=4096
+        # (never 5) so floor is not a surprise OOM.
         NO_THINK_FLAG="--no-think"
         if [ "${{ matrix.no_think }}" = "false" ]; then
           NO_THINK_FLAG=""
         fi
+        ENABLE_THINKING="${{ matrix.enable_thinking }}"
+        INFER_MAX_TOKENS="${{ matrix.infer_max_tokens }}"
+        INFER_CURL_MAX_TIME="${{ matrix.infer_curl_max_time }}"
+        PROBE_FLOOR="${{ matrix.probe_floor }}"
+        MODE="${{ matrix.mode }}"
+        echo "Smoke mode=$MODE no_think_flag=${NO_THINK_FLAG:-<empty>} enable_thinking=$ENABLE_THINKING infer_max_tokens=$INFER_MAX_TOKENS"
 
         # Increase readiness timeout for MTP models
         if [ "${{ matrix.use_mtp }}" = "true" ]; then
@@ -562,7 +623,7 @@ jobs:
           echo "All shared libraries resolved OK"
         fi
 
-        echo "Starting server on port $PORT (MTP=${MTP_FLAG:+ON:-OFF})..."
+        echo "Starting server on port $PORT (mode=$MODE MTP=${MTP_FLAG:+ON:-OFF})..."
         # PR #10 (MLX commit 45f6ee1) fixed affine_dequantize_packed_kernel #pragma unroll
         # miscompile on RDNA 3.5. Our local patch was removed — dequant+GEMM path now works
         # correctly for uint32 packed weights on ROCm.
@@ -613,9 +674,8 @@ jobs:
           exit 1
         fi
 
-        # Best-effort model warm-up (discard result). enable_thinking false so
-        # floor cannot raise max_tokens even if server started without --no-think.
-        echo "Sending warm-up request..."
+        # Warm-up always no-think / short: load weights only (not the thinking experiment).
+        echo "Sending warm-up request (enable_thinking=false, max_tokens=5)..."
         curl -s --max-time 120 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
           -d "{
@@ -627,6 +687,31 @@ jobs:
             \"stream\": false
           }" 2>/dev/null || echo "Warm-up request skipped (non-fatal)"
 
+        # Floor probe (thinking lane): log is written at request start before gen.
+        # Use short curl timeout so we do not wait out full 4096 CoT just to read the log.
+        if [ "$PROBE_FLOOR" = "true" ]; then
+          echo "=== Thinking budget floor probe (client max_tokens=64, expect floor log) ==="
+          curl -s --max-time 25 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"model\": \"${{ matrix.model }}\",
+              \"messages\": [{\"role\": \"user\", \"content\": \"Say ok.\"}],
+              \"max_tokens\": 64,
+              \"temperature\": 0.0,
+              \"enable_thinking\": true,
+              \"stream\": false
+            }" 2>/dev/null || echo "Floor probe curl ended (timeout/error OK if log present)"
+          if grep -q 'thinking_budget_floor: max_tokens 64 → 4096' server.log; then
+            echo "FLOOR_PROBE_PASS -- saw thinking_budget_floor 64 → 4096"
+          else
+            echo "FLOOR_PROBE_FAIL -- expected thinking_budget_floor log"
+            echo "=== Server log (floor probe) ==="
+            grep -E 'thinking_budget|effective_thinking' server.log | tail -20 || true
+            stop_server
+            exit 1
+          fi
+        fi
+
         # Inference test with retry logic (max 2 attempts)
         MAX_RETRIES=2
         ATTEMPT=0
@@ -634,9 +719,9 @@ jobs:
 
         while [ $ATTEMPT -lt $MAX_RETRIES ]; do
           ATTEMPT=$((ATTEMPT + 1))
-          echo "=== Inference test attempt $ATTEMPT/$MAX_RETRIES ==="
+          echo "=== Inference test attempt $ATTEMPT/$MAX_RETRIES (mode=$MODE enable_thinking=$ENABLE_THINKING max_tokens=$INFER_MAX_TOKENS) ==="
 
-          response=$(curl -s --max-time 180 -X POST http://127.0.0.1:$PORT/v1/chat/completions \
+          response=$(curl -s --max-time "$INFER_CURL_MAX_TIME" -X POST http://127.0.0.1:$PORT/v1/chat/completions \
             -H "Content-Type: application/json" \
             -d "{
               \"model\": \"${{ matrix.model }}\",
@@ -644,9 +729,9 @@ jobs:
                 {\"role\": \"system\", \"content\": \"You are a math assistant. Answer arithmetic questions with a single number.\"},
                 {\"role\": \"user\", \"content\": \"What is 2+2? Answer with just the number.\"}
               ],
-              \"max_tokens\": 128,
+              \"max_tokens\": $INFER_MAX_TOKENS,
               \"temperature\": 0.0,
-              \"enable_thinking\": false,
+              \"enable_thinking\": $ENABLE_THINKING,
               \"stream\": false
             }" 2>&1) || {
             echo "Attempt $ATTEMPT: chat completion request failed"
@@ -659,6 +744,10 @@ jobs:
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
           echo "=== END RAW OUTPUT ==="
           echo "Attempt $ATTEMPT extracted answer: $answer"
+          if [ "$ENABLE_THINKING" = "true" ]; then
+            echo "thinking_mode_signals:"
+            grep -E 'effective_thinking|thinking_budget_floor' server.log | tail -10 || true
+          fi
 
           if [ "$answer" = "4" ]; then
             PASS=true
@@ -669,19 +758,19 @@ jobs:
         done
 
         if [ "$PASS" = "true" ]; then
-          echo "INFERENCE TEST PASSED -- model answered correctly on attempt $ATTEMPT"
+          echo "INFERENCE TEST PASSED -- mode=$MODE answered correctly on attempt $ATTEMPT"
         else
           echo "=== Server Response ==="
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
           echo "=== End Response ==="
-          echo "INFERENCE TEST FAILED -- expected answer '4' after $MAX_RETRIES attempts"
+          echo "INFERENCE TEST FAILED -- mode=$MODE expected answer '4' after $MAX_RETRIES attempts"
           echo "=== Server Log (last 50 lines) ==="
           tail -50 server.log 2>/dev/null || true
           stop_server
           exit 1
         fi
 
-        echo "SMOKE TEST PASSED -- server started, health check, and inference OK"
+        echo "SMOKE TEST PASSED -- mode=$MODE health + inference OK"
 
         # --- Benchmark: extract TPS metrics as structured JSON ---
         echo "=== Performance Benchmarks ==="
