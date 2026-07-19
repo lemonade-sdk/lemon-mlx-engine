@@ -318,10 +318,18 @@ ModelContext load_llm_from_directory(
         auto chat_tmpl = load_chat_template(model_directory);
         if (chat_tmpl.has_value() && tokenizer) {
             auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
-            if (ctx.eos_token_ids.has_value() && !shared_tmpl->eos_token().empty()) {
+            // Merge template EOS into the stop set — never replace multi-id EOS
+            // (e.g. Qwen [im_end, endoftext]) with a singleton.
+            if (!shared_tmpl->eos_token().empty()) {
                 int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
                 if (eos_id >= 0) {
-                    ctx.eos_token_ids = std::vector<int>{eos_id};
+                    if (!ctx.eos_token_ids.has_value()) {
+                        ctx.eos_token_ids = std::vector<int>{};
+                    }
+                    auto& v = *ctx.eos_token_ids;
+                    if (std::find(v.begin(), v.end(), eos_id) == v.end()) {
+                        v.push_back(eos_id);
+                    }
                 }
             }
             auto extra_ctx = std::make_shared<nlohmann::json>();
@@ -610,10 +618,17 @@ ModelContext load_mtp_delta_model(
     auto chat_tmpl = load_chat_template(delta_dir);
     if (chat_tmpl.has_value() && tokenizer) {
         auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
-        if (!ctx.eos_token_ids.has_value() && !shared_tmpl->eos_token().empty()) {
+        // Merge template EOS — never collapse multi-id sets to a singleton.
+        if (!shared_tmpl->eos_token().empty()) {
             int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
             if (eos_id >= 0) {
-                ctx.eos_token_ids = std::vector<int>{eos_id};
+                if (!ctx.eos_token_ids.has_value()) {
+                    ctx.eos_token_ids = std::vector<int>{};
+                }
+                auto& v = *ctx.eos_token_ids;
+                if (std::find(v.begin(), v.end(), eos_id) == v.end()) {
+                    v.push_back(eos_id);
+                }
             }
         }
         auto extra_ctx = std::make_shared<nlohmann::json>();

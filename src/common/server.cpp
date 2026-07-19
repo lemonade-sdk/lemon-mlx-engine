@@ -542,12 +542,17 @@ struct Server::Impl {
 
                 std::string output_text;
                 int generated_count = 0;
+                bool stopped_on_string = false;
 
                 auto info = generate_text(
                     ctx, lm_input, params, eos_set,
                     [&](const std::string& text, int /*token*/) {
                         output_text += text;
                         generated_count++;
+                        if (apply_stop_sequences(output_text, chat_req.stop)) {
+                            stopped_on_string = true;
+                            return GenerateDisposition::stop;
+                        }
                         return GenerateDisposition::more;
                     });
 
@@ -592,13 +597,19 @@ struct Server::Impl {
                         choice.finish_reason = "tool_calls";
                     } else {
                         choice.message.content = output_text;
-                        choice.finish_reason = (params.max_tokens.has_value() &&
-                            generated_count >= *params.max_tokens) ? "length" : "stop";
+                        choice.finish_reason =
+                            (!stopped_on_string && params.max_tokens.has_value() &&
+                             generated_count >= *params.max_tokens)
+                                ? "length"
+                                : "stop";
                     }
                 } else {
                     choice.message.content = output_text;
-                    choice.finish_reason = (params.max_tokens.has_value() &&
-                        generated_count >= *params.max_tokens) ? "length" : "stop";
+                    choice.finish_reason =
+                        (!stopped_on_string && params.max_tokens.has_value() &&
+                         generated_count >= *params.max_tokens)
+                            ? "length"
+                            : "stop";
                 }
                 response.choices.push_back(std::move(choice));
 
@@ -696,6 +707,8 @@ struct Server::Impl {
                                 resolve_tool_format(ctx), tools_opt);
                         }
                         int generated_count = 0;
+                        std::string stream_accum;
+                        bool stopped_on_string = false;
 
                         // Generate tokens and stream as SSE. Tier-1 tools:
                         // suppress tool markup in content; emit complete
@@ -713,6 +726,20 @@ struct Server::Impl {
                                     out_text = *display;
                                 }
 
+                                // Honor request stop strings. Strip the match from
+                                // the tail of this chunk when possible; stop gen.
+                                const size_t before = stream_accum.size();
+                                stream_accum += out_text;
+                                if (apply_stop_sequences(stream_accum, chat_req.stop)) {
+                                    stopped_on_string = true;
+                                    if (stream_accum.size() > before) {
+                                        out_text = stream_accum.substr(before);
+                                    } else {
+                                        // Entire chunk was part of the stop tail.
+                                        return GenerateDisposition::stop;
+                                    }
+                                }
+
                                 openai::ChatCompletionChunk chunk;
                                 chunk.id = request_id;
                                 chunk.created = created;
@@ -725,6 +752,9 @@ struct Server::Impl {
 
                                 if (!send_sse(sink, nlohmann::json(chunk).dump())) {
                                     client_gone = true;
+                                    return GenerateDisposition::stop;
+                                }
+                                if (stopped_on_string) {
                                     return GenerateDisposition::stop;
                                 }
                                 return GenerateDisposition::more;
@@ -747,7 +777,7 @@ struct Server::Impl {
                         std::cerr << "[TPS] " << info.summary() << std::endl;
 
                         std::string finish = "stop";
-                        if (params.max_tokens.has_value() &&
+                        if (!stopped_on_string && params.max_tokens.has_value() &&
                             generated_count >= *params.max_tokens) {
                             finish = "length";
                         }
@@ -862,12 +892,17 @@ struct Server::Impl {
 
                 std::string output_text;
                 int generated_count = 0;
+                bool stopped_on_string = false;
 
                 auto info = generate_text(
                     ctx, lm_input, params, eos_set,
                     [&](const std::string& text, int /*token*/) {
                         output_text += text;
                         generated_count++;
+                        if (apply_stop_sequences(output_text, comp_req.stop)) {
+                            stopped_on_string = true;
+                            return GenerateDisposition::stop;
+                        }
                         return GenerateDisposition::more;
                     });
 
@@ -881,8 +916,11 @@ struct Server::Impl {
                 openai::CompletionChoice choice;
                 choice.index = 0;
                 choice.text = output_text;
-                choice.finish_reason = (params.max_tokens.has_value() &&
-                    generated_count >= *params.max_tokens) ? "length" : "stop";
+                choice.finish_reason =
+                    (!stopped_on_string && params.max_tokens.has_value() &&
+                     generated_count >= *params.max_tokens)
+                        ? "length"
+                        : "stop";
                 response.choices.push_back(std::move(choice));
 
                 response.usage.prompt_tokens = info.prompt_token_count;
@@ -918,6 +956,25 @@ struct Server::Impl {
             }
         }
         return eos_set;
+    }
+
+    // OpenAI `stop`: if the accumulated text ends with any stop string, strip
+    // the match and signal the generate loop to halt.
+    static bool apply_stop_sequences(std::string& accumulated,
+                                     const std::vector<std::string>& stops) {
+        if (stops.empty() || accumulated.empty()) {
+            return false;
+        }
+        for (const auto& s : stops) {
+            if (s.empty() || accumulated.size() < s.size()) {
+                continue;
+            }
+            if (accumulated.compare(accumulated.size() - s.size(), s.size(), s) == 0) {
+                accumulated.resize(accumulated.size() - s.size());
+                return true;
+            }
+        }
+        return false;
     }
 
     // Returns false if the client disconnected (or write failed) so callers
