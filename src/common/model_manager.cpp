@@ -7,6 +7,7 @@
 #include <mlx-lm/llm/llm_factory.h>
 #include <mlx/mlx.h>
 #include <nlohmann/json.hpp>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -94,8 +95,11 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
         (*ctx.template_extra_context)["enable_thinking"] = !no_think_;
     }
 
-    // Warmup: prime GPU allocator cache.
-    {
+    // Drain post-load HIP work before first GDN/attention launch (gfx115x).
+    mx::synchronize();
+
+    // Warmup: prime GPU allocator cache. Skip with MLX_SKIP_WARMUP=1.
+    if (std::getenv("MLX_SKIP_WARMUP") == nullptr) {
         GenerateParameters warmup_params;
         warmup_params.max_tokens = 1;
         warmup_params.temperature = 0.0f;
@@ -104,6 +108,7 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
         LMInput::Text warmup_text(dummy_tokens);
         auto warmup_out = ctx.call_fn(warmup_text, &warmup_cache, nullptr);
         mx::eval(warmup_out.logits);
+        mx::synchronize();
     }
 
     std::cerr << "[ModelManager] Model loaded. Memory: active="

@@ -10,3 +10,7 @@ date=2026-07-19T15:07:50-07:00
 binary_md5_server=b72305bdd88b27db00f9f7c513020f57
 binary_md5_chat=717639da69b509a7cfcb53422c8dbb4b
 flags=eager no_mtp pure_off optional_skip_mtp_head
+engine_sha=7c4aeab4a35eaa204e084b698ea7a22aefc5402f pre-commit
+date=2026-07-19T15:17:04-07:00
+c1=PASS Ada
+warmup_harden=synchronize+skip_env

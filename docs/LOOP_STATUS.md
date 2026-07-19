@@ -49,15 +49,15 @@
 | L0 Maxwell short | **PASS** |
 | C3 HTTP multi-turn Ada | **PASS** |
 | Server reload after MTP-head skip + quant fuse off | **PASS** (health + hi smoke) |
-| C1 CLI multi-turn | **open** (automation; unit+C3 not substitute for final C1) |
+| C1 CLI multi-turn Ada | **PASS** (`logs/C1-chat-loop.log`) |
 
-**Code (this push):** default skip MTP head (`MLX_LOAD_MTP_HEAD=1` to enable); quant fuse opt-in (`MLX_ENABLE_QUANT_FUSE=1`); concat shape guards.
+**Code (landed):** skip MTP head default; quant fuse opt-in; chat/server warmup `synchronize` + `MLX_SKIP_WARMUP`.
 
 ## Open / next loop
 
-- Interactive C1 CLI Ada on 35B (human or robust PTY driver)
-- Optional: analysis experiment packs commit
-- PR open for `fix/eager-no-mtp-correctness` when ready
+- Optional: open PR for `fix/eager-no-mtp-correctness`
+- Optional: commit large gibberish-isolation experiment packs
+- Intermittent GDN first-launch flakiness: monitor; use clean GPU / `MLX_SKIP_WARMUP` if needed
 
 ## Operator posture
 
