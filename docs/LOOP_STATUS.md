@@ -22,6 +22,8 @@
 | Request `stop` strings | **Honored** (block + stream) |
 | Multi-id EOS | **Merge** (no singleton replace) |
 | Pure-graph | **Opt-in** `MLX_DECODE_GRAPH_PURE=1` (default eager) |
+| OpenAI `stop` unit tests | **`stop_sequences.h` + `test_stop_sequences`** |
+| OWUI ops | **`docs/OWUI_OPS_CHECKLIST.md`** |
 | Thinking budget | **Floor to 4096** when thinking=on and client max_tokens lower; CLI/server/OpenAI defaults **4096**; `thinking_budget.h` + unit tests |
 | Unit tests | `test_chat_session` multi-turn + re-hydrate; `test_thinking_budget` |
 
@@ -33,9 +35,9 @@
 
 ## Open / next loop
 
-- Optional: unit test for `apply_stop_sequences` / thinking floor
-- Empirical CLI multi-turn smoke on canonical 35B if VRAM free
-- Track analysis docs (`ISSUE_…`, experiments) if worth committing separately
+- Empirical CLI multi-turn / thinking smoke on canonical 35B if VRAM free
+- Optional: analysis experiment packs commit
+- PR open for `fix/eager-no-mtp-correctness` when ready
 
 ## Operator posture
 

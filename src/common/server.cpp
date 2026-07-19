@@ -7,6 +7,7 @@
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/kv_cache.h>
 #include <mlx-lm/common/thinking_budget.h>
+#include <mlx-lm/common/stop_sequences.h>
 #include <mlx-lm/common/tool_calling.h>
 #include <mlx-lm/common/types.h>
 #include <mlx-lm/common/wired_limit_guard.h>
@@ -993,24 +994,7 @@ struct Server::Impl {
         return eos_set;
     }
 
-    // OpenAI `stop`: if the accumulated text ends with any stop string, strip
-    // the match and signal the generate loop to halt.
-    static bool apply_stop_sequences(std::string& accumulated,
-                                     const std::vector<std::string>& stops) {
-        if (stops.empty() || accumulated.empty()) {
-            return false;
-        }
-        for (const auto& s : stops) {
-            if (s.empty() || accumulated.size() < s.size()) {
-                continue;
-            }
-            if (accumulated.compare(accumulated.size() - s.size(), s.size(), s) == 0) {
-                accumulated.resize(accumulated.size() - s.size());
-                return true;
-            }
-        }
-        return false;
-    }
+    // apply_stop_sequences — see mlx-lm/common/stop_sequences.h
 
     // Returns false if the client disconnected (or write failed) so callers
     // can stop generation and release the model lock promptly.
