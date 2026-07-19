@@ -110,11 +110,21 @@
 | Need dual-load docs upstream? | **YES** — draft #13 |
 | Engine soft warn (tight GPU mem before load) | **done** this loop |
 
+## Loop10 — pin mlx SHA + GDN cast hygiene
+
+| Item | Status |
+|------|--------|
+| FetchContent mlx pin `0dadb703` (was floating `rocm-support`) | **done** |
+| `gdn_fused_decode` skip same-dtype f32 `astype` | **done** |
+| No MTP / pure-graph | held |
+| Live server (if up) S1 spot-check | see `verify-loop10-pin/` |
+
 ## Open / next
 
 - Optional: OWUI UI L7 (curl H0 green)
-- Optional: pure-mlx microbench for dual-load OOM vs SEGV (mlx tree, not engine product)
+- Optional: pure-mlx microbench dual-load (mlx tree / #13)
 - Optional: large isolation packs commit
+- CI green watch on PR #63
 - MTP / pure-graph still deferred
 - **Never** two full 35B MLX processes on 890M
 
