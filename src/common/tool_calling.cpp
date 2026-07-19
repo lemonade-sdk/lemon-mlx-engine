@@ -678,8 +678,10 @@ std::optional<ToolCall> XMLFunctionParser::parse(
     const std::string& content,
     const std::optional<nlohmann::json>& tools) const
 {
-    // Pattern: <function=...>...</function>
-    std::regex func_regex("<function=(.*?)</function>", std::regex::ECMAScript);
+    // Pattern: <function=...>...</function> (allow newlines inside body).
+    // ECMAScript '.' does not match '\n', so use [\s\S] for multi-line tool calls
+    // as produced by Qwen3.5 chat templates.
+    std::regex func_regex("<function=([\\s\\S]*?)</function>", std::regex::ECMAScript);
     std::smatch match;
     if (!std::regex_search(content, match, func_regex)) {
         return std::nullopt;
@@ -948,7 +950,14 @@ std::optional<ToolCallFormat> infer_tool_call_format(const std::string& model_ty
     if (lower == "lfm2" || lower == "lfm2_moe")   return ToolCallFormat::lfm2;
     if (lower == "glm4" || lower == "glm4_moe" || lower == "glm4_moe_lite")
         return ToolCallFormat::glm4;
-    if (lower == "gemma") return ToolCallFormat::gemma;
+    if (lower == "gemma" || lower.rfind("gemma", 0) == 0) return ToolCallFormat::gemma;
+    // Qwen3 / Qwen3.5 chat templates commonly emit <function=name>…</function>
+    // (XML function style), not JSON inside <tool_call> tags.
+    if (lower.find("qwen3") != std::string::npos ||
+        lower.find("qwen2") != std::string::npos ||
+        lower == "qwen") {
+        return ToolCallFormat::xml_function;
+    }
     return std::nullopt;
 }
 

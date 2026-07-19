@@ -501,12 +501,27 @@ struct Server::Impl {
                 if (inject_tools) {
                     std::optional<nlohmann::json> tools_opt =
                         chat_req.tools.has_value() ? chat_req.tools : std::nullopt;
-                    ToolCallProcessor processor(resolve_tool_format(ctx), tools_opt);
-                    auto display = processor.process_chunk(output_text);
-                    std::string display_text = display.value_or("");
-                    // Flush any trailing buffered display if process_chunk
-                    // returned partial; tool_calls are on processor.
-                    auto openai_calls = to_openai_tool_calls(processor.tool_calls());
+                    auto try_parse = [&](ToolCallFormat fmt)
+                        -> std::pair<std::string, std::vector<openai::ChatCompletionToolCall>> {
+                        ToolCallProcessor processor(fmt, tools_opt);
+                        auto display = processor.process_chunk(output_text);
+                        return {display.value_or(""),
+                                to_openai_tool_calls(processor.tool_calls())};
+                    };
+
+                    auto fmt = resolve_tool_format(ctx);
+                    auto [display_text, openai_calls] = try_parse(fmt);
+                    if (openai_calls.empty()) {
+                        // Fallback between JSON-tag and XML-function styles.
+                        const ToolCallFormat alt =
+                            (fmt == ToolCallFormat::xml_function)
+                                ? ToolCallFormat::json
+                                : ToolCallFormat::xml_function;
+                        auto alt_result = try_parse(alt);
+                        display_text = std::move(alt_result.first);
+                        openai_calls = std::move(alt_result.second);
+                    }
+
                     if (!openai_calls.empty()) {
                         choice.message.content = display_text;
                         choice.message.tool_calls = std::move(openai_calls);
