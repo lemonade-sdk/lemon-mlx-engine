@@ -434,10 +434,16 @@ struct Server::Impl {
         }
 
         // v1: multi-turn tool history not supported (MASTER freeze).
+        // OWUI Memory / native tools often inject role=tool turns; return a clear
+        // 400 (not 200 soup) so operators can disable Memory/tools rather than
+        // blame decode. Full multi-turn tools product is deferred.
         for (const auto& m : chat_req.messages) {
             if (m.role == "tool") {
                 send_error(res, 400,
-                    "role \"tool\" messages are not supported in this version");
+                    "role \"tool\" messages are not supported in this version. "
+                    "Disable OpenWebUI Memory/RAG and native function-tools "
+                    "(tool follow-up turns require multi-turn tools support). "
+                    "Plain chat: send only user/assistant messages.");
                 return;
             }
         }

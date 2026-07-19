@@ -70,11 +70,25 @@
 
 **PR:** https://github.com/lemonade-sdk/lemon-mlx-engine/pull/63 — description must carry full product/ops context (not just code summary).
 
+## Loop7 — OWUI H0 / I6 (this loop)
+
+**Pack:** `docs/experiments/verify-loop7-owui/`  
+**Clear Thought + supervisors:** OWUI next; no re-smoke loop6 matrix; no MTP/pure.
+
+| Item | Status |
+|------|--------|
+| `role:tool` 400 message → Memory/tools guidance | **done** (server.cpp) |
+| `test_server_api` tools cases + body assert | **PASS** |
+| OWUI_OPS_CHECKLIST executable H0 (O0/O1/O3/O5) | **updated** |
+| Multi-turn tools / Memory product | **deferred** (client + schema) |
+| Units chat/thinking/stop | **PASS** (re-run loop7) |
+
 ## Open / next
 
-- Optional: commit large gibberish-isolation experiment packs (analysis-only)
+- Optional: live O0a against running 35B when idle; optional OWUI UI L7
+- Optional: commit large gibberish-isolation packs if PR needs more analysis bulk
 - MTP / pure-graph still deferred
-- Monitor GDN first-launch flakiness; never load two 35B processes on 890M
+- Never load two 35B processes on 890M
 
 ## Operator posture
 
