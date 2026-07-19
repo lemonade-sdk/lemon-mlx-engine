@@ -96,13 +96,27 @@
 | O5 live `role:tool` 400 + Memory text | **PASS** |
 | QA claim scope | load-time T=1 hygiene only (not mlx kernel root) |
 
+## Loop9 — mlx dual-load ownership (comprehended)
+
+**Local mlx:** `/home/antmi/mlx` @ `0dadb703` / `investigate/rocm-dual-load-segv`  
+**Upstream draft:** https://github.com/NripeshN/mlx/pull/13  
+**Engine pack:** `docs/experiments/verify-loop9-mlx-ownership/` + updated `mlx-need-confirm-…/MLX_PR_NEED_CONFIRMATION.md`
+
+| Finding | Verdict |
+|---------|---------|
+| Exclusive 35B load/decode | **PASS** (product unblocked) |
+| Dual-process second load | **FAIL SEGV 139** (M1) — ops + mlx/HIP robustness |
+| Need mlx **code** PR for exclusive product? | **NO** |
+| Need dual-load docs upstream? | **YES** — draft #13 |
+| Engine soft warn (tight GPU mem before load) | **done** this loop |
+
 ## Open / next
 
-- Optional: OWUI UI L7 if UI available (curl H0 already green)
-- Optional: residual GDN `gdn_fused_decode` same-dtype cast skip (non-blocking)
+- Optional: OWUI UI L7 (curl H0 green)
+- Optional: pure-mlx microbench for dual-load OOM vs SEGV (mlx tree, not engine product)
 - Optional: large isolation packs commit
 - MTP / pure-graph still deferred
-- Never load two 35B processes on 890M
+- **Never** two full 35B MLX processes on 890M
 
 ## Operator posture
 

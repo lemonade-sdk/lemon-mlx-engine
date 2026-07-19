@@ -12,6 +12,15 @@
 #include <fstream>
 #include <iostream>
 
+#if defined(MLX_BUILD_ROCM)
+// HIP headers require exactly one platform macro; chat/server CMake set this,
+// but define a fallback when model_manager is compiled into other targets.
+#  ifndef __HIP_PLATFORM_AMD__
+#    define __HIP_PLATFORM_AMD__ 1
+#  endif
+#  include <hip/hip_runtime.h>
+#endif
+
 namespace fs = std::filesystem;
 namespace mx = mlx::core;
 
@@ -43,6 +52,30 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
 
     // Not loaded — resolve and load outside the lock (loading is slow).
     std::cerr << "[ModelManager] Loading model: " << model_id << "\n";
+
+#if defined(MLX_BUILD_ROCM)
+    // gfx115x dual large-model load: exclusive OK; second process often SIGSEGV
+    // in mlx ROCm copy_contiguous → hipLaunchKernel (NripeshN/mlx#13 investigation).
+    // Soft warn only — do not hard-fail (discrete GPUs / multi-model servers differ).
+    {
+        size_t free_b = 0, total_b = 0;
+        if (hipMemGetInfo(&free_b, &total_b) == hipSuccess && total_b > 0) {
+            const size_t used_b = total_b - free_b;
+            const bool tight = free_b < (static_cast<size_t>(2) << 30) ||
+                               used_b > (total_b / 2);
+            if (tight) {
+                std::cerr
+                    << "[ModelManager] WARNING: GPU memory already tight before load "
+                    << "(free≈" << (free_b / (1024 * 1024)) << " MB, total≈"
+                    << (total_b / (1024 * 1024))
+                    << " MB). Concurrent second full-model process on low-VRAM "
+                       "APUs (e.g. gfx1150) can SIGSEGV during load — prefer a "
+                       "single server/chat process. See NripeshN/mlx#13 / "
+                       "docs/experiments/mlx-need-confirm-2026-07-19/.\n";
+            }
+        }
+    }
+#endif
 
     auto& hub = HubApi::shared();
 

@@ -5,12 +5,14 @@
 **Engine branch:** `fix/eager-no-mtp-correctness` (ChatSession / stop / thinking floor / load)  
 **Loop7 pack:** `docs/experiments/verify-loop7-owui/`
 
-## APU / process rule (890M class)
+## APU / process rule (890M class) — **confirmed in mlx**
 
 | Rule | Why |
 |------|-----|
-| **One** 35B process only (`server` **or** `chat`, not both) | Concurrent full loads can SIGSEGV on first GDN forward after MTP-head skip |
-| Kill leftover `./build/chat` before starting server | Loop6 ops finding |
+| **One** 35B process only (`server` **or** `chat`, not both) | **Confirmed M1:** process A holds ~18 GB → process B load **SIGSEGV exit 139** (`copy_contiguous` → `hipLaunchKernel`). Exclusive load **PASS**. |
+| Kill leftover `./build/chat` before starting server | Dual-load is the failure mode, not “OWUI memory corrupt” |
+| Upstream notes | [NripeshN/mlx#13](https://github.com/NripeshN/mlx/pull/13) (docs investigation); local pack `/home/antmi/mlx/docs/rocm-investigation-2026-07-19/` |
+| Engine product path | Still **single-process** eager; does **not** wait on an mlx kernel fix |
 
 ## H0 — Backend gate (do this first)
 
