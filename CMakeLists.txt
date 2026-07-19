@@ -16,6 +16,11 @@ if(NOT APPLE)
     if(NOT DEFINED MLX_BUILD_ROCM)
         set(MLX_BUILD_ROCM ON CACHE BOOL "Build ROCm backend")
     endif()
+    # Default multi-ISA list for local builds. Release CI must pass an explicit
+    # CMAKE_HIP_ARCHITECTURES that includes gfx1150 (Radeon 890M / Strix Point)
+    # and gfx1151 (Strix Halo) — see .github/workflows/build-mlx-engine.yml and #60.
+    # Do not pin releases to a single RDNA 3.5 arch: gfx1151-only binaries fail on
+    # gfx1150 with "device kernel image is invalid".
     if(NOT DEFINED CMAKE_HIP_ARCHITECTURES)
         set(CMAKE_HIP_ARCHITECTURES
             "gfx908;gfx90a;gfx942;gfx1010;gfx1011;gfx1012;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201"

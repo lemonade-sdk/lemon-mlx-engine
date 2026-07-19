@@ -92,11 +92,16 @@ index:
 ./chat mlx-community/Qwen3-8B-4bit --device 1
 ```
 
-On AMD ROCm the engine runs on both integrated RDNA 3.5 APUs (gfx1151) and
+On AMD ROCm the engine runs on integrated RDNA 3.5 APUs (**gfx1150**, e.g.
+Radeon 890M on Ryzen AI HX 370 / Strix Point; **gfx1151**, e.g. Strix Halo) and
 discrete RDNA 4 GPUs (gfx1201, e.g. Radeon AI PRO R9700), including over an
 eGPU link. When mixing a discrete RDNA 4 GPU with an integrated APU, make sure
 `HSA_OVERRIDE_GFX_VERSION` is **unset** so kernels compile for each GPU's real
 architecture (`chat` clears it automatically).
+
+Ubuntu ROCm release builds fatbin **gfx1150** and **gfx1151** so official
+binaries work on both APU variants. A local rebuild for a single arch still
+works via `-DCMAKE_HIP_ARCHITECTURES=gfx1150` (or your GPU's arch).
 
 ## API Server
 
