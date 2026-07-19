@@ -1,0 +1,110 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7fff1c5ff6c0 (LWP 1576454)]
+[New Thread 0x7fff1bdfe6c0 (LWP 1576455)]
+[New Thread 0x7fff1b5fd6c0 (LWP 1576456)]
+[New Thread 0x7fff1adfc6c0 (LWP 1576457)]
+[New Thread 0x7fff1a5fb6c0 (LWP 1576458)]
+[New Thread 0x7fff19dfa6c0 (LWP 1576459)]
+[New Thread 0x7fff195f96c0 (LWP 1576460)]
+[New Thread 0x7fff18df86c0 (LWP 1576461)]
+[New Thread 0x7fff185f76c0 (LWP 1576462)]
+[New Thread 0x7fff17df66c0 (LWP 1576463)]
+[New Thread 0x7fff175f56c0 (LWP 1576464)]
+[New Thread 0x7fff16df46c0 (LWP 1576465)]
+[New Thread 0x7fff165f36c0 (LWP 1576466)]
+[New Thread 0x7fff15df26c0 (LWP 1576467)]
+[New Thread 0x7fff155f16c0 (LWP 1576468)]
+[New Thread 0x7fff14df06c0 (LWP 1576469)]
+[New Thread 0x7fff145ef6c0 (LWP 1576470)]
+[New Thread 0x7fff13dee6c0 (LWP 1576471)]
+[New Thread 0x7fff135ed6c0 (LWP 1576472)]
+[New Thread 0x7fff12dec6c0 (LWP 1576473)]
+[New Thread 0x7fff125eb6c0 (LWP 1576474)]
+[New Thread 0x7fff11dea6c0 (LWP 1576475)]
+[New Thread 0x7fff115e96c0 (LWP 1576476)]
+Device: ROCm GPU
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[New Thread 0x7fff087ff6c0 (LWP 1576478)]
+[New Thread 0x7ffeffdff6c0 (LWP 1576479)]
+[New Thread 0x7fff07cff6c0 (LWP 1576480)]
+[Thread 0x7fff07cff6c0 (LWP 1576480) exited]
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[New Thread 0x7fff053ff6c0 (LWP 1576481)]
+[New Thread 0x7ffefe3ff6c0 (LWP 1576482)]
+[New Thread 0x7ffefdbfe6c0 (LWP 1576483)]
+[New Thread 0x7ffefd3fd6c0 (LWP 1576484)]
+[New Thread 0x7ffefcbfc6c0 (LWP 1576485)]
+[New Thread 0x7ffdf7dff6c0 (LWP 1576486)]
+[New Thread 0x7ffdf63ff6c0 (LWP 1576487)]
+[New Thread 0x7ffdf5bfe6c0 (LWP 1576488)]
+[New Thread 0x7ffdf53fd6c0 (LWP 1576489)]
+[New Thread 0x7ffdf4bfc6c0 (LWP 1576490)]
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)
+
+Thread 1 "server" received signal SIGSEGV, Segmentation fault.
+0x00007ffff4313a6d in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#0  0x00007ffff4313a6d in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#1  0x00007ffff417d87a in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#2  0x00007ffff417dfbd in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#3  0x00007ffff41bec31 in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#4  0x00007ffff4186efc in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#5  0x00007ffff4187733 in ?? () from /opt/rocm/lib/libamdhip64.so.7
+#6  0x00007ffff4276805 in hipLaunchKernel () from /opt/rocm/lib/libamdhip64.so.7
+#7  0x0000555556814964 in mlx::core::rocm::CommandEncoder::add_kernel_node_raw(void*, dim3, dim3, unsigned int, void**) ()
+#8  0x0000555556c6bcc9 in void mlx::core::rocm::CommandEncoder::add_kernel_node_ex<void (hip_bfloat16 const*, float*, unsigned int), hip_bfloat16 const*&, float*&, unsigned int&>(void (*)(hip_bfloat16 const*, float*, unsigned int), dim3, dim3, unsigned int, hip_bfloat16 const*&, float*&, unsigned int&) ()
+#9  0x0000555556bfc016 in void mlx::core::dispatch_all_types<mlx::core::copy_contiguous(mlx::core::rocm::CommandEncoder&, mlx::core::CopyType, mlx::core::array const&, mlx::core::array&, long, long)::{lambda(auto:1)#1}>(mlx::core::Dtype, mlx::core::copy_contiguous(mlx::core::rocm::CommandEncoder&, mlx::core::CopyType, mlx::core::array const&, mlx::core::array&, long, long)::{lambda(auto:1)#1}&&) ()
+#10 0x0000555556be0b6e in mlx::core::copy_contiguous(mlx::core::rocm::CommandEncoder&, mlx::core::CopyType, mlx::core::array const&, mlx::core::array&, long, long) ()
+#11 0x000055555684333a in mlx::core::copy_gpu_inplace(mlx::core::array const&, mlx::core::array&, mlx::core::CopyType, mlx::core::Stream const&) ()
+#12 0x0000555556bdd3e3 in mlx::core::copy_gpu(mlx::core::array const&, mlx::core::array&, mlx::core::CopyType, mlx::core::Stream const&) ()
+#13 0x0000555556824efc in mlx::core::gpu::eval(mlx::core::array&) ()
+#14 0x0000555555cd03d5 in mlx::core::eval_impl(std::vector<mlx::core::array, std::allocator<mlx::core::array> >, bool) ()
+#15 0x0000555555cd1389 in mlx::core::eval(std::vector<mlx::core::array, std::allocator<mlx::core::array> >) ()
+#16 0x0000555555961430 in void mlx::core::eval<mlx::core::array&, mlx::core::array&, void>(mlx::core::array&, mlx::core::array&) ()
+#17 0x000055555594d634 in mlx_lm::Qwen35MoEGatedDeltaNet::operator()(mlx::core::array const&, std::optional<mlx::core::array> const&, mlx_lm::MambaCache*) ()
+#18 0x0000555555950102 in mlx_lm::Qwen35MoEDecoderLayer::operator()(mlx::core::array const&, mlx_lm::AttentionMask const&, std::optional<mlx::core::array> const&, mlx_lm::KVCache*) ()
+#19 0x0000555555951878 in mlx_lm::Qwen35MoEModelInner::forward_prenorm(mlx::core::array const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*) ()
+#20 0x00005555559520a3 in mlx_lm::Qwen35MoEModel::call_impl(mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*, mlx_lm::LMOutput::State const*) ()
+#21 0x0000555555889f7b in std::_Function_handler<mlx_lm::LMOutput (mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*, mlx_lm::LMOutput::State const*), mlx_lm::ModelContext::from_model_owned<mlx_lm::Qwen35MoEModel>(std::shared_ptr<mlx_lm::Qwen35MoEModel>)::{lambda(mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*, mlx_lm::LMOutput::State const*)#1}>::_M_invoke(std::_Any_data const&, mlx_lm::LMInput::Text const&, std::vector<mlx_lm::KVCache, std::allocator<mlx_lm::KVCache> >*&&, mlx_lm::LMOutput::State const*&&) ()
+#22 0x00005555557d7d88 in main ()
+rax            0xa386e900000040be  -6663382412438781762
+rbx            0x7fffffffbc30      140737488337968
+rcx            0x0                 0
+rdx            0x11364eaef6fd      18924945995517
+rsi            0x55555e15f5a0      93825139078560
+rdi            0x555556c6bf60      93825016446816
+rbp            0x0                 0x0
+rsp            0x7fffffffb1d8      0x7fffffffb1d8
+r8             0x11364eaef6fd      18924945995517
+r9             0x0                 0
+r10            0x441f0f66fea3      74900193083043
+r11            0x1                 1
+r12            0x0                 0
+r13            0x7fffffffb2f8      140737488335608
+r14            0x55555e15f5a0      93825139078560
+r15            0x55555d9c7890      93825131116688
+rip            0x7ffff4313a6d      0x7ffff4313a6d
+eflags         0x10212             [ AF IF RF ]
+cs             0x33                51
+ss             0x2b                43
+ds             0x0                 0
+es             0x0                 0
+fs             0x0                 0
+gs             0x0                 0
+k0             0x200               512
+k1             0x200               512
+k2             0x400               1024
+k3             0xffff7fff          4294934527
+k4             0x0                 0
+k5             0x0                 0
+k6             0x0                 0
+k7             0x0                 0
+pl3_ssp        <unavailable>
+fs_base        0x7ffff0ed6b80      140737235479424
+gs_base        0x0                 0

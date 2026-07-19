@@ -53,26 +53,45 @@
 
 **Code (landed):** skip MTP head default; quant fuse opt-in; chat/server warmup `synchronize` + `MLX_SKIP_WARMUP`.
 
-## Open / next loop
+## Loop6 — full empirical gate (same model)
 
-- Optional: open PR for `fix/eager-no-mtp-correctness`
-- Optional: commit large gibberish-isolation experiment packs
-- Intermittent GDN first-launch flakiness: monitor; use clean GPU / `MLX_SKIP_WARMUP` if needed
+**Pack:** `docs/experiments/verify-loop6-smoke/`
+
+| Gate | Status |
+|------|--------|
+| Units (chat / thinking / stop) | **PASS** |
+| S1 `2+2` → `4` | **PASS** |
+| E3-mid stop `" 5"` | **PASS** |
+| C3 HTTP Ada multi-turn | **PASS** |
+| L0 Maxwell coherent | **PASS** |
+| T1 thinking floor `64 → 4096` log + answer | **PASS** |
+| C1 CLI Ada multi-turn | **PASS** |
+| Dual-process load flakiness documented | concurrent chat+server can SIGSEGV; single process OK |
+
+**PR:** https://github.com/lemonade-sdk/lemon-mlx-engine/pull/63 — description must carry full product/ops context (not just code summary).
+
+## Open / next
+
+- Optional: commit large gibberish-isolation experiment packs (analysis-only)
+- MTP / pure-graph still deferred
+- Monitor GDN first-launch flakiness; never load two 35B processes on 890M
 
 ## Operator posture
 
 ```bash
-# no --use-mtp; pure-graph unset (eager)
+# no --use-mtp; pure-graph unset (eager); one process only
 ./build/server LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit \
   --host 127.0.0.1 --port 8080
 # thinking on by default → budget floor ≥4096 unless client already higher
+# --no-think for short Q&A smoke
 ```
 
-## Continue session — load path (eager)
+## Load path (eager) — landed
 
 | Fix | Status |
 |-----|--------|
 | Skip MTP head unless `MLX_LOAD_MTP_HEAD=1` | **done** |
 | Quant fuse opt-in `MLX_ENABLE_QUANT_FUSE=1` (default off) | **done** |
-| 35B smoke | **PASS** answer `4` (see verify-loop5-load) |
+| Warmup `mx::synchronize` + `MLX_SKIP_WARMUP=1` | **done** |
+| 35B load + full loop6 matrix | **PASS** (see verify-loop5-load + verify-loop6-smoke) |
 

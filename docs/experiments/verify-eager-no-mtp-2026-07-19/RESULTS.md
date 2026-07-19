@@ -36,10 +36,26 @@ Earlier intermittent **SIGSEGV** on chat first-forward (GDN/`hipLaunchKernel`) o
 - Quant fuse opt-in `MLX_ENABLE_QUANT_FUSE=1` + concat shape guards
 - Warmup: synchronize before/after; `MLX_SKIP_WARMUP=1` escape hatch
 
+## Loop6 extension
+
+Full re-gate (including **thinking floor log** `64 → 4096` and re-confirmed C1) is under  
+`docs/experiments/verify-loop6-smoke/RESULTS.md`.
+
+## Claims honesty
+
+| Claim | Allowed? |
+|-------|----------|
+| Stop strings on HTTP | **Yes** (E3-mid) |
+| ChatSession multi-turn unit + CLI C1 + HTTP history | **Yes** |
+| Thinking budget floor when thinking on | **Yes** (loop6 T1 log) |
+| MTP decode fixed | **No** — deferred |
+| Pure-graph quality | **No** — not used |
+| Load always reliable under dual 35B processes | **No** — single process only on 890M |
+
 ## Operator
 
 ```bash
 ./build/server LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit --host 127.0.0.1 --port 8080 --no-think
-# CLI:
+# CLI (do not run while server holds the model on 890M):
 ./build/chat LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit --no-think --max-tokens 64
 ```

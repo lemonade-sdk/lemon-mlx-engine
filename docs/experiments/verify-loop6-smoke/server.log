@@ -1,0 +1,34 @@
+Device: ROCm GPU
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.2 GB, peak=18.3 GB, cache=10.5 GB
+Endpoints:
+  GET  /health
+  GET  /v1/models
+  POST /v1/chat/completions
+  POST /v1/completions
+  POST /load
+  POST /unload
+Server listening on http://127.0.0.1:8080
+[server] effective_thinking=off reason=process_default
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[TPS] Prompt:     25 tokens, 15.5865 tokens/s, 1.60395s
+Generation: 2 tokens, 29.6345 tokens/s, 0.0674888s
+[server] effective_thinking=off reason=process_default
+[TPS] Prompt:     24 tokens, 45.3651 tokens/s, 0.529042s
+Generation: 9 tokens, 29.0009 tokens/s, 0.310335s
+[server] effective_thinking=off reason=process_default
+[TPS] Prompt:     44 tokens, 70.3977 tokens/s, 0.62502s
+Generation: 2 tokens, 30.7196 tokens/s, 0.065105s
+[server] effective_thinking=off reason=process_default
+[TPS] Prompt:     39 tokens, 37.8365 tokens/s, 1.03075s
+Generation: 46 tokens, 29.1703 tokens/s, 1.57695s
+[server] effective_thinking=on reason=client
+[server] thinking_budget_floor: max_tokens 64 → 4096 (thinking=on; CoT often exhausts lower budgets)
+[TPS] Prompt:     25 tokens, 51.5977 tokens/s, 0.484518s
+Generation: 247 tokens, 29.819 tokens/s, 8.28331s
+[server] effective_thinking=on reason=client
+[TPS] Prompt:     16 tokens, 21.6854 tokens/s, 0.737824s
+Generation: 816 tokens, 29.8878 tokens/s, 27.3021s

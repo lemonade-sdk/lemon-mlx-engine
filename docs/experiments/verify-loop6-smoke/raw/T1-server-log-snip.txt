@@ -1,0 +1,6 @@
+[server] effective_thinking=off reason=process_default
+[server] effective_thinking=off reason=process_default
+[server] effective_thinking=off reason=process_default
+[server] effective_thinking=off reason=process_default
+[server] effective_thinking=on reason=client
+[server] thinking_budget_floor: max_tokens 64 → 4096 (thinking=on; CoT often exhausts lower budgets)
