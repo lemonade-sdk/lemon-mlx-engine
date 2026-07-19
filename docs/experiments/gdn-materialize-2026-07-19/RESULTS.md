@@ -20,3 +20,4 @@
 |-------|--------|
 | Units chat_session / thinking_budget / stop | PASS |
 | Exclusive chat load to prompt | PASS (`logs/chat-load.log`) |
+| **Loop8** 35B server load + S1 `2+2` + O0a + O5 | **PASS** — `docs/experiments/verify-loop8-load/` |

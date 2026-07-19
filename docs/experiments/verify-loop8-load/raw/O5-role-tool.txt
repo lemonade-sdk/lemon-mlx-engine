@@ -1,0 +1,2 @@
+{"error":{"code":"invalid_request","message":"role \"tool\" messages are not supported in this version. Disable OpenWebUI Memory/RAG and native function-tools (tool follow-up turns require multi-turn tools support). Plain chat: send only user/assistant messages.","type":"invalid_request_error"}}
+HTTP 400

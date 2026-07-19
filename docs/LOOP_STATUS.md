@@ -83,10 +83,24 @@
 | Multi-turn tools / Memory product | **deferred** (client + schema) |
 | Units chat/thinking/stop | **PASS** (re-run loop7) |
 
+## Loop8 — GDN materialize verify + live H0
+
+**Pack:** `docs/experiments/verify-loop8-load/`  
+**Code:** `a4d1d99` load-time `materialize_decode_constants` (qwen35_moe)
+
+| Gate | Status |
+|------|--------|
+| 35B single-process load + health | **PASS** |
+| S1 `2+2` → `4` | **PASS** |
+| O0a `/v1/models` canonical id | **PASS** |
+| O5 live `role:tool` 400 + Memory text | **PASS** |
+| QA claim scope | load-time T=1 hygiene only (not mlx kernel root) |
+
 ## Open / next
 
-- Optional: live O0a against running 35B when idle; optional OWUI UI L7
-- Optional: commit large gibberish-isolation packs if PR needs more analysis bulk
+- Optional: OWUI UI L7 if UI available (curl H0 already green)
+- Optional: residual GDN `gdn_fused_decode` same-dtype cast skip (non-blocking)
+- Optional: large isolation packs commit
 - MTP / pure-graph still deferred
 - Never load two 35B processes on 890M
 
