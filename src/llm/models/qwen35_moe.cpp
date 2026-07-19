@@ -167,6 +167,12 @@ static bool fuse_quant_projections(
     std::optional<mx::array>& dst)
 {
     if (dst.has_value()) return true;
+    // ROCm: concatenating packed quant weights then hipLaunchKernel has
+    // SIGSEGV'd during warmup on gfx115x (see verify-loop5-load gdb). Default
+    // keep separate matmuls (eager-safe). Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
+    if (std::getenv("MLX_ENABLE_QUANT_FUSE") == nullptr) {
+        return false;
+    }
     auto& reg = QuantizedWeightRegistry::instance();
     std::vector<const QuantizationInfo*> qis;
     qis.reserve(srcs.size());
@@ -189,6 +195,29 @@ static bool fuse_quant_projections(
         ws.push_back(*srcs[i]);
         ss.push_back(qis[i]->scales);
         if (have_biases) bs.push_back(*qis[i]->biases);
+    }
+    // Guard shapes before concatenate: mismatched non-axis-0 dims have been
+    // observed to SIGSEGV inside hipLaunchKernel on ROCm rather than throw.
+    // Fail soft → caller keeps separate matmuls (eager path stays usable).
+    auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
+        if (arrs.empty()) return false;
+        for (size_t i = 1; i < arrs.size(); ++i) {
+            if (arrs[i].ndim() != arrs[0].ndim() || arrs[i].ndim() < 1) {
+                return false;
+            }
+            for (int d = 1; d < arrs[0].ndim(); ++d) {
+                if (arrs[i].shape(d) != arrs[0].shape(d)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    if (!concat_axis0_ok(ws) || !concat_axis0_ok(ss)) {
+        return false;
+    }
+    if (have_biases && !concat_axis0_ok(bs)) {
+        return false;
     }
     auto w = mx::concatenate(ws, 0);
     auto s = mx::concatenate(ss, 0);
@@ -1208,9 +1237,22 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
             lm_head_weight_ = std::nullopt;
         }
     }
-    // Wire MTPHead if we have MTP weights.
+    // Wire MTPHead if we have MTP weights. Optional for the eager / no-MTP
+    // product path: building the head can crash or mis-infer dims on some
+    // hybrid checkpoints. Set MLX_LOAD_MTP_HEAD=1 to enable (needed before
+    // --use-mtp decode). Without a head, TokenIterator falls back to plain step().
     if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
-        build_mtp_head();
+        if (std::getenv("MLX_LOAD_MTP_HEAD") == nullptr) {
+            std::cerr << "[MTP] skipping optional MTP head build "
+                         "(set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)\n";
+        } else {
+            try {
+                build_mtp_head();
+            } catch (const std::exception& e) {
+                std::cerr << "[MTP] head build failed (continuing without head): "
+                          << e.what() << "\n";
+            }
+        }
     }
 }
 

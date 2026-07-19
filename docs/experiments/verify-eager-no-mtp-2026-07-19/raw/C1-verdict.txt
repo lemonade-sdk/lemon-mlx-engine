@@ -1,0 +1,2 @@
+C1_VERDICT=FAIL
+state=wait_prompt1

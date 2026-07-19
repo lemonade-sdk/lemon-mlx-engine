@@ -1,0 +1,12 @@
+engine_sha=bda8f21fded3f2654302f46070645a171e7daf0f
+engine_branch=fix/eager-no-mtp-correctness
+date=2026-07-19T14:52:40-07:00
+mlx_sha=0dadb703d77301af29405cf7e12627efb88a6d0f
+build/server=8b4841c43063d2898550e3a4188939e3
+build/chat=3dcc5315f2c685d3d12fd38ea18fa24d
+flags=no_mtp pure_default_off no_think optional_sync
+engine_sha=e35cd99e2e8ced8a4e7ef39b83bd27f222f3a759
+date=2026-07-19T15:07:50-07:00
+binary_md5_server=b72305bdd88b27db00f9f7c513020f57
+binary_md5_chat=717639da69b509a7cfcb53422c8dbb4b
+flags=eager no_mtp pure_off optional_skip_mtp_head

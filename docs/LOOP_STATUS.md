@@ -37,11 +37,25 @@
 
 - Unit tests re-run: chat_session / thinking_budget / stop_sequences **green**
 - Empirical 35B server load: **segfault** during model load (see `docs/experiments/verify-loop4-smoke/`) — not decode path
-- PR: open against `feat/openai-tools-server` for clean correctness stack
+
+## Loop (resume) — empirical + load mitigations
+
+**Pack:** `docs/experiments/verify-eager-no-mtp-2026-07-19/`
+
+| Gate | Status |
+|------|--------|
+| Units (chat_session / thinking_budget / stop) | **PASS** |
+| E3 stop mid (`" 5"`) | **PASS** |
+| L0 Maxwell short | **PASS** |
+| C3 HTTP multi-turn Ada | **PASS** |
+| Server reload after MTP-head skip + quant fuse off | **PASS** (health + hi smoke) |
+| C1 CLI multi-turn | **open** (automation; unit+C3 not substitute for final C1) |
+
+**Code (this push):** default skip MTP head (`MLX_LOAD_MTP_HEAD=1` to enable); quant fuse opt-in (`MLX_ENABLE_QUANT_FUSE=1`); concat shape guards.
 
 ## Open / next loop
 
-- Empirical CLI multi-turn / thinking smoke on canonical 35B if VRAM free
+- Interactive C1 CLI Ada on 35B (human or robust PTY driver)
 - Optional: analysis experiment packs commit
 - PR open for `fix/eager-no-mtp-correctness` when ready
 

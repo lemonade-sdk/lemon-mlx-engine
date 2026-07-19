@@ -14,6 +14,18 @@
 
 If OWUI hits GGUF, pure-graph/MTP/ChatSession notes do **not** apply.
 
+## MTP head weights on hybrid checkpoints
+
+Models named `*-MTP*` may still contain `mtp.*` tensors. On this branch the
+engine **skips building the MTP head by default** so eager load stays stable.
+
+| Goal | Env |
+|------|-----|
+| Eager / no MTP (default) | leave unset — log: `skipping optional MTP head build` |
+| Enable MTP head construction | `export MLX_LOAD_MTP_HEAD=1` before starting the server |
+
+Do **not** pass `--use-mtp` until MTP decode is fixed (still deferred).
+
 ## Recommended OWUI settings for stable chat
 
 | Setting | Recommendation |
