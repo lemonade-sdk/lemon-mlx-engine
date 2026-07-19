@@ -95,3 +95,11 @@
 | Warmup `mx::synchronize` + `MLX_SKIP_WARMUP=1` | **done** |
 | 35B load + full loop6 matrix | **PASS** (see verify-loop5-load + verify-loop6-smoke) |
 
+## mlx need confirmation (2026-07-19)
+
+**Decision: NO NripeshN/mlx PR/issue for now.**
+
+Exclusive cold matrix (`docs/experiments/mlx-need-confirm-2026-07-19/`): chat load 3/3 PASS; server decode PASS.
+Historical chat SIGSEGV remains intermittent/confounded; product path unblocked by engine mitigations.
+Escalate to mlx only if exclusive fail rate returns (see MLX_PR_NEED_CONFIRMATION.md).
+
