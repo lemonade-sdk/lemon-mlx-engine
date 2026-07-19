@@ -117,3 +117,9 @@ Exclusive cold matrix (`docs/experiments/mlx-need-confirm-2026-07-19/`): chat lo
 Historical chat SIGSEGV remains intermittent/confounded; product path unblocked by engine mitigations.
 Escalate to mlx only if exclusive fail rate returns (see MLX_PR_NEED_CONFIRMATION.md).
 
+## GDN materialize (this loop)
+
+- Load-time `materialize_decode_constants()` for Qwen35 MoE GDN (engine hygiene).
+- Removes mid-forward bf16→f32 eval on first T=1 token when load succeeded.
+- Exclusive chat load PASS after change; still **no** NripeshN/mlx PR (confirm pack stands).
+
