@@ -22,8 +22,8 @@
 | Request `stop` strings | **Honored** (block + stream) |
 | Multi-id EOS | **Merge** (no singleton replace) |
 | Pure-graph | **Opt-in** `MLX_DECODE_GRAPH_PURE=1` (default eager) |
-| Thinking budget | **Floor to 4096** when thinking=on and client max_tokens lower; CLI/server/OpenAI defaults **4096** |
-| Unit tests | `test_chat_session` multi-turn + re-hydrate |
+| Thinking budget | **Floor to 4096** when thinking=on and client max_tokens lower; CLI/server/OpenAI defaults **4096**; `thinking_budget.h` + unit tests |
+| Unit tests | `test_chat_session` multi-turn + re-hydrate; `test_thinking_budget` |
 
 ## Deferred
 

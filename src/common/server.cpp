@@ -6,6 +6,7 @@
 #include <mlx-lm/common/chat.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/kv_cache.h>
+#include <mlx-lm/common/thinking_budget.h>
 #include <mlx-lm/common/tool_calling.h>
 #include <mlx-lm/common/types.h>
 #include <mlx-lm/common/wired_limit_guard.h>
@@ -275,24 +276,17 @@ struct ThinkingContextGuard {
     ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
 };
 
-// Soft floor: when thinking is on and the client budget is below the
-// recommended CoT headroom, raise max_tokens so final answers are reachable.
-// Explicit high budgets are left alone. Never lowers.
-static void apply_thinking_budget_floor(
+// Soft floor wrapper with logging (policy in thinking_budget.h).
+static void apply_thinking_budget_floor_logged(
     GenerateParameters& params,
     bool thinking_on)
 {
-    if (!thinking_on) {
-        return;
+    const int before = params.max_tokens.value_or(-1);
+    if (apply_thinking_budget_floor(params.max_tokens, thinking_on)) {
+        std::cerr << "[server] thinking_budget_floor: max_tokens "
+                  << before << " → " << kThinkingBudgetRecommend
+                  << " (thinking=on; CoT often exhausts lower budgets)\n";
     }
-    const int current = params.max_tokens.value_or(kThinkingBudgetRecommend);
-    if (current >= kThinkingBudgetRecommend) {
-        return;
-    }
-    std::cerr << "[server] thinking_budget_floor: max_tokens "
-              << current << " → " << kThinkingBudgetRecommend
-              << " (thinking=on; CoT often exhausts lower budgets)\n";
-    params.max_tokens = kThinkingBudgetRecommend;
 }
 
 } // namespace
@@ -563,7 +557,7 @@ struct Server::Impl {
                 // params is local to this request; floor after template so
                 // tools_auto thinking-off is not over-budgeted.
                 GenerateParameters gen_params = params;
-                apply_thinking_budget_floor(gen_params, thinking_on);
+                apply_thinking_budget_floor_logged(gen_params, thinking_on);
 
                 if (tokens.empty()) {
                     throw std::runtime_error("tokenization produced no tokens");
@@ -706,7 +700,7 @@ struct Server::Impl {
                             }
                         } // restore process thinking default after template apply
                         GenerateParameters gen_params = params;
-                        apply_thinking_budget_floor(gen_params, thinking_on);
+                        apply_thinking_budget_floor_logged(gen_params, thinking_on);
 
                         if (tokens.empty()) {
                             throw std::runtime_error("tokenization produced no tokens");
