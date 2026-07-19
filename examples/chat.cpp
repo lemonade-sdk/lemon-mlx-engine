@@ -67,7 +67,8 @@ static std::string format_bytes(size_t bytes) {
 struct CliArgs {
     std::string model_path;
     std::string system_prompt;
-    int max_tokens = 2048;
+    // Match server default: thinking-on needs CoT headroom.
+    int max_tokens = 4096;
     float temperature = 0.7f;
     float top_p = 0.9f;
     float repetition_penalty = 0.0f;
@@ -90,7 +91,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <model_id_or_directory> [options]\n"
                   << "  --system-prompt \"...\"   System instructions\n"
-                  << "  --max-tokens N          Max tokens to generate (default: 2048)\n"
+                  << "  --max-tokens N          Max tokens to generate (default: 4096)\n"
                   << "  --temperature T         Sampling temperature (default: 0.7)\n"
                   << "  --top-p P               Nucleus sampling (default: 0.9)\n"
                   << "  --repetition-penalty F  Repetition penalty (default: off)\n"

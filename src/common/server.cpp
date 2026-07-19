@@ -212,15 +212,25 @@ ToolCallFormat resolve_tool_format(const ModelContext& ctx) {
 // Mutates shared template_extra_context under ModelContainer::perform mutex.
 // Caller MUST restore previous value after apply_chat_template_fn (RAII below)
 // so tools_auto does not sticky-disable thinking for later non-tools requests.
+//
 struct ThinkingContextGuard {
     nlohmann::json* ctx = nullptr;
     bool had_prev = false;
     bool prev_value = true;
+    bool thinking_on = true;  // resolved polarity for this request
 
     ThinkingContextGuard(ModelContext& model_ctx,
                          bool inject_tools,
                          const std::optional<bool>& request_enable_thinking) {
         if (!model_ctx.template_extra_context) {
+            // No template context — still resolve polarity for budget warnings.
+            if (request_enable_thinking.has_value()) {
+                thinking_on = *request_enable_thinking;
+            } else if (inject_tools) {
+                thinking_on = false;
+            } else {
+                thinking_on = true;
+            }
             return;
         }
         ctx = model_ctx.template_extra_context.get();
@@ -244,6 +254,7 @@ struct ThinkingContextGuard {
             thinking = true;
             reason = "process_default";
         }
+        thinking_on = thinking;
         (*ctx)["enable_thinking"] = thinking;
         std::cerr << "[server] effective_thinking=" << (thinking ? "on" : "off")
                   << " reason=" << reason << std::endl;
@@ -263,6 +274,26 @@ struct ThinkingContextGuard {
     ThinkingContextGuard(const ThinkingContextGuard&) = delete;
     ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
 };
+
+// Soft floor: when thinking is on and the client budget is below the
+// recommended CoT headroom, raise max_tokens so final answers are reachable.
+// Explicit high budgets are left alone. Never lowers.
+static void apply_thinking_budget_floor(
+    GenerateParameters& params,
+    bool thinking_on)
+{
+    if (!thinking_on) {
+        return;
+    }
+    const int current = params.max_tokens.value_or(kThinkingBudgetRecommend);
+    if (current >= kThinkingBudgetRecommend) {
+        return;
+    }
+    std::cerr << "[server] thinking_budget_floor: max_tokens "
+              << current << " → " << kThinkingBudgetRecommend
+              << " (thinking=on; CoT often exhausts lower budgets)\n";
+    params.max_tokens = kThinkingBudgetRecommend;
+}
 
 } // namespace
 
@@ -512,9 +543,11 @@ struct Server::Impl {
                 WiredLimitGuard wired_guard;
 
                 std::vector<int> tokens;
+                bool thinking_on = true;
                 {
                     ThinkingContextGuard thinking_guard(
                         ctx, inject_tools, chat_req.enable_thinking);
+                    thinking_on = thinking_guard.thinking_on;
                     auto raw_messages = to_raw_messages(chat_req.messages);
                     const nlohmann::json* tools_ptr =
                         (inject_tools && chat_req.tools.has_value())
@@ -527,6 +560,10 @@ struct Server::Impl {
                         tokens = ctx.encode_fn(chat_req.messages.back().content);
                     }
                 } // restore process thinking default after template apply
+                // params is local to this request; floor after template so
+                // tools_auto thinking-off is not over-budgeted.
+                GenerateParameters gen_params = params;
+                apply_thinking_budget_floor(gen_params, thinking_on);
 
                 if (tokens.empty()) {
                     throw std::runtime_error("tokenization produced no tokens");
@@ -545,7 +582,7 @@ struct Server::Impl {
                 bool stopped_on_string = false;
 
                 auto info = generate_text(
-                    ctx, lm_input, params, eos_set,
+                    ctx, lm_input, gen_params, eos_set,
                     [&](const std::string& text, int /*token*/) {
                         output_text += text;
                         generated_count++;
@@ -598,16 +635,16 @@ struct Server::Impl {
                     } else {
                         choice.message.content = output_text;
                         choice.finish_reason =
-                            (!stopped_on_string && params.max_tokens.has_value() &&
-                             generated_count >= *params.max_tokens)
+                            (!stopped_on_string && gen_params.max_tokens.has_value() &&
+                             generated_count >= *gen_params.max_tokens)
                                 ? "length"
                                 : "stop";
                     }
                 } else {
                     choice.message.content = output_text;
                     choice.finish_reason =
-                        (!stopped_on_string && params.max_tokens.has_value() &&
-                         generated_count >= *params.max_tokens)
+                        (!stopped_on_string && gen_params.max_tokens.has_value() &&
+                         generated_count >= *gen_params.max_tokens)
                             ? "length"
                             : "stop";
                 }
@@ -649,9 +686,11 @@ struct Server::Impl {
                         WiredLimitGuard wired_guard;
 
                         std::vector<int> tokens;
+                        bool thinking_on = true;
                         {
                             ThinkingContextGuard thinking_guard(
                                 ctx, inject_tools, chat_req.enable_thinking);
+                            thinking_on = thinking_guard.thinking_on;
                             auto raw_messages = to_raw_messages(chat_req.messages);
                             const nlohmann::json* tools_ptr =
                                 (inject_tools && chat_req.tools.has_value())
@@ -666,6 +705,8 @@ struct Server::Impl {
                                     ctx.encode_fn(chat_req.messages.back().content);
                             }
                         } // restore process thinking default after template apply
+                        GenerateParameters gen_params = params;
+                        apply_thinking_budget_floor(gen_params, thinking_on);
 
                         if (tokens.empty()) {
                             throw std::runtime_error("tokenization produced no tokens");
@@ -714,7 +755,7 @@ struct Server::Impl {
                         // suppress tool markup in content; emit complete
                         // tool_calls after generation (not true arg streaming).
                         auto info = generate_text(
-                            ctx, lm_input, params, eos_set,
+                            ctx, lm_input, gen_params, eos_set,
                             [&](const std::string& text, int /*token*/) {
                                 generated_count++;
                                 std::string out_text = text;
@@ -777,8 +818,8 @@ struct Server::Impl {
                         std::cerr << "[TPS] " << info.summary() << std::endl;
 
                         std::string finish = "stop";
-                        if (!stopped_on_string && params.max_tokens.has_value() &&
-                            generated_count >= *params.max_tokens) {
+                        if (!stopped_on_string && gen_params.max_tokens.has_value() &&
+                            generated_count >= *gen_params.max_tokens) {
                             finish = "length";
                         }
 

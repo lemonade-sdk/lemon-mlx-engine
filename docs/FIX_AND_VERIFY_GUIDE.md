@@ -57,7 +57,7 @@ export MLX_DECODE_GRAPH_PURE_OFF=1   # or future default OFF
 | ID | Issue | Severity | Status |
 |----|--------|----------|--------|
 | **I1 / P0-MTP** | `--use-mtp` → HTTP 500 `There is no Stream(cpu, 0) in current thread` | **P0** | Reproduced feat **and** main — **DEFERRED** (operator: not enabling MTP) |
-| **I2 / P0-thinking** | Thinking ON burns budget → `finish_reason=length`, looks like collapse | **P0** | Reproduced (e.g. T0-long @1600); ops: raise `max_tokens` or `--no-think` |
+| **I2 / P0-thinking** | Thinking ON burns budget → `finish_reason=length`, looks like collapse | **P0** | **Mitigated:** defaults 4096 + server floor when thinking=on and max_tokens&lt;4096; still use `--no-think` for short Q&A |
 | **I3 / P0-ChatSession** | CLI multi-turn full re-template onto non-empty KV (double-prefill) | **P0** | **FIXED** (full re-prefill + fresh KV each turn; unit test) |
 | **I4 / P1-pure-graph** | Pure-graph default ON + sticky `graph_external_pos` | **P1** | **Default OFF** (opt-in `MLX_DECODE_GRAPH_PURE=1`); operator runs eager only |
 | **I5 / P1-EOS-stop** | Multi-id EOS collapse; request `stop` parsed but not applied | **P1** | **Partially fixed**: multi-id EOS merge (no singleton replace); `stop` strings honored in server |
