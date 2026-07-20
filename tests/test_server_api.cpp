@@ -635,6 +635,11 @@ TEST_CASE("role tool message returns 400 in v1", "[server-api][tools]") {
     auto res = cli.Post("/v1/chat/completions", req_body.dump(), "application/json");
     REQUIRE(res);
     REQUIRE(res->status == 400);
+    // Operator-facing hint (OWUI Memory/tools inject role=tool).
+    REQUIRE(res->body.find("tool") != std::string::npos);
+    REQUIRE(res->body.find("not supported") != std::string::npos);
+    // Prefer explicit Memory/tools guidance when present.
+    CHECK(res->body.find("Memory") != std::string::npos);
 }
 
 TEST_CASE("POST tools may return tool_calls (model dependent)", "[server-api][tools][inference]") {

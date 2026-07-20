@@ -39,6 +39,20 @@ add_executable(test_chat_session test_chat_session.cpp)
 target_link_libraries(test_chat_session PRIVATE mlx-lm-common Catch2::Catch2WithMain)
 add_test(NAME test_chat_session COMMAND test_chat_session)
 
+# Thinking budget floor (header-only policy; no model load)
+add_executable(test_thinking_budget test_thinking_budget.cpp)
+target_link_libraries(test_thinking_budget PRIVATE Catch2::Catch2WithMain)
+target_include_directories(test_thinking_budget PRIVATE
+    ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME test_thinking_budget COMMAND test_thinking_budget)
+
+# OpenAI stop sequence suffix matching (header-only; no model load)
+add_executable(test_stop_sequences test_stop_sequences.cpp)
+target_link_libraries(test_stop_sequences PRIVATE Catch2::Catch2WithMain)
+target_include_directories(test_stop_sequences PRIVATE
+    ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME test_stop_sequences COMMAND test_stop_sequences)
+
 # User input and message generator tests
 add_executable(test_user_input test_user_input.cpp)
 target_link_libraries(test_user_input PRIVATE mlx-lm-common Catch2::Catch2WithMain)
