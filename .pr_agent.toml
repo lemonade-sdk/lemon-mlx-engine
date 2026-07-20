@@ -1,0 +1,33 @@
+[config]
+model = "ollama_chat/gpt-oss:20b"
+fallback_models = ["ollama_chat/qwen3.5:9b"]
+model_turbo = "ollama_chat/gpt-oss:20b"
+verbosity_level = 2
+publish_output = false
+publish_output_progress = false
+git_provider = "github"
+skip_keys = []
+use_repo_settings_file = false
+use_wiki_settings_file = false
+use_global_settings_file = false
+
+[pr_reviewer]
+require_score_review = true
+require_tests_review = true
+num_ais = 1
+inline_code_comments = true
+automatic_review = false
+persistent_comment = false
+extra_instructions = "Focus on INT8 quantization correctness, NPU context lifecycle bugs, BFP16 precision issues, and C++ memory safety. Reviewer: think like an NPU hardware engineer reviewing inference engine code."
+
+[pr_description]
+publish_labels = true
+extra_instructions = "Use conventional commits. Include performance impact (ms/tok delta). Tag NPU-specific changes with [npu]."
+enable_help_text = false
+
+[pr_code_suggestions]
+num_code_suggestions = 4
+extra_instructions = "Prefer suggestions that reduce context-swapping overhead, eliminate heap allocations in decode loop, or improve INT8 quantization accuracy."
+
+[pr_code_suggestions_reflect]
+extra_instructions = "Reflect on whether suggested code would actually improve tok/s or token quality on real NPU hardware. Discard suggestions that are purely stylistic."

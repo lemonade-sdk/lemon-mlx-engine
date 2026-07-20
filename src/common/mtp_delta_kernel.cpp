@@ -1,20 +1,17 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // Fused HIP kernel for MTP delta intermediate computation.
 //
-// STUB: This file is NOT compiled into the binary. It was removed from
-// CMakeLists.txt because mtp_delta_fused() / mtp_draft_forward() are never
-// called from the production code path (generate.cpp).
+// Wired into the build from CMakeLists.txt. Provides optimized GatedDeltaNet
+// fused kernels for MTP draft generation on ROCm. Falls back to MLX graph
+// compose on non-ROCm platforms.
 //
-// The file is kept on disk as a reference for future ROCm optimization work.
-// Known issues if/when wiring this into the production path:
-//   - mtp_delta_fused_rocm() passes mx::zeros for beta and `a` parameters
-//     to compiled_decode, which results in fixed 0.5 gating (broken GDN).
-//     TODO: Wire beta and `a` from actual model parameters (dt_param, a_param).
-//   - mtp_delta_fused_generic() similarly uses mx::zeros for beta and a_val.
-//     TODO: Same fix — compute beta and `a` from loaded model weights.
+// GDN params (beta_bias and a_param) are loaded from model weights when
+// present (models with GatedDeltaNet-attention MTP heads), or default to
+// zeros for standard-attention MTP heads (Qwen3.5/3.6).
 
 #include <mlx-lm/common/mtp_delta_kernel.h>
 #include <mlx-lm/common/activations.h>
+#include <mlx-lm/common/attention_utils.h>
 
 namespace mlx_lm {
 
@@ -26,6 +23,21 @@ namespace {
 mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
     return mx::matmul(x, mx::transpose(w));
 }
+
+// Forward declaration of the generic fallback (defined after the ROCm
+// path). The ROCm path delegates T>1 prefill to this function.
+// Note: default arguments are on the definition, not this decl.
+std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
+    const mx::array& inputs,
+    const mx::array& conv_weight,
+    const mx::array& qkv_weight,
+    const mx::array& z_weight,
+    const mx::array& dt_bias,
+    const mx::array& a_log,
+    const std::optional<mx::array>& state,
+    const MTPDeltaConfig& config,
+    const std::optional<mx::array>& beta_bias_weight,
+    const std::optional<mx::array>& a_weight);
 
 // ROCm-specific fused kernel implementation.
 // This path uses custom HIP kernels for maximum performance on AMD GPUs.
@@ -42,7 +54,9 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_rocm(
     const mx::array& dt_bias,
     const mx::array& a_log,
     const std::optional<mx::array>& state,
-    const MTPDeltaConfig& config)
+    const MTPDeltaConfig& config,
+    const std::optional<mx::array>& beta_bias_weight = std::nullopt,
+    const std::optional<mx::array>& a_weight = std::nullopt)
 {
     int B = inputs.shape(0);
     int S = inputs.shape(1);
@@ -56,19 +70,19 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_rocm(
         auto z = linear_no_bias(inputs, z_weight);
 
         // Conv1d processing with state
-        mx::array conv_state;
+        mx::array conv_state = mx::array(0.0f);
         if (state && state->shape(0) > 0) {
             conv_state = *state;
         } else {
-            conv_state = mx::zeros({B, config.conv_kernel_dim() - 1, config.conv_dim()}, dtype);
+            conv_state = mx::zeros({B, config.conv_kernel_dim - 1, config.conv_dim()}, dtype);
         }
 
         auto conv_input = mx::concatenate({conv_state, qkv}, 1);
 
         // Fused conv1d + silu via compiled graph (matches ROCm pattern)
         auto w = mx::reshape(
-            mx::transpose(mx::reshape(conv_weight, {config.conv_dim(), config.conv_kernel_dim()})),
-            {1, config.conv_kernel_dim(), config.conv_dim()});
+            mx::transpose(mx::reshape(conv_weight, {config.conv_dim(), config.conv_kernel_dim})),
+            {1, config.conv_kernel_dim, config.conv_dim()});
 
         auto compiled_conv_silu = mx::compile(
             [](const std::vector<mx::array>& ins) -> std::vector<mx::array> {
@@ -99,7 +113,7 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_rocm(
 
         // Fused beta/g + GDN recurrence
         auto ssm_state = state.value_or(
-            mx::zeros({B, config.num_value_heads, config.value_head_dim, config.key_head_dim()}, dtype));
+            mx::zeros({B, config.num_value_heads, config.value_head_dim, config.key_head_dim}, dtype));
 
         auto compiled_decode = mx::compile(
             [config](const std::vector<mx::array>& ins) -> std::vector<mx::array> {
@@ -146,26 +160,43 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_rocm(
             },
             /*shapeless=*/true);
 
+        // Use actual model weights for beta bias and a_param when available.
+        // GatedDeltaNet-attention MTP heads ship with learned b/a per head.
+        // Standard-attention MTP heads (Qwen3.5/3.6) use zeros (fixed 0.5 gating).
+        auto beta_bias = beta_bias_weight.has_value()
+            ? mx::broadcast_to(mx::reshape(*beta_bias_weight, {1, 1, config.num_value_heads}), {B, 1, config.num_value_heads})
+            : mx::zeros({B, 1, config.num_value_heads}, dtype);
+        auto a_val = a_weight.has_value()
+            ? mx::broadcast_to(mx::reshape(*a_weight, {1, 1, config.num_value_heads}), {B, 1, config.num_value_heads})
+            : mx::zeros({B, 1, config.num_value_heads}, dtype);
+
         auto results = compiled_decode(
-            {q_out, k_out, v_out, /* b and a from config */
-             mx::zeros({B, config.num_value_heads}, dtype),
-             a_log, mx::zeros({B, config.num_value_heads}, dtype),
+            {q_out, k_out, v_out,
+             mx::reshape(beta_bias, {B, config.num_value_heads}),
+             a_log,
+             mx::reshape(a_val, {B, config.num_value_heads}),
              dt_bias, ssm_state});
 
         auto out = results[0];
         auto new_state = results[1];
 
         // Gated norm + reshape
-        auto normed = mx::fast::rms_norm(mx::reshape(out, {B, 1, config.num_value_heads, config.value_head_dim()}, false),
-                                          mx::reshape(z, {B, 1, config.num_value_heads, config.value_head_dim()}, false),
+        auto normed = mx::fast::rms_norm(mx::reshape(out, {B, 1, config.num_value_heads, config.value_head_dim}, false),
+                                          mx::reshape(z, {B, 1, config.num_value_heads, config.value_head_dim}, false),
                                           config.rms_norm_eps);
         return {mx::reshape(normed, {B, S, H}), new_state};
     }
 
-    // General path: T>1 prefill — fall through to graph compose
+    // General path: T>1 prefill — use standard ops.
+    // The generic function handles this correctly on all platforms.
     (void)dt_bias;
     (void)a_log;
     (void)state;
+
+    return mtp_delta_fused_generic(
+        inputs, conv_weight, qkv_weight, z_weight,
+        dt_bias, a_log, state, config,
+        beta_bias_weight, a_weight);
 }
 #endif // MLX_BUILD_ROCM
 
@@ -178,7 +209,9 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
     const mx::array& dt_bias,
     const mx::array& a_log,
     const std::optional<mx::array>& state,
-    const MTPDeltaConfig& config)
+    const MTPDeltaConfig& config,
+    const std::optional<mx::array>& beta_bias_weight = std::nullopt,
+    const std::optional<mx::array>& a_weight = std::nullopt)
 {
     int B = inputs.shape(0);
     int S = inputs.shape(1);
@@ -191,19 +224,19 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
 
     if (S == 1) {
         // T=1 decode path — optimized with compiled kernels
-        mx::array conv_state;
+        mx::array conv_state = mx::array(0.0f);
         if (state && state->shape(0) > 0) {
             conv_state = *state;
         } else {
-            conv_state = mx::zeros({B, config.conv_kernel_dim() - 1, config.conv_dim()}, dtype);
+            conv_state = mx::zeros({B, config.conv_kernel_dim - 1, config.conv_dim()}, dtype);
         }
 
         auto conv_input = mx::concatenate({conv_state, qkv}, 1);
 
         // Fused conv1d + silu
         auto w = mx::reshape(
-            mx::transpose(mx::reshape(conv_weight, {config.conv_dim(), config.conv_kernel_dim()})),
-            {1, config.conv_kernel_dim(), config.conv_dim()});
+            mx::transpose(mx::reshape(conv_weight, {config.conv_dim(), config.conv_kernel_dim})),
+            {1, config.conv_kernel_dim, config.conv_dim()});
 
         auto compiled_conv_silu = mx::compile(
             [](const std::vector<mx::array>& ins) -> std::vector<mx::array> {
@@ -234,7 +267,7 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
 
         // GDN recurrence
         auto ssm_state = state.value_or(
-            mx::zeros({B, config.num_value_heads, config.value_head_dim, config.key_head_dim()}, dtype));
+            mx::zeros({B, config.num_value_heads, config.value_head_dim, config.key_head_dim}, dtype));
 
         auto compiled_decode = mx::compile(
             [config](const std::vector<mx::array>& ins) -> std::vector<mx::array> {
@@ -270,10 +303,15 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
             },
             /*shapeless=*/true);
 
-        // Compute beta and g
-        auto beta = mx::sigmoid(mx::zeros({B, S, config.num_value_heads}, dtype));
+        // Use actual model weights for beta bias and a_param when available.
+        auto beta = beta_bias_weight.has_value()
+            ? mx::sigmoid(mx::broadcast_to(mx::reshape(*beta_bias_weight, {1, 1, config.num_value_heads}), {B, S, config.num_value_heads}))
+            : mx::full({B, S, config.num_value_heads}, mx::array(0.5f, dtype));
+
         auto a_log_f32 = mx::astype(a_log, mx::float32);
-        auto a_val = mx::zeros({B, S, config.num_value_heads}, dtype);
+        auto a_val = a_weight.has_value()
+            ? mx::broadcast_to(mx::reshape(*a_weight, {1, 1, config.num_value_heads}), {B, S, config.num_value_heads})
+            : mx::zeros({B, S, config.num_value_heads}, dtype);
         auto sp = mx::log(mx::add(mx::exp(mx::add(a_val, dt_bias)), mx::array(1.0f)));
         auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), sp)));
         g = mx::astype(g, dtype);
@@ -319,7 +357,7 @@ std::pair<mx::array, std::optional<mx::array>> mtp_delta_fused_generic(
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
-// Public API (STUB — not compiled into binary, kept for future ROCm work)
+// Public API
 // ---------------------------------------------------------------------------
 
 std::pair<mx::array, std::optional<mx::array>>
@@ -331,14 +369,18 @@ mtp_delta_fused(
     const mx::array& dt_bias,
     const mx::array& a_log,
     const std::optional<mx::array>& state,
-    const MTPDeltaConfig& config)
+    const MTPDeltaConfig& config,
+    const std::optional<mx::array>& beta_bias_weight,
+    const std::optional<mx::array>& a_weight)
 {
 #if defined(MLX_BUILD_ROCM)
     return mtp_delta_fused_rocm(inputs, conv_weight, qkv_weight, z_weight,
-                                dt_bias, a_log, state, config);
+                                dt_bias, a_log, state, config,
+                                beta_bias_weight, a_weight);
 #else
     return mtp_delta_fused_generic(inputs, conv_weight, qkv_weight, z_weight,
-                                   dt_bias, a_log, state, config);
+                                   dt_bias, a_log, state, config,
+                                   beta_bias_weight, a_weight);
 #endif
 }
 
@@ -378,7 +420,7 @@ mlx::core::array mtp_draft_forward(
 
     // Decoder layer forward (attention + MLP)
     // For MTP, this is a single-layer decoder with standard attention
-    auto layer_prefix = "mtp.layers.0.";
+    std::string layer_prefix = "mtp.layers.0.";
 
     // Self-attention sub-block
     auto input_norm_w = find_w(layer_prefix + "input_layernorm.weight");
@@ -413,7 +455,7 @@ mlx::core::array mtp_draft_forward(
     k = mx::fast::rope(k, rope_dims, false, config.rope_theta, 1.0f, 0);
 
     // SDPA (no cache for MTP draft)
-    auto attn_out = scaled_dot_product_attention(q, k, v, scale, AttentionMask{});
+    auto attn_out = sdpa(q, k, v, scale, AttentionMask{});
     attn_out = mx::reshape(mx::transpose(attn_out, {0, 2, 1, 3}), {B, L, n_heads * hd});
     attn_out = linear_no_bias(attn_out, o_w);
 
@@ -423,7 +465,7 @@ mlx::core::array mtp_draft_forward(
     auto post_norm_w = find_w(layer_prefix + "post_attention_layernorm.weight");
     auto post = mx::fast::rms_norm(h_attn, post_norm_w, config.rms_norm_eps);
 
-    mx::array mlp_out;
+    mx::array mlp_out = mx::array(0.0f);
     if (use_moe) {
         // MoE path: use SwitchGLU routing
         // Requires expert weights from mtp_weights
