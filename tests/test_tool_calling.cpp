@@ -382,8 +382,14 @@ TEST_CASE("ToolCallFormat Inference from model type", "[tool_calling][format]") 
 
     SECTION("Unknown models return nullopt") {
         CHECK(!mlx_lm::infer_tool_call_format("llama").has_value());
-        CHECK(!mlx_lm::infer_tool_call_format("qwen2").has_value());
         CHECK(!mlx_lm::infer_tool_call_format("mistral").has_value());
+        // Qwen family → XML function format (not JSON <tool_call> tags)
+        CHECK(mlx_lm::infer_tool_call_format("qwen2") ==
+              mlx_lm::ToolCallFormat::xml_function);
+        CHECK(mlx_lm::infer_tool_call_format("qwen3") ==
+              mlx_lm::ToolCallFormat::xml_function);
+        CHECK(mlx_lm::infer_tool_call_format("qwen3_5") ==
+              mlx_lm::ToolCallFormat::xml_function);
     }
 }
 

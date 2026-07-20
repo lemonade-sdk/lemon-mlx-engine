@@ -357,7 +357,7 @@ int main(int argc, char* argv[]) {
             if (ctx.template_extra_context) {
                 (*ctx.template_extra_context)["enable_thinking"] = false;
             }
-            auto tmpl_tokens = ctx.apply_chat_template_fn(messages);
+            auto tmpl_tokens = ctx.apply_chat_template_fn(messages, /*tools=*/nullptr);
             std::cerr << "[DIAG] Chat template tokens (" << tmpl_tokens.size() << "): [";
             for (size_t i = 0; i < tmpl_tokens.size() && i < 50; i++) {
                 if (i > 0) std::cerr << ", ";

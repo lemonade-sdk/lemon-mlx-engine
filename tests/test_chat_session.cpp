@@ -11,6 +11,7 @@
 #include <mlx-lm/common/chat_session.h>
 #include <mlx-lm/common/generate_params.h>
 #include <mlx-lm/common/model_container.h>
+#include <nlohmann/json.hpp>
 
 #include <memory>
 #include <string>
@@ -36,8 +37,9 @@ static std::shared_ptr<ModelContainer> make_stub_container() {
     ctx.decode_fn = [](const std::vector<int>&) -> std::string {
         throw std::runtime_error("stub decode_fn called");
     };
-    ctx.apply_chat_template_fn = [](const std::vector<std::unordered_map<std::string, std::string>>&)
-        -> std::vector<int> {
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>&,
+           const nlohmann::json*) -> std::vector<int> {
         throw std::runtime_error("stub apply_chat_template_fn called");
     };
     ctx.new_cache_fn = [](const GenerateParameters&) -> std::vector<KVCache> {

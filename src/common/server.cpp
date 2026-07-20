@@ -6,6 +6,7 @@
 #include <mlx-lm/common/chat.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/kv_cache.h>
+#include <mlx-lm/common/tool_calling.h>
 #include <mlx-lm/common/types.h>
 #include <mlx-lm/common/wired_limit_guard.h>
 #include <mlx/mlx.h>
@@ -49,7 +50,222 @@ int64_t unix_timestamp() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+std::string generate_tool_call_id() {
+    static std::mt19937_64 rng(std::random_device{}());
+    static std::mutex mtx;
+    std::lock_guard<std::mutex> lock(mtx);
+    std::uniform_int_distribution<uint64_t> dist;
+    uint64_t val = dist(rng);
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "call_%012llx",
+                  static_cast<unsigned long long>(val & 0xffffffffffffULL));
+    return std::string(buf);
+}
+
 } // namespace openai
+
+namespace {
+
+// Security caps (tools plan §E5) — parse/emit only, never execute.
+constexpr size_t kMaxToolsCount = 64;
+constexpr size_t kMaxToolsJsonBytes = 256 * 1024;
+constexpr int kMaxToolsNesting = 12;
+constexpr size_t kMaxToolCallsEmit = 16;
+
+int json_nesting_depth(const nlohmann::json& j, int depth = 0) {
+    if (depth > kMaxToolsNesting) return depth;
+    if (j.is_object()) {
+        int max_d = depth;
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            max_d = std::max(max_d, json_nesting_depth(it.value(), depth + 1));
+        }
+        return max_d;
+    }
+    if (j.is_array()) {
+        int max_d = depth;
+        for (const auto& el : j) {
+            max_d = std::max(max_d, json_nesting_depth(el, depth + 1));
+        }
+        return max_d;
+    }
+    return depth;
+}
+
+// Returns error message if invalid; empty string if OK.
+// Also normalizes whether tools should be injected into the template.
+struct ToolsGate {
+    bool inject = false;
+    std::string error;
+};
+
+ToolsGate validate_and_gate_tools(const openai::ChatCompletionRequest& req) {
+    ToolsGate g;
+    if (!req.tools.has_value() || req.tools->is_null()) {
+        return g;
+    }
+    if (!req.tools->is_array()) {
+        g.error = "tools must be a JSON array";
+        return g;
+    }
+    if (req.tools->size() > kMaxToolsCount) {
+        g.error = "tools array exceeds maximum of " + std::to_string(kMaxToolsCount);
+        return g;
+    }
+    const auto dumped = req.tools->dump();
+    if (dumped.size() > kMaxToolsJsonBytes) {
+        g.error = "tools payload exceeds maximum size";
+        return g;
+    }
+    if (json_nesting_depth(*req.tools) > kMaxToolsNesting) {
+        g.error = "tools schema nesting too deep";
+        return g;
+    }
+    for (const auto& t : *req.tools) {
+        if (!t.is_object()) {
+            g.error = "each tool must be an object";
+            return g;
+        }
+        if (t.value("type", "function") != "function") {
+            g.error = "only tools with type \"function\" are supported";
+            return g;
+        }
+        if (!t.contains("function") || !t["function"].is_object()) {
+            g.error = "tool.function must be an object";
+            return g;
+        }
+        if (!t["function"].contains("name") ||
+            !t["function"]["name"].is_string() ||
+            t["function"]["name"].get<std::string>().empty()) {
+            g.error = "tool.function.name is required";
+            return g;
+        }
+    }
+    if (req.tool_choice.mode == openai::ToolChoice::Mode::None) {
+        g.inject = false;
+        return g;
+    }
+    if (req.tools->empty()) {
+        if (req.tool_choice.mode != openai::ToolChoice::Mode::Auto) {
+            g.error = "tool_choice requires a non-empty tools array";
+            return g;
+        }
+        return g;
+    }
+    if (req.tool_choice.mode == openai::ToolChoice::Mode::Function) {
+        const auto& want = req.tool_choice.function_name.value_or("");
+        if (want.empty()) {
+            g.error = "tool_choice function name is required";
+            return g;
+        }
+        bool found = false;
+        for (const auto& t : *req.tools) {
+            if (t["function"]["name"].get<std::string>() == want) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            g.error = "tool_choice function name not found in tools";
+            return g;
+        }
+    }
+    g.inject = true;
+    return g;
+}
+
+openai::ChatCompletionToolCall to_openai_tool_call(const ToolCall& tc) {
+    openai::ChatCompletionToolCall out;
+    out.id = openai::generate_tool_call_id();
+    out.type = "function";
+    out.function.name = tc.function.name;
+    // OpenAI wire: arguments must be a stringified JSON object.
+    out.function.arguments =
+        tc.function.arguments.is_string()
+            ? tc.function.arguments.get<std::string>()
+            : tc.function.arguments.dump();
+    return out;
+}
+
+std::vector<openai::ChatCompletionToolCall>
+to_openai_tool_calls(const std::vector<ToolCall>& calls) {
+    std::vector<openai::ChatCompletionToolCall> out;
+    out.reserve(std::min(calls.size(), kMaxToolCallsEmit));
+    for (size_t i = 0; i < calls.size() && i < kMaxToolCallsEmit; ++i) {
+        out.push_back(to_openai_tool_call(calls[i]));
+    }
+    return out;
+}
+
+ToolCallFormat resolve_tool_format(const ModelContext& ctx) {
+    if (!ctx.model_type.empty()) {
+        if (auto fmt = infer_tool_call_format(ctx.model_type)) {
+            return *fmt;
+        }
+    }
+    return ToolCallFormat::json;
+}
+
+// Per-request thinking policy (tools × enable_thinking).
+// Precedence: request explicit enable_thinking >
+//             tools inject (non-empty tools && tool_choice != none) ⇒ OFF >
+//             process/load default already in template_extra_context.
+// Mutates shared template_extra_context under ModelContainer::perform mutex.
+// Caller MUST restore previous value after apply_chat_template_fn (RAII below)
+// so tools_auto does not sticky-disable thinking for later non-tools requests.
+struct ThinkingContextGuard {
+    nlohmann::json* ctx = nullptr;
+    bool had_prev = false;
+    bool prev_value = true;
+
+    ThinkingContextGuard(ModelContext& model_ctx,
+                         bool inject_tools,
+                         const std::optional<bool>& request_enable_thinking) {
+        if (!model_ctx.template_extra_context) {
+            return;
+        }
+        ctx = model_ctx.template_extra_context.get();
+        if (ctx->contains("enable_thinking") &&
+            (*ctx)["enable_thinking"].is_boolean()) {
+            had_prev = true;
+            prev_value = (*ctx)["enable_thinking"].get<bool>();
+        }
+        bool thinking;
+        const char* reason = "process_default";
+        if (request_enable_thinking.has_value()) {
+            thinking = *request_enable_thinking;
+            reason = "client";
+        } else if (inject_tools) {
+            thinking = false;
+            reason = "tools_auto";
+        } else if (had_prev) {
+            thinking = prev_value;
+            reason = "process_default";
+        } else {
+            thinking = true;
+            reason = "process_default";
+        }
+        (*ctx)["enable_thinking"] = thinking;
+        std::cerr << "[server] effective_thinking=" << (thinking ? "on" : "off")
+                  << " reason=" << reason << std::endl;
+    }
+
+    ~ThinkingContextGuard() {
+        if (!ctx) {
+            return;
+        }
+        if (had_prev) {
+            (*ctx)["enable_thinking"] = prev_value;
+        } else {
+            ctx->erase("enable_thinking");
+        }
+    }
+
+    ThinkingContextGuard(const ThinkingContextGuard&) = delete;
+    ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
+};
+
+} // namespace
+
 
 // ---------------------------------------------------------------------------
 // Server::Impl
@@ -191,6 +407,21 @@ struct Server::Impl {
             return;
         }
 
+        // v1: multi-turn tool history not supported (MASTER freeze).
+        for (const auto& m : chat_req.messages) {
+            if (m.role == "tool") {
+                send_error(res, 400,
+                    "role \"tool\" messages are not supported in this version");
+                return;
+            }
+        }
+
+        auto tools_gate = validate_and_gate_tools(chat_req);
+        if (!tools_gate.error.empty()) {
+            send_error(res, 400, tools_gate.error);
+            return;
+        }
+
         // Resolve the model from the request.
         std::shared_ptr<ModelContainer> model;
         try {
@@ -213,9 +444,9 @@ struct Server::Impl {
         }
 
         if (chat_req.stream) {
-            handle_chat_stream(res, model, chat_req, params);
+            handle_chat_stream(res, model, chat_req, params, tools_gate.inject);
         } else {
-            handle_chat_blocking(res, model, chat_req, params);
+            handle_chat_blocking(res, model, chat_req, params, tools_gate.inject);
         }
     }
 
@@ -271,7 +502,8 @@ struct Server::Impl {
     void handle_chat_blocking(httplib::Response& res,
                               std::shared_ptr<ModelContainer> model,
                               const openai::ChatCompletionRequest& chat_req,
-                              const GenerateParameters& params) {
+                              const GenerateParameters& params,
+                              bool inject_tools) {
         auto request_id = openai::generate_request_id();
         auto created = openai::unix_timestamp();
 
@@ -279,14 +511,22 @@ struct Server::Impl {
             model->perform([&](ModelContext& ctx) {
                 WiredLimitGuard wired_guard;
 
-                auto raw_messages = to_raw_messages(chat_req.messages);
-
                 std::vector<int> tokens;
-                if (ctx.apply_chat_template_fn) {
-                    tokens = ctx.apply_chat_template_fn(raw_messages);
-                } else {
-                    tokens = ctx.encode_fn(chat_req.messages.back().content);
-                }
+                {
+                    ThinkingContextGuard thinking_guard(
+                        ctx, inject_tools, chat_req.enable_thinking);
+                    auto raw_messages = to_raw_messages(chat_req.messages);
+                    const nlohmann::json* tools_ptr =
+                        (inject_tools && chat_req.tools.has_value())
+                            ? &*chat_req.tools
+                            : nullptr;
+
+                    if (ctx.apply_chat_template_fn) {
+                        tokens = ctx.apply_chat_template_fn(raw_messages, tools_ptr);
+                    } else {
+                        tokens = ctx.encode_fn(chat_req.messages.back().content);
+                    }
+                } // restore process thinking default after template apply
 
                 if (tokens.empty()) {
                     throw std::runtime_error("tokenization produced no tokens");
@@ -320,9 +560,46 @@ struct Server::Impl {
 
                 openai::ChatCompletionChoice choice;
                 choice.index = 0;
-                choice.message.content = output_text;
-                choice.finish_reason = (params.max_tokens.has_value() &&
-                    generated_count >= *params.max_tokens) ? "length" : "stop";
+
+                // Parse/emit tool_calls only — never Tool::execute (security).
+                if (inject_tools) {
+                    std::optional<nlohmann::json> tools_opt =
+                        chat_req.tools.has_value() ? chat_req.tools : std::nullopt;
+                    auto try_parse = [&](ToolCallFormat fmt)
+                        -> std::pair<std::string, std::vector<openai::ChatCompletionToolCall>> {
+                        ToolCallProcessor processor(fmt, tools_opt);
+                        auto display = processor.process_chunk(output_text);
+                        return {display.value_or(""),
+                                to_openai_tool_calls(processor.tool_calls())};
+                    };
+
+                    auto fmt = resolve_tool_format(ctx);
+                    auto [display_text, openai_calls] = try_parse(fmt);
+                    if (openai_calls.empty()) {
+                        // Fallback between JSON-tag and XML-function styles.
+                        const ToolCallFormat alt =
+                            (fmt == ToolCallFormat::xml_function)
+                                ? ToolCallFormat::json
+                                : ToolCallFormat::xml_function;
+                        auto alt_result = try_parse(alt);
+                        display_text = std::move(alt_result.first);
+                        openai_calls = std::move(alt_result.second);
+                    }
+
+                    if (!openai_calls.empty()) {
+                        choice.message.content = display_text;
+                        choice.message.tool_calls = std::move(openai_calls);
+                        choice.finish_reason = "tool_calls";
+                    } else {
+                        choice.message.content = output_text;
+                        choice.finish_reason = (params.max_tokens.has_value() &&
+                            generated_count >= *params.max_tokens) ? "length" : "stop";
+                    }
+                } else {
+                    choice.message.content = output_text;
+                    choice.finish_reason = (params.max_tokens.has_value() &&
+                        generated_count >= *params.max_tokens) ? "length" : "stop";
+                }
                 response.choices.push_back(std::move(choice));
 
                 response.usage.prompt_tokens = info.prompt_token_count;
@@ -343,7 +620,8 @@ struct Server::Impl {
     void handle_chat_stream(httplib::Response& res,
                             std::shared_ptr<ModelContainer> model,
                             const openai::ChatCompletionRequest& chat_req,
-                            const GenerateParameters& params) {
+                            const GenerateParameters& params,
+                            bool inject_tools) {
         auto request_id = openai::generate_request_id();
         auto created = openai::unix_timestamp();
 
@@ -352,21 +630,31 @@ struct Server::Impl {
 
         res.set_chunked_content_provider(
             "text/event-stream",
-            [model, chat_req, params, request_id, created]
+            [model, chat_req, params, request_id, created, inject_tools]
             (size_t /*offset*/, httplib::DataSink& sink) -> bool {
                 bool client_gone = false;
                 try {
                     model->perform([&](ModelContext& ctx) {
                         WiredLimitGuard wired_guard;
 
-                        auto raw_messages = to_raw_messages(chat_req.messages);
-
                         std::vector<int> tokens;
-                        if (ctx.apply_chat_template_fn) {
-                            tokens = ctx.apply_chat_template_fn(raw_messages);
-                        } else {
-                            tokens = ctx.encode_fn(chat_req.messages.back().content);
-                        }
+                        {
+                            ThinkingContextGuard thinking_guard(
+                                ctx, inject_tools, chat_req.enable_thinking);
+                            auto raw_messages = to_raw_messages(chat_req.messages);
+                            const nlohmann::json* tools_ptr =
+                                (inject_tools && chat_req.tools.has_value())
+                                    ? &*chat_req.tools
+                                    : nullptr;
+
+                            if (ctx.apply_chat_template_fn) {
+                                tokens =
+                                    ctx.apply_chat_template_fn(raw_messages, tools_ptr);
+                            } else {
+                                tokens =
+                                    ctx.encode_fn(chat_req.messages.back().content);
+                            }
+                        } // restore process thinking default after template apply
 
                         if (tokens.empty()) {
                             throw std::runtime_error("tokenization produced no tokens");
@@ -398,14 +686,33 @@ struct Server::Impl {
                             }
                         }
 
-                        // Generate tokens and stream as SSE. The should_cancel
-                        // predicate below runs before every forward pass, so a
-                        // dropped client aborts the decode loop (and frees the
-                        // model mutex) at the next token — including tokens the
-                        // detokenizer swallows, which never reach this callback.
+                        std::optional<nlohmann::json> tools_opt =
+                            inject_tools && chat_req.tools.has_value()
+                                ? chat_req.tools
+                                : std::nullopt;
+                        std::unique_ptr<ToolCallProcessor> processor;
+                        if (inject_tools) {
+                            processor = std::make_unique<ToolCallProcessor>(
+                                resolve_tool_format(ctx), tools_opt);
+                        }
+                        int generated_count = 0;
+
+                        // Generate tokens and stream as SSE. Tier-1 tools:
+                        // suppress tool markup in content; emit complete
+                        // tool_calls after generation (not true arg streaming).
                         auto info = generate_text(
                             ctx, lm_input, params, eos_set,
                             [&](const std::string& text, int /*token*/) {
+                                generated_count++;
+                                std::string out_text = text;
+                                if (processor) {
+                                    auto display = processor->process_chunk(text);
+                                    if (!display.has_value() || display->empty()) {
+                                        return GenerateDisposition::more;
+                                    }
+                                    out_text = *display;
+                                }
+
                                 openai::ChatCompletionChunk chunk;
                                 chunk.id = request_id;
                                 chunk.created = created;
@@ -413,7 +720,7 @@ struct Server::Impl {
 
                                 openai::ChatCompletionChunkChoice choice;
                                 choice.index = 0;
-                                choice.delta.content = text;
+                                choice.delta.content = out_text;
                                 chunk.choices.push_back(std::move(choice));
 
                                 if (!send_sse(sink, nlohmann::json(chunk).dump())) {
@@ -439,7 +746,60 @@ struct Server::Impl {
 
                         std::cerr << "[TPS] " << info.summary() << std::endl;
 
-                        // Send final chunk with finish_reason.
+                        std::string finish = "stop";
+                        if (params.max_tokens.has_value() &&
+                            generated_count >= *params.max_tokens) {
+                            finish = "length";
+                        }
+
+                        // Emit complete tool_calls (Tier-1) then finish_reason.
+                        if (processor && !processor->tool_calls().empty()) {
+                            auto openai_calls =
+                                to_openai_tool_calls(processor->tool_calls());
+                            // OpenAI stream: one delta per tool call index.
+                            for (size_t i = 0; i < openai_calls.size(); ++i) {
+                                openai::ChatCompletionChunk chunk;
+                                chunk.id = request_id;
+                                chunk.created = created;
+                                chunk.model = ctx.model_id;
+                                openai::ChatCompletionChunkChoice choice;
+                                choice.index = 0;
+                                // Use index field inside tool_calls array for multi.
+                                auto tc = openai_calls[i];
+                                // Encode index as first tool_calls entry (OpenAI uses
+                                // delta.tool_calls[].index — add if needed).
+                                nlohmann::json delta = {
+                                    {"tool_calls", nlohmann::json::array({
+                                        {
+                                            {"index", static_cast<int>(i)},
+                                            {"id", tc.id},
+                                            {"type", tc.type},
+                                            {"function",
+                                             {{"name", tc.function.name},
+                                              {"arguments", tc.function.arguments}}},
+                                        },
+                                    })},
+                                };
+                                nlohmann::json choice_j = {
+                                    {"index", 0},
+                                    {"delta", delta},
+                                    {"finish_reason", nullptr},
+                                };
+                                nlohmann::json chunk_j = {
+                                    {"id", request_id},
+                                    {"object", "chat.completion.chunk"},
+                                    {"created", created},
+                                    {"model", ctx.model_id},
+                                    {"choices", nlohmann::json::array({choice_j})},
+                                };
+                                if (!send_sse(sink, chunk_j.dump())) {
+                                    client_gone = true;
+                                    return;
+                                }
+                            }
+                            finish = "tool_calls";
+                        }
+
                         {
                             openai::ChatCompletionChunk chunk;
                             chunk.id = request_id;
@@ -448,7 +808,7 @@ struct Server::Impl {
 
                             openai::ChatCompletionChunkChoice choice;
                             choice.index = 0;
-                            choice.finish_reason = "stop";
+                            choice.finish_reason = finish;
                             chunk.choices.push_back(std::move(choice));
 
                             if (!send_sse(sink, nlohmann::json(chunk).dump())) {

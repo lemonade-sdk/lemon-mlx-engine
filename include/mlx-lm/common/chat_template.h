@@ -31,10 +31,13 @@ public:
 
     /// Render messages to a formatted prompt string.
     /// add_generation_prompt=true appends the assistant turn opener.
+    /// tools: optional OpenAI tools array (nullptr or null json = no tools).
+    /// When non-null array, sets minja inputs.tools for native/polyfill tool schemas.
     std::string apply(
         const std::vector<Message>& messages,
         bool add_generation_prompt = true,
-        const nlohmann::json& extra_context = {}) const;
+        const nlohmann::json& extra_context = {},
+        const nlohmann::json* tools = nullptr) const;
 
     /// Get the raw template string.
     const std::string& template_string() const;

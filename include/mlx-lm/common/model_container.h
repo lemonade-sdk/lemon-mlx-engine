@@ -43,10 +43,15 @@ struct ModelContext {
     // Tokenizer operations (type-erased).
     std::function<std::vector<int>(const std::string&)> encode_fn;
     std::function<std::string(const std::vector<int>&)> decode_fn;
-    std::function<std::vector<int>(const std::vector<std::unordered_map<std::string, std::string>>&)> apply_chat_template_fn;
+    // messages + optional tools JSON array (nullptr = no tools injection).
+    std::function<std::vector<int>(
+        const std::vector<std::unordered_map<std::string, std::string>>&,
+        const nlohmann::json* /*tools*/)> apply_chat_template_fn;
 
     // Configuration
     std::string model_id;
+    // model_type from config.json (e.g. "qwen3") for tool-call format inference.
+    std::string model_type;
     std::optional<std::vector<int>> eos_token_ids;
 
     // Extra context for chat template rendering (e.g., enable_thinking=false).

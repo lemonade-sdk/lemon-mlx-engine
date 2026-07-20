@@ -49,7 +49,8 @@ ChatTemplate& ChatTemplate::operator=(ChatTemplate&&) noexcept = default;
 std::string ChatTemplate::apply(
     const std::vector<Message>& messages,
     bool add_generation_prompt,
-    const nlohmann::json& extra_context) const
+    const nlohmann::json& extra_context,
+    const nlohmann::json* tools) const
 {
     // Convert Message maps to nlohmann::ordered_json array.
     nlohmann::ordered_json json_messages = nlohmann::ordered_json::array();
@@ -69,6 +70,11 @@ std::string ChatTemplate::apply(
 
     if (!extra_context.is_null() && !extra_context.empty()) {
         inputs.extra_context = extra_context;
+    }
+
+    // OpenAI tools array → minja inputs.tools (native template branch or polyfill).
+    if (tools != nullptr && !tools->is_null() && tools->is_array() && !tools->empty()) {
+        inputs.tools = nlohmann::ordered_json::parse(tools->dump());
     }
 
     minja::chat_template_options opts;
