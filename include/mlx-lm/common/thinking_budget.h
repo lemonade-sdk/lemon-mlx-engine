@@ -9,8 +9,7 @@ namespace mlx_lm {
 /// often hit finish_reason=length with little final answer (Discord UX).
 inline constexpr int kThinkingBudgetRecommend = 4096;
 
-/// When thinking is on and max_tokens is missing or below the recommend floor,
-/// raise it to kThinkingBudgetRecommend. Never lowers an explicit higher budget.
+/// Raise max_tokens to floor when thinking on and budget is missing/low.
 /// Returns true if max_tokens was changed.
 inline bool apply_thinking_budget_floor(std::optional<int>& max_tokens,
                                         bool thinking_on) {
