@@ -207,14 +207,7 @@ ToolCallFormat resolve_tool_format(const ModelContext& ctx) {
     return ToolCallFormat::json;
 }
 
-// Per-request thinking policy (tools × enable_thinking).
-// Precedence: request explicit enable_thinking >
-//             tools inject (non-empty tools && tool_choice != none) ⇒ OFF >
-//             process/load default already in template_extra_context.
-// Mutates shared template_extra_context under ModelContainer::perform mutex.
-// Caller MUST restore previous value after apply_chat_template_fn (RAII below)
-// so tools_auto does not sticky-disable thinking for later non-tools requests.
-//
+// Per-request thinking: request > tools_auto OFF > process default. RAII restores.
 struct ThinkingContextGuard {
     nlohmann::json* ctx = nullptr;
     bool had_prev = false;
@@ -433,10 +426,7 @@ struct Server::Impl {
             return;
         }
 
-        // v1: multi-turn tool history not supported (MASTER freeze).
-        // OWUI Memory / native tools often inject role=tool turns; return a clear
-        // 400 (not 200 soup) so operators can disable Memory/tools rather than
-        // blame decode. Full multi-turn tools product is deferred.
+        // v1: role=tool multi-turn not supported.
         for (const auto& m : chat_req.messages) {
             if (m.role == "tool") {
                 send_error(res, 400,
@@ -561,8 +551,7 @@ struct Server::Impl {
                         tokens = ctx.encode_fn(chat_req.messages.back().content);
                     }
                 } // restore process thinking default after template apply
-                // params is local to this request; floor after template so
-                // tools_auto thinking-off is not over-budgeted.
+                // Floor after template polarity resolved.
                 GenerateParameters gen_params = params;
                 apply_thinking_budget_floor_logged(gen_params, thinking_on);
 
