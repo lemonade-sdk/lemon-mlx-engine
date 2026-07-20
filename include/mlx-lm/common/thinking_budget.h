@@ -5,27 +5,22 @@
 
 namespace mlx_lm {
 
-/// Soft target when thinking/CoT is on. Clients that send lower max_tokens
-/// often hit finish_reason=length with little final answer (Discord UX).
+/// Soft target when thinking/CoT is on and the client omitted max_tokens.
+/// Explicit client max_tokens is never overwritten.
 inline constexpr int kThinkingBudgetRecommend = 4096;
 
-/// Raise max_tokens to floor when thinking on and budget is missing/low.
-/// Returns true if max_tokens was changed.
+/// When thinking is on and max_tokens is unset, set it to the recommend floor.
+/// Returns true if max_tokens was changed. Explicit budgets always win.
 inline bool apply_thinking_budget_floor(std::optional<int>& max_tokens,
                                         bool thinking_on) {
     if (!thinking_on) {
         return false;
     }
-    const int current = max_tokens.value_or(0);
-    // Missing budget (nullopt) or below floor → raise.
-    if (max_tokens.has_value() && current >= kThinkingBudgetRecommend) {
+    if (max_tokens.has_value()) {
         return false;
     }
-    if (!max_tokens.has_value() || current < kThinkingBudgetRecommend) {
-        max_tokens = kThinkingBudgetRecommend;
-        return true;
-    }
-    return false;
+    max_tokens = kThinkingBudgetRecommend;
+    return true;
 }
 
 } // namespace mlx_lm
