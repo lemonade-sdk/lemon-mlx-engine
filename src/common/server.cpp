@@ -551,7 +551,6 @@ struct Server::Impl {
                         tokens = ctx.encode_fn(chat_req.messages.back().content);
                     }
                 } // restore process thinking default after template apply
-                // Floor after template polarity resolved.
                 GenerateParameters gen_params = params;
                 apply_thinking_budget_floor_logged(gen_params, thinking_on);
 
@@ -757,8 +756,6 @@ struct Server::Impl {
                                     out_text = *display;
                                 }
 
-                                // Honor request stop strings. Strip the match from
-                                // the tail of this chunk when possible; stop gen.
                                 const size_t before = stream_accum.size();
                                 stream_accum += out_text;
                                 if (apply_stop_sequences(stream_accum, chat_req.stop)) {
@@ -766,7 +763,6 @@ struct Server::Impl {
                                     if (stream_accum.size() > before) {
                                         out_text = stream_accum.substr(before);
                                     } else {
-                                        // Entire chunk was part of the stop tail.
                                         return GenerateDisposition::stop;
                                     }
                                 }
@@ -989,7 +985,6 @@ struct Server::Impl {
         return eos_set;
     }
 
-    // apply_stop_sequences — see mlx-lm/common/stop_sequences.h
 
     // Returns false if the client disconnected (or write failed) so callers
     // can stop generation and release the model lock promptly.
