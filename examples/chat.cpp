@@ -67,7 +67,8 @@ static std::string format_bytes(size_t bytes) {
 struct CliArgs {
     std::string model_path;
     std::string system_prompt;
-    int max_tokens = 2048;
+    // Match server default: thinking-on needs CoT headroom.
+    int max_tokens = 4096;
     float temperature = 0.7f;
     float top_p = 0.9f;
     float repetition_penalty = 0.0f;
@@ -90,7 +91,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <model_id_or_directory> [options]\n"
                   << "  --system-prompt \"...\"   System instructions\n"
-                  << "  --max-tokens N          Max tokens to generate (default: 2048)\n"
+                  << "  --max-tokens N          Max tokens to generate (default: 4096)\n"
                   << "  --temperature T         Sampling temperature (default: 0.7)\n"
                   << "  --top-p P               Nucleus sampling (default: 0.9)\n"
                   << "  --repetition-penalty F  Repetition penalty (default: off)\n"
@@ -174,10 +175,22 @@ int main(int argc, char* argv[]) {
 
         auto ctx = mlx_lm::load_llm(args.model_path);
 
+        // Match server/ModelManager: set thinking polarity before any forward so
+        // template/extra_context state is stable if warmup ever uses the template.
+        if (ctx.template_extra_context) {
+            (*ctx.template_extra_context)["enable_thinking"] = !args.no_think;
+        }
+
+        // Drain any post-load HIP work before the first GDN/attention launch.
+        // On gfx115x a cold hipLaunchKernel right after weight materialize has
+        // intermittently SIGSEGV'd in copy_contiguous during chat warmup.
+        mx::synchronize();
+
         // Warmup: run a dummy forward pass to prime the GPU allocator cache.
         // Without this, the first real prompt pays ~2s of hipExtMallocWithFlags
         // cold-start overhead. After warmup, allocations hit the buffer cache.
-        {
+        // Skip with MLX_SKIP_WARMUP=1 if diagnosing first-forward crashes.
+        if (std::getenv("MLX_SKIP_WARMUP") == nullptr) {
             mlx_lm::GenerateParameters warmup_params;
             warmup_params.max_tokens = 1;
             warmup_params.temperature = 0.0f;
@@ -186,6 +199,9 @@ int main(int argc, char* argv[]) {
             mlx_lm::LMInput::Text warmup_text(dummy_tokens);
             auto warmup_out = ctx.call_fn(warmup_text, &warmup_cache, nullptr);
             mx::eval(warmup_out.logits);
+            mx::synchronize();
+        } else {
+            std::cerr << "[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward\n";
         }
 
         // Bound the buffer cache so it can't balloon and fill VRAM, while KEEPING
@@ -259,11 +275,7 @@ int main(int argc, char* argv[]) {
 
         // Use ChatSession if chat template is available and not in raw mode.
         if (has_chat_template && !args.raw_mode) {
-            // Qwen3 (and similar reasoning models) need enable_thinking set
-            // explicitly in the template context. Default to true unless --no-think.
-            if (ctx.template_extra_context) {
-                (*ctx.template_extra_context)["enable_thinking"] = !args.no_think;
-            }
+            // enable_thinking already set pre-warmup (see above).
 
             auto container = std::make_shared<mlx_lm::ModelContainer>(std::move(ctx));
 
