@@ -277,7 +277,7 @@ struct ThinkingContextGuard {
     ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
 };
 
-// Soft floor wrapper with logging (policy in thinking_budget.h).
+// Thinking budget floor + log (see thinking_budget.h).
 static void apply_thinking_budget_floor_logged(
     GenerateParameters& params,
     bool thinking_on)
