@@ -861,8 +861,6 @@ std::pair<mx::array, mx::array> gdn_fused_decode(
     static const bool force_fallback = std::getenv("MLX_GDN_FUSED2_MXOPS") != nullptr;
     if (!force_fallback) {
         auto t = q.dtype();
-        // Prefer load-time f32 constants (materialize_decode_constants). Skip
-        // redundant same-dtype astype that can still enqueue copy work on ROCm.
         mx::array al = a_log;
         mx::array db = dt_bias;
         if (al.dtype() != mx::float32) {
