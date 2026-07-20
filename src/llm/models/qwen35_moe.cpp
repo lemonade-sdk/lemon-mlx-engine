@@ -1271,7 +1271,6 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
         }
     }
 
-    // Prefetch GDN T=1 decode constants off the hot path (bf16→f32 + norm fills).
     model_.materialize_gdn_decode_constants();
 }
 
