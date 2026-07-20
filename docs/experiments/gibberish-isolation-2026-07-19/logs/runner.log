@@ -1,0 +1,48 @@
+[2026-07-19T13:58:11-07:00] === LADDER START model=LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit ===
+[2026-07-19T13:58:11-07:00] Killing leftover listener pid=1148644 on :8080
+[2026-07-19T13:58:13-07:00] Starting server tag=L0 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--no-think --max-tokens 2048
+[2026-07-19T13:58:13-07:00] server pid=1157385 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L0-server.log
+[2026-07-19T13:58:22-07:00] health ok attempt=4
+[2026-07-19T13:58:22-07:00] REQUEST L0-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L0-short-maxwell.json
+[2026-07-19T13:58:33-07:00] RESPONSE L0-short http=200 size=1206
+[2026-07-19T13:59:29-07:00] === LADDER START model=LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit ===
+[2026-07-19T13:59:29-07:00] Starting server tag=L0 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--no-think --max-tokens 2048
+[2026-07-19T13:59:29-07:00] server pid=1164531 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L0-server.log
+[2026-07-19T13:59:39-07:00] health ok attempt=4
+[2026-07-19T13:59:39-07:00] REQUEST L0-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L0-short-maxwell.json
+[2026-07-19T13:59:49-07:00] RESPONSE L0-short http=200 size=1206
+[2026-07-19T13:59:49-07:00] REQUEST L0-long max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L0-long-wave.json
+[2026-07-19T14:00:16-07:00] RESPONSE L0-long http=200 size=2648
+[2026-07-19T14:00:16-07:00] Stopping server pid=1164531
+[2026-07-19T14:00:17-07:00] Starting server tag=L1 env=MLX_DECODE_GRAPH_PURE_OFF=1 args=--no-think --max-tokens 2048
+[2026-07-19T14:00:17-07:00] server pid=1168488 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L1-server.log
+[2026-07-19T14:01:02-07:00] health ok attempt=16
+[2026-07-19T14:01:02-07:00] REQUEST L1-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L1-short-maxwell.json
+[2026-07-19T14:01:12-07:00] RESPONSE L1-short http=200 size=1207
+[2026-07-19T14:01:12-07:00] REQUEST L1-long max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L1-long-wave.json
+[2026-07-19T14:01:38-07:00] RESPONSE L1-long http=200 size=2648
+[2026-07-19T14:01:38-07:00] Stopping server pid=1168488
+[2026-07-19T14:01:39-07:00] Starting server tag=L2 env=(defaults) args=--no-think --max-tokens 2048
+[2026-07-19T14:01:39-07:00] server pid=1175445 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L2-server.log
+[2026-07-19T14:01:48-07:00] health ok attempt=4
+[2026-07-19T14:01:48-07:00] REQUEST L2-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L2-short-maxwell.json
+[2026-07-19T14:01:58-07:00] RESPONSE L2-short http=200 size=1164
+[2026-07-19T14:01:58-07:00] REQUEST L2-long max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L2-long-wave.json
+[2026-07-19T14:02:31-07:00] RESPONSE L2-long http=200 size=2639
+[2026-07-19T14:02:32-07:00] Stopping server pid=1175445
+[2026-07-19T14:02:32-07:00] Starting server tag=L3 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--max-tokens 2048
+[2026-07-19T14:02:32-07:00] server pid=1179903 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L3-server.log
+[2026-07-19T14:02:41-07:00] health ok attempt=4
+[2026-07-19T14:02:41-07:00] REQUEST L3-short-thinking max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L3-short-thinking.json
+[2026-07-19T14:03:00-07:00] RESPONSE L3-short-thinking http=200 size=2317
+[2026-07-19T14:03:00-07:00] REQUEST L3-long-thinking max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L3-long-thinking.json
+[2026-07-19T14:03:28-07:00] RESPONSE L3-long-thinking http=200 size=2464
+[2026-07-19T14:03:28-07:00] Stopping server pid=1179903
+[2026-07-19T14:03:29-07:00] Starting server tag=L4 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--no-think --max-tokens 2048 --use-mtp
+[2026-07-19T14:03:29-07:00] server pid=1184567 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L4-server.log
+[2026-07-19T14:03:38-07:00] health ok attempt=4
+[2026-07-19T14:03:38-07:00] REQUEST L4-short-mtp max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L4-short-mtp.json
+[2026-07-19T14:03:38-07:00] RESPONSE L4-short-mtp http=500 size=133
+[2026-07-19T14:03:39-07:00] REQUEST L4-long-mtp max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L4-long-mtp.json
+[2026-07-19T14:03:39-07:00] RESPONSE L4-long-mtp http=500 size=133
+[2026-07-19T14:03:39-07:00] === LADDER COMPLETE results=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/RESULTS.md ===

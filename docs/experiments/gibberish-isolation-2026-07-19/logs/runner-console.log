@@ -1,0 +1,86 @@
+[2026-07-19T13:59:29-07:00] === LADDER START model=LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit ===
+[2026-07-19T13:59:29-07:00] Starting server tag=L0 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--no-think --max-tokens 2048
+[2026-07-19T13:59:29-07:00] server pid=1164531 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L0-server.log
+[2026-07-19T13:59:39-07:00] health ok attempt=4
+[2026-07-19T13:59:39-07:00] REQUEST L0-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L0-short-maxwell.json
+[2026-07-19T13:59:49-07:00] RESPONSE L0-short http=200 size=1206
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=stop chars=866
+[2026-07-19T13:59:49-07:00] REQUEST L0-long max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L0-long-wave.json
+[2026-07-19T14:00:16-07:00] RESPONSE L0-long http=200 size=2648
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=length chars=2182
+[2026-07-19T14:00:16-07:00] Stopping server pid=1164531
+[2026-07-19T14:00:17-07:00] Starting server tag=L1 env=MLX_DECODE_GRAPH_PURE_OFF=1 args=--no-think --max-tokens 2048
+[2026-07-19T14:00:17-07:00] server pid=1168488 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L1-server.log
+[2026-07-19T14:01:02-07:00] health ok attempt=16
+[2026-07-19T14:01:02-07:00] REQUEST L1-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L1-short-maxwell.json
+[2026-07-19T14:01:12-07:00] RESPONSE L1-short http=200 size=1207
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=stop chars=867
+[2026-07-19T14:01:12-07:00] REQUEST L1-long max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L1-long-wave.json
+[2026-07-19T14:01:38-07:00] RESPONSE L1-long http=200 size=2648
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=length chars=2183
+[2026-07-19T14:01:38-07:00] Stopping server pid=1168488
+[2026-07-19T14:01:39-07:00] Starting server tag=L2 env=(defaults) args=--no-think --max-tokens 2048
+[2026-07-19T14:01:39-07:00] server pid=1175445 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L2-server.log
+[2026-07-19T14:01:48-07:00] health ok attempt=4
+[2026-07-19T14:01:48-07:00] REQUEST L2-short max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L2-short-maxwell.json
+[2026-07-19T14:01:58-07:00] RESPONSE L2-short http=200 size=1164
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=stop chars=826
+[2026-07-19T14:01:58-07:00] REQUEST L2-long max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L2-long-wave.json
+[2026-07-19T14:02:31-07:00] RESPONSE L2-long http=200 size=2639
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=length chars=2175
+[2026-07-19T14:02:32-07:00] Stopping server pid=1175445
+[2026-07-19T14:02:32-07:00] Starting server tag=L3 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--max-tokens 2048
+[2026-07-19T14:02:32-07:00] server pid=1179903 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L3-server.log
+[2026-07-19T14:02:41-07:00] health ok attempt=4
+[2026-07-19T14:02:41-07:00] REQUEST L3-short-thinking max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L3-short-thinking.json
+[2026-07-19T14:03:00-07:00] RESPONSE L3-short-thinking http=200 size=2317
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=length chars=1993
+[2026-07-19T14:03:00-07:00] REQUEST L3-long-thinking max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L3-long-thinking.json
+[2026-07-19T14:03:28-07:00] RESPONSE L3-long-thinking http=200 size=2464
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=length chars=2003
+[2026-07-19T14:03:28-07:00] Stopping server pid=1179903
+[2026-07-19T14:03:29-07:00] Starting server tag=L4 env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--no-think --max-tokens 2048 --use-mtp
+[2026-07-19T14:03:29-07:00] server pid=1184567 log=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/logs/L4-server.log
+[2026-07-19T14:03:38-07:00] health ok attempt=4
+[2026-07-19T14:03:38-07:00] REQUEST L4-short-mtp max_tokens=512 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L4-short-mtp.json
+[2026-07-19T14:03:38-07:00] RESPONSE L4-short-mtp http=500 size=133
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=error chars=159
+[2026-07-19T14:03:39-07:00] REQUEST L4-long-mtp max_tokens=800 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/raw/L4-long-mtp.json
+[2026-07-19T14:03:39-07:00] RESPONSE L4-long-mtp http=500 size=133
+<stdin>:48: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+OK finish=error chars=159
+summary rows 15
+[2026-07-19T14:03:39-07:00] === LADDER COMPLETE results=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/RESULTS.md ===
+total 84
+drwxrwxr-x 2 antmi antmi 4096 Jul 19 14:03 .
+drwxrwxr-x 4 antmi antmi 4096 Jul 19 13:58 ..
+-rw-rw-r-- 1 antmi antmi   15 Jul 19 13:59 L0-health.json
+-rw-rw-r-- 1 antmi antmi 2648 Jul 19 14:00 L0-long-wave.json
+-rw-rw-r-- 1 antmi antmi 1206 Jul 19 13:59 L0-short-maxwell.json
+-rw-rw-r-- 1 antmi antmi   15 Jul 19 14:01 L1-health.json
+-rw-rw-r-- 1 antmi antmi 2648 Jul 19 14:01 L1-long-wave.json
+-rw-rw-r-- 1 antmi antmi 1207 Jul 19 14:01 L1-short-maxwell.json
+-rw-rw-r-- 1 antmi antmi   15 Jul 19 14:01 L2-health.json
+-rw-rw-r-- 1 antmi antmi 2639 Jul 19 14:02 L2-long-wave.json
+-rw-rw-r-- 1 antmi antmi 1164 Jul 19 14:01 L2-short-maxwell.json
+-rw-rw-r-- 1 antmi antmi   15 Jul 19 14:02 L3-health.json
+-rw-rw-r-- 1 antmi antmi 2464 Jul 19 14:03 L3-long-thinking.json
+-rw-rw-r-- 1 antmi antmi 2317 Jul 19 14:03 L3-short-thinking.json
+-rw-rw-r-- 1 antmi antmi   15 Jul 19 14:03 L4-health.json
+-rw-rw-r-- 1 antmi antmi  133 Jul 19 14:03 L4-long-mtp.json
+-rw-rw-r-- 1 antmi antmi  133 Jul 19 14:03 L4-short-mtp.json
+-rw-rw-r-- 1 antmi antmi   15 Jul 19 13:55 health.json
+-rw-rw-r-- 1 antmi antmi 2648 Jul 19 13:56 l0-long-math.json
+-rw-rw-r-- 1 antmi antmi 1206 Jul 19 13:55 l0-maxwell.json
+-rw-rw-r-- 1 antmi antmi 1164 Jul 19 13:57 l2-maxwell.json
+-rw-rw-r-- 1 antmi antmi    0 Jul 19 13:55 models.json
+RESULTS_MD=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-2026-07-19/RESULTS.md

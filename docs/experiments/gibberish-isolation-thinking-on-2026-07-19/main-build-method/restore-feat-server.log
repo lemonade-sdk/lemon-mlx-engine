@@ -1,0 +1,10 @@
+[  4%] Built target mlx_version
+[  4%] Built target gguflib
+[ 20%] Built target mlx_rocm_kernels_lib
+[ 20%] Built target cpu_compiled_preamble
+[ 20%] Built target fastokens_c_build
+[ 66%] Built target mlx
+[ 68%] Built target mlx-lm-core
+[ 77%] Built target mlx-lm-common
+[ 97%] Built target mlx-lm-llm
+[100%] Built target server

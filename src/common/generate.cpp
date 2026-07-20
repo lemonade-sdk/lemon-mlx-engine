@@ -963,9 +963,13 @@ std::optional<int> TokenIterator::next() {
     static const bool g_sync_decode = std::getenv("MLX_SYNC_DECODE") != nullptr;
 
 #if defined(MLX_BUILD_ROCM)
-    // Build-once pure-relaunch graph decode (opt-in, qwen35-moe device-pos path).
+    // Pure-graph decode is opt-in only. Default is eager step() (product
+    // posture: pure-graph did not improve quality on hybrid Qwen3.5/3.6 and
+    // adds sticky external-pos risk). Enable with MLX_DECODE_GRAPH_PURE=1.
+    // MLX_DECODE_GRAPH_PURE_OFF=1 still forces off if both are set.
     static const bool pure_enabled =
-        std::getenv("MLX_DECODE_GRAPH_PURE_OFF") == nullptr;
+        std::getenv("MLX_DECODE_GRAPH_PURE") != nullptr
+        && std::getenv("MLX_DECODE_GRAPH_PURE_OFF") == nullptr;
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;

@@ -1,0 +1,281 @@
+=== MTP Circular Inference Test ===
+Model: mlx-community/Qwen3.5-4B-MTP-4bit
+Start time: Thu Jun 11 09:54:00 AM PDT 2026
+Config: n_draft=4 max_tokens=256 temp=0.7 loops=3
+=======================================
+
+
+=== LOOP 1 of 3 ===
+
+[1/3] Prompt: What is 2+2? Reply with just the number.
+[1/3] Prompt: Name the 3 primary colors. Be brief.
+[1/3] Prompt: Write a haiku about coding.
+[1/3] Prompt: What is the capital of France? One word answer.
+[1/3] Prompt: Explain what MTP means in one sentence.
+[1/3] Prompt: Count from 1 to 10, separated by commas.
+[1/3] Prompt: What are the first 5 prime numbers?
+[1/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[1/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[1/3] Prompt: Describe the color blue in one sentence.
+
+=== LOOP 2 of 3 ===
+
+[2/3] Prompt: What is 2+2? Reply with just the number.
+[2/3] Prompt: Name the 3 primary colors. Be brief.
+[2/3] Prompt: Write a haiku about coding.
+[2/3] Prompt: What is the capital of France? One word answer.
+[2/3] Prompt: Explain what MTP means in one sentence.
+[2/3] Prompt: Count from 1 to 10, separated by commas.
+[2/3] Prompt: What are the first 5 prime numbers?
+[2/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[2/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[2/3] Prompt: Describe the color blue in one sentence.
+
+=== LOOP 3 of 3 ===
+
+[3/3] Prompt: What is 2+2? Reply with just the number.
+[3/3] Prompt: Name the 3 primary colors. Be brief.
+[3/3] Prompt: Write a haiku about coding.
+[3/3] Prompt: What is the capital of France? One word answer.
+[3/3] Prompt: Explain what MTP means in one sentence.
+[3/3] Prompt: Count from 1 to 10, separated by commas.
+[3/3] Prompt: What are the first 5 prime numbers?
+[3/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[3/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[3/3] Prompt: Describe the color blue in one sentence.
+Loading model: mlx-community/Qwen3.5-4B-MTP-4bit
+[MTP] Delta model detected via load_llm, redirecting to load_mtp_delta_model
+[MTP] Delta model: mlx-community/Qwen3.5-4B-MTP-4bit, base model: mlx-community/Qwen3.5-4B-4bit
+[MTP] Loaded base model weights: 1221 tensors
+[MTP] Merged 31 MTP head weights with base model
+[MTP] Found 8 quantized weight groups
+[MTP] Dequantized 15 weights total
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2560 head_dim=256 num_attention_heads=16 num_key_value_heads=4 intermediate_size=9216 quant_bits=4 quant_group_size=64 (weight-derived)
+Model loaded. Memory: active=3.3 GB, peak=3.6 GB, cache=341 MB
+MTP enabled (scaffolding): n_draft=4
+Type your message (or 'quit' to exit):
+
+> [hipBLASLt] first call
+[hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 4
+Prompt:     25 tokens, 43.9706 tokens/s, 0.568562s
+Generation: 2 tokens, 21.6701 tokens/s, 0.092293s
+
+
+> [hipBLASLt] M=22 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Red, blue, yellow.
+Prompt:     22 tokens, 812.716 tokens/s, 0.0270697s
+Generation: 7 tokens, 8.23604 tokens/s, 0.849923s
+
+
+> [hipBLASLt] M=19 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Coffee steaminging,
+Logic flows through endless lines,
+Bugs vanish with code.
+Prompt:     19 tokens, 2540.98 tokens/s, 0.00747742s
+Generation: 20 tokens, 11.8783 tokens/s, 1.68374s
+
+
+> [hipBLASLt] M=23 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Paris
+Prompt:     23 tokens, 4924.2 tokens/s, 0.00467081s
+Generation: 2 tokens, 3.60013 tokens/s, 0.555536s
+
+
+> [hipBLASLt] M=22 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: MTP stands for Mass Storage, a storage device used in military applications.
+(Note: In common computing, it often refers to Mass Storage, specifically a type of tape drive or similar storage medium used in older systems, though the acronym can also stand for Mass Storage Tape Product in some contexts. However, in many technical and military contexts, it specifically refers to Mass Storage Tape Product or Mass Storage Tape.)
+(Note: In many contexts,，M，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，，
+Prompt:     22 tokens, 3138.02 tokens/s, 0.00701078s
+Generation: 256 tokens, 15.4388 tokens/s, 16.5816s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+Prompt:     25 tokens, 49.0705 tokens/s, 0.509471s
+Generation: 30 tokens, 16.0785 tokens/s, 1.86585s
+
+
+> [hipBLASLt] M=21 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 2, 3, 
+Prompt:     21 tokens, 1701.34 tokens/s, 0.0123432s
+Generation: 7 tokens, 8.0306 tokens/s, 0.871666s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: def add(a,
+Prompt:     25 tokens, 2201.19 tokens/s, 0.0113575s
+Generation: 5 tokens, 7.00548 tokens/s, 0.713727s
+
+
+> [hipBLASLt] M=24 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: To seek meaning in existence itself.
+Prompt:     24 tokens, 1447.25 tokens/s, 0.0165831s
+Generation: 8 tokens, 7.49618 tokens/s, 1.06721s
+
+
+> [hipBLASLt] M=20 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Blue is the color of the sky at noon, a calm and cool shade often associated with the ocean.
+Prompt:     20 tokens, 1468.25 tokens/s, 0.0136216s
+Generation: 22 tokens, 9.39678 tokens/s, 2.34123s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 4
+Prompt:     25 tokens, 1910.36 tokens/s, 0.0130865s
+Generation: 2 tokens, 3.50598 tokens/s, 0.570453s
+
+
+> [hipBLASLt] M=22 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Red, blue, yellow
+Prompt:     22 tokens, 1667.87 tokens/s, 0.0131904s
+Generation: 6 tokens, 6.2274 tokens/s, 0.963484s
+
+
+> [hipBLASLt] M=19 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Coffee steaming,
+Logic flows through endless lines,
+Bugs vanish with code.
+Prompt:     19 tokens, 1463.08 tokens/s, 0.0129863s
+Generation: 19 tokens, 8.76823 tokens/s, 2.16692s
+
+
+> [hipBLASLt] M=23 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Paris
+Prompt:     23 tokens, 1863.76 tokens/s, 0.0123406s
+Generation: 2 tokens, 3.21034 tokens/s, 0.622987s
+
+
+> [hipBLASLt] M=22 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: MTP stands for Mass Storage Tape Product, a type of computer storage device. (Note: In some contexts, it may also refer to "Mass Storage Tape Product" or "Multi-Transmission Protocol", but the most common technical definition is related to storage.)
+Prompt:     22 tokens, 1721 tokens/s, 0.0127833s
+Generation: 53 tokens, 9.67068 tokens/s, 5.48048s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+Prompt:     25 tokens, 1406.36 tokens/s, 0.0177764s
+Generation: 30 tokens, 8.98757 tokens/s, 3.33794s
+
+
+> [hipBLASLt] M=21 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 2, 3, 5, 7, 1
+Prompt:     21 tokens, 1328.19 tokens/s, 0.015811s
+Generation: 14 tokens, 7.6613 tokens/s, 1.82737s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: def add(a, b):
+    return a + b
+Prompt:     25 tokens, 1561.11 tokens/s, 0.0160143s
+Generation: 13 tokens, 7.57381 tokens/s, 1.71644s
+
+
+> [hipBLASLt] M=24 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: To seek meaning in existence itself.
+Prompt:     24 tokens, 1384.44 tokens/s, 0.0173355s
+Generation: 8 tokens, 6.56651 tokens/s, 1.2183s
+
+
+> [hipBLASLt] M=20 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Blue is the color of the sky at noon, a calm and cool shade often associated with the ocean.
+Prompt:     20 tokens, 1238.03 tokens/s, 0.0161547s
+Generation: 22 tokens, 8.08749 tokens/s, 2.72025s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 4
+Prompt:     25 tokens, 1429.48 tokens/s, 0.0174889s
+Generation: 2 tokens, 3.30595 tokens/s, 0.60497s
+
+
+> [hipBLASLt] M=22 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Red, blue, yellow
+Prompt:     22 tokens, 932.069 tokens/s, 0.0236034s
+Generation: 6 tokens, 5.59274 tokens/s, 1.07282s
+
+
+> [hipBLASLt] M=19 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Coffee steaming,
+Logic flows through endless lines,
+Bugs vanish with code.
+Prompt:     19 tokens, 1030.66 tokens/s, 0.0184348s
+Generation: 19 tokens, 7.60977 tokens/s, 2.49679s
+
+
+> [hipBLASLt] M=23 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Paris
+Prompt:     23 tokens, 1175.93 tokens/s, 0.019559s
+Generation: 2 tokens, 3.0659 tokens/s, 0.652337s
+
+
+> [hipBLASLt] M=22 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: MTP stands for Mass Storage Tape Product, a type of computer storage device. (Note: In some contexts, it may also refer to "Mass Storage Tape Product" or "Multi-Transmission Protocol", but the most common technical definition is related to storage.)
+Prompt:     22 tokens, 1225.38 tokens/s, 0.0179536s
+Generation: 53 tokens, 8.24455 tokens/s, 6.42849s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+Prompt:     25 tokens, 1280.95 tokens/s, 0.0195167s
+Generation: 30 tokens, 7.72855 tokens/s, 3.88171s
+
+
+> [hipBLASLt] M=21 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: 2, 3, 5, 7, 11
+Prompt:     21 tokens, 1097.72 tokens/s, 0.0191305s
+Generation: 15 tokens, 6.84206 tokens/s, 2.19232s
+
+
+> [hipBLASLt] M=25 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: def add(a, b):
+    return a + b
+Prompt:     25 tokens, 1203.09 tokens/s, 0.0207798s
+Generation: 13 tokens, 6.68616 tokens/s, 1.94432s
+
+
+> [hipBLASLt] M=24 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: To seek meaning in existence itself.
+Prompt:     24 tokens, 1094.05 tokens/s, 0.0219368s
+Generation: 8 tokens, 5.86189 tokens/s, 1.36475s
+
+
+> [hipBLASLt] M=20 N=248320 K=2560 ta=0 tb=1 lda=2560 ldb=2560 ldc=248320
+
+Assistant: Blue is the color of the sky at noon, a calm and cool shade often associated with the ocean.
+Prompt:     20 tokens, 980.623 tokens/s, 0.0203952s
+Generation: 22 tokens, 7.08087 tokens/s, 3.10696s
+
+
+> 

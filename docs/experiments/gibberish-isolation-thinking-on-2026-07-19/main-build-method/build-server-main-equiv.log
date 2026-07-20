@@ -1,0 +1,21 @@
+[  0%] Built target mlx_version
+[  0%] Built target cpu_compiled_preamble
+[  0%] Built target fastokens_c_build
+[ 17%] Built target mlx_rocm_kernels_lib
+[ 20%] Built target gguflib
+[ 66%] Built target mlx
+[ 68%] Built target mlx-lm-core
+[ 68%] Building CXX object CMakeFiles/mlx-lm-common.dir/src/common/generate.cpp.o
+[ 68%] Building CXX object CMakeFiles/mlx-lm-common.dir/src/common/chat_session.cpp.o
+[ 68%] Building CXX object CMakeFiles/mlx-lm-common.dir/src/common/tool_calling.cpp.o
+[ 68%] Building CXX object CMakeFiles/mlx-lm-common.dir/src/common/chat_template.cpp.o
+[ 68%] Linking CXX static library libmlx-lm-common.a
+[ 77%] Built target mlx-lm-common
+[ 77%] Building CXX object CMakeFiles/mlx-lm-llm.dir/src/llm/llm_factory.cpp.o
+[ 77%] Linking CXX static library libmlx-lm-llm.a
+[ 97%] Built target mlx-lm-llm
+[ 97%] Building CXX object CMakeFiles/server.dir/examples/server.cpp.o
+[ 97%] Building CXX object CMakeFiles/server.dir/src/common/model_manager.cpp.o
+[ 97%] Building CXX object CMakeFiles/server.dir/src/common/server.cpp.o
+[100%] Linking CXX executable server
+[100%] Built target server

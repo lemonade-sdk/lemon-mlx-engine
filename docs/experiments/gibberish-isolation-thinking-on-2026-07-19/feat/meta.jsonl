@@ -1,0 +1,6 @@
+{"step":"T0-short","http":200,"file":"/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T0-short.json","config":"THINKING_ON PURE_OFF SYNC no-mtp max_tokens=1024"}
+{"step":"T0-long","http":200,"file":"/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T0-long.json","config":"THINKING_ON PURE_OFF SYNC no-mtp max_tokens=1600"}
+{"step":"T2-short","http":200,"file":"/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T2-short.json","config":"THINKING_ON PURE_default_ON no-mtp max_tokens=1024"}
+{"step":"T2-long","http":200,"file":"/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T2-long.json","config":"THINKING_ON PURE_default_ON no-mtp max_tokens=1600"}
+{"step":"T4-short-mtp","http":500,"file":"/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T4-short-mtp.json","config":"THINKING_ON use-mtp PURE_OFF SYNC max_tokens=1024"}
+{"step":"T4-long-mtp","http":500,"file":"/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T4-long-mtp.json","config":"THINKING_ON use-mtp PURE_OFF SYNC max_tokens=1600"}

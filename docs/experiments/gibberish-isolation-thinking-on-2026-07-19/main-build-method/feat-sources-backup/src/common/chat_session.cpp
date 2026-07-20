@@ -80,12 +80,7 @@ void ChatSession::clear() {
 }
 
 const std::vector<chat::ChatMessage>& ChatSession::message_history() const {
-    // Prefer messages_ (post-fold). If still holding re-hydration pending only,
-    // expose pending so callers see restored history before first generate.
-    if (!messages_.empty() || pending_history_.empty()) {
-        return messages_;
-    }
-    return pending_history_;
+    return messages_;
 }
 
 // -- Private: build messages --------------------------------------------------
@@ -100,12 +95,8 @@ std::vector<chat::ChatMessage> ChatSession::build_messages(
         messages.push_back(chat::ChatMessage::system(instructions_.value()));
     }
 
-    // Full conversation so far (messages_ is source of truth after any
-    // re-hydration has been folded in — see generate_impl).
-    if (!messages_.empty()) {
-        messages.insert(messages.end(), messages_.begin(), messages_.end());
-    } else if (cache_state_ == CacheState::History && !pending_history_.empty()) {
-        // First turn after history ctor, before pending is folded into messages_.
+    // If we have pending history (re-hydration), include it
+    if (cache_state_ == CacheState::History && !pending_history_.empty()) {
         messages.insert(messages.end(),
                         pending_history_.begin(),
                         pending_history_.end());
@@ -123,8 +114,9 @@ void ChatSession::trim_cache(int n) {
     if (kv_cache_.empty() || n <= 0) return;
 
     // Trim n positions from the end of each trimmable cache layer.
-    // Available for advanced use cases; not used by the default multi-turn
-    // path (which allocates a fresh cache each turn).
+    // This is available for advanced use cases (e.g., undoing a
+    // generation and re-prompting). It is NOT called automatically
+    // between turns -- the KV cache accumulates across turns.
     for (auto& cache : kv_cache_) {
         if (cache.is_trimmable()) {
             cache.trim(n);
@@ -151,25 +143,22 @@ void ChatSession::generate_impl(
 
     // Perform generation with model lock
     model_->perform([&](ModelContext& ctx) {
-        // Correctness-first multi-turn: always prefill the full templated
-        // history into a FRESH KV cache. Reusing a non-empty cache while
-        // re-templating (or templating only the new user turn with BOS/framing)
-        // double-prefills and corrupts decode on turn 2+.
-        //
-        // Trade-off: slower than true delta-prefill KV reuse, but matches the
-        // HTTP path (fresh cache + full messages) and is safe in eager mode.
-        // True delta-prefill can land later once prefix-token accounting is solid.
-        //
-        // Re-hydration: fold pending history into messages_ BEFORE generate so
-        // messages_ remains the source of truth for later turns (and on throw).
-        if (cache_state_ == CacheState::History && !pending_history_.empty()) {
-            messages_.insert(messages_.end(),
-                             pending_history_.begin(),
-                             pending_history_.end());
+        // Initialize or restore the KV cache
+        switch (cache_state_) {
+        case CacheState::Empty:
+            kv_cache_ = ctx.new_cache_fn(generate_params_);
+            cache_state_ = CacheState::KVCache;
+            break;
+
+        case CacheState::History:
+            kv_cache_ = ctx.new_cache_fn(generate_params_);
+            cache_state_ = CacheState::KVCache;
             pending_history_.clear();
+            break;
+
+        case CacheState::KVCache:
+            break;
         }
-        kv_cache_ = ctx.new_cache_fn(generate_params_);
-        cache_state_ = CacheState::KVCache;
 
         // Convert ChatMessages to raw Messages for the chat template
         DefaultMessageGenerator msg_gen;
@@ -200,9 +189,9 @@ void ChatSession::generate_impl(
         // and all the optimizations from the shared generate path.
         LMInput lm_input(token_array);
 
-        // External-cache + params constructor: pass the fresh cache we just
-        // allocated (MTP may still be requested via generate_params_, but
-        // multi-turn correctness no longer depends on residual KV reuse).
+        // Use the external-cache + params constructor so the session keeps its
+        // persistent multi-turn KV cache AND enables MTP speculative decoding
+        // when generate_params_.use_mtp is set and the model has an MTP head.
         TokenIterator iter(
             ctx, lm_input, std::move(kv_cache_), generate_params_);
 
@@ -254,10 +243,10 @@ void ChatSession::generate_impl(
         messages_.push_back(chat::ChatMessage::user(prompt));
         messages_.push_back(chat::ChatMessage::assistant(assistant_response));
 
-        // Release iterator-owned cache and drop it. Next turn allocates a
-        // fresh cache and re-prefills full history (messages_ is source of truth).
+        // Reclaim the KV cache from the iterator for multi-turn reuse.
+        // The KV cache includes all prompt + generated tokens, so the
+        // next turn can process on top of the existing cache.
         kv_cache_ = iter.take_cache();
-        kv_cache_.clear();
 
         // Invoke completion callback with stats
         if (on_complete) {

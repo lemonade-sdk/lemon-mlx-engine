@@ -1,0 +1,2 @@
+915da7f5edd6be0ea519b5f27464522cc8dccfc0
+main_equiv_binary=build/server-main-equiv

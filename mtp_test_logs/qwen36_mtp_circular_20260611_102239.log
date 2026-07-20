@@ -1,0 +1,47 @@
+=== Qwen3.6 MTP Circular Inference Test ===
+Model: unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit
+Start time: Thu Jun 11 10:22:39 AM PDT 2026
+Config: n_draft=4 max_tokens=256 temp=0.7 loops=3
+=======================================
+
+
+=== LOOP 1 of 3 ===
+
+[1/3] Prompt: What is 2+2? Reply with just the number.
+[1/3] Prompt: Name the 3 primary colors. Be brief.
+[1/3] Prompt: Write a haiku about coding.
+[1/3] Prompt: What is the capital of France? One word answer.
+[1/3] Prompt: Explain what MTP means in one sentence.
+[1/3] Prompt: Count from 1 to 10, separated by commas.
+[1/3] Prompt: What are the first 5 prime numbers?
+[1/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[1/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[1/3] Prompt: Describe the color blue in one sentence.
+
+=== LOOP 2 of 3 ===
+
+[2/3] Prompt: What is 2+2? Reply with just the number.
+[2/3] Prompt: Name the 3 primary colors. Be brief.
+[2/3] Prompt: Write a haiku about coding.
+[2/3] Prompt: What is the capital of France? One word answer.
+[2/3] Prompt: Explain what MTP means in one sentence.
+[2/3] Prompt: Count from 1 to 10, separated by commas.
+[2/3] Prompt: What are the first 5 prime numbers?
+[2/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[2/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[2/3] Prompt: Describe the color blue in one sentence.
+
+=== LOOP 3 of 3 ===
+
+[3/3] Prompt: What is 2+2? Reply with just the number.
+[3/3] Prompt: Name the 3 primary colors. Be brief.
+[3/3] Prompt: Write a haiku about coding.
+[3/3] Prompt: What is the capital of France? One word answer.
+[3/3] Prompt: Explain what MTP means in one sentence.
+[3/3] Prompt: Count from 1 to 10, separated by commas.
+[3/3] Prompt: What are the first 5 prime numbers?
+[3/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[3/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[3/3] Prompt: Describe the color blue in one sentence.
+Loading model: unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit
+Error: Missing shard file: /home/antmi/.cache/huggingface/hub/models--unsloth--Qwen3.6-35B-A3B-UD-MLX-4bit/snapshots/6700c3e5bdeb050a379c8d2a4133f43f3647f20f/model-00001-of-00005.safetensors

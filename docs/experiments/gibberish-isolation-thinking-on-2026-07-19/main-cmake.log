@@ -1,0 +1,53 @@
+-- The CXX compiler identification is GNU 15.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The C compiler identification is GNU 15.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Building MLX for x86_64 processor on Linux
+-- Setting CMAKE_HIP_ARCHITECTURES to: gfx1150
+-- Found HIP compiler: /home/antmi/miniforge3/bin/hipcc
+-- Accelerate not found, using default backend.
+-- Looking for sgemm_
+-- Looking for sgemm_ - found
+-- Found BLAS: /home/antmi/miniforge3/lib/libopenblas.so
+-- Looking for cheev_
+-- Looking for cheev_ - found
+-- Found LAPACK: /home/antmi/miniforge3/lib/libopenblas.so;/home/antmi/miniforge3/lib/libopenblas.so
+-- Lapack lib /home/antmi/miniforge3/lib/libopenblas.so/home/antmi/miniforge3/lib/libopenblas.so
+-- Lapack include /home/antmi/miniforge3/include
+-- Blas lib /home/antmi/miniforge3/lib/libopenblas.so
+-- Blas include /home/antmi/miniforge3/include
+-- Downloading json
+-- Using the multi-header code from /home/antmi/lemon-mlx-engine-main/build/_deps/json-src/include/
+-- Downloading gguflib
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- ROCm backend using HIP architectures: gfx1150
+-- ROCm WMMA support: ON
+-- HIP include flags: -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src;-I/home/antmi/miniforge3/include;-I/usr/include/c++/15;-I/usr/include/x86_64-linux-gnu/c++/15;-I/usr/include/c++/15/backward;-I/usr/include/x86_64-linux-gnu;-I/usr/include;-I/home/antmi/miniforge3/include;-I/usr/include/;-I/usr/include;-I/usr/include;-I/usr/include;-I/usr/include/hiprand;-I/usr/include;-I/usr/include
+-- MLX ROCm: RDNA-only — MLX_HOST_WARP_SIZE=32
+-- ROCm libraries: rocblas=/usr/lib/x86_64-linux-gnu/librocblas.so.5.1, hiprand=/usr/lib/x86_64-linux-gnu/libhiprand.so.1.1, amdhip64=/home/antmi/miniforge3/lib/libamdhip64.so, hiprtc=/home/antmi/miniforge3/lib/libhiprtc.so, hipblaslt=/usr/lib/x86_64-linux-gnu/libhipblaslt.so
+-- {fmt} version: 12.1.0
+-- Build type: Release
+CMake Deprecation Warning at build/_deps/doctest-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- Found CURL: /home/antmi/miniforge3/lib/libcurl.so (found version "8.20.0")
+-- clang-tidy not found
+-- Configuring done (11.9s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/antmi/lemon-mlx-engine-main/build

@@ -1,0 +1,378 @@
+[  6%] Generating compiled_preamble.cpp
+[  6%] Building C object _deps/mlx-build/mlx/io/CMakeFiles/gguflib.dir/__/__/__/gguflib-src/gguflib.c.o
+[  6%] Building C object _deps/mlx-build/mlx/io/CMakeFiles/gguflib.dir/__/__/__/gguflib-src/fp16.c.o
+[  6%] Compiling HIP source /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/flash_attention_bwd_wmma.hip
+[  6%] Building fastokens C FFI (cargo)
+[  6%] Building CXX object _deps/mlx-build/mlx/CMakeFiles/mlx_version.dir/version.cpp.o
+[  6%] Compiling HIP source /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arange.hip
+[  6%] Compiling HIP source /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/event.hip
+[  6%] Built target mlx_version
+[  7%] Compiling HIP source /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip
+clang++clang++: : clang++: warning: warning: argument unused during compilation: '-parallel-jobs=12' [-Wunused-command-line-argument]argument unused during compilation: '-parallel-jobs=12' [-Wunused-command-line-argument]
+warning: 
+argument unused during compilation: '-parallel-jobs=12' [-Wunused-command-line-argument]
+[  7%] Compiling HIP source /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary.hip
+clang++: warning: argument unused during compilation: '-parallel-jobs=12' [-Wunused-command-line-argument]
+clang++: warning: argument unused during compilation: '-parallel-jobs=12' [-Wunused-command-line-argument]
+   Compiling proc-macro2 v1.0.106
+[  7%] Built target cpu_compiled_preamble
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling libc v0.2.186
+[  7%] Linking C static library libgguflib.a
+[  7%] Built target gguflib
+[  7%] Compiling HIP source /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary_two.hip
+clang++: warning: argument unused during compilation: '-parallel-jobs=12' [-Wunused-command-line-argument]
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arange.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/device.h:28:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   28 |   bool operator==(const Device&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arange.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:18:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   18 |   bool operator==(const Stream&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/binary.h:6:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/device.h:28:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   28 |   bool operator==(const Device&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/binary.h:6:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:18:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   18 |   bool operator==(const Stream&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arange.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:7:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/utils.h:7:
+In file included from /home/antmi/miniforge3/include/hip/hip_runtime.h:62:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_runtime.h:115:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_atomic.h:26:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_device_functions.h:342:
+/home/antmi/miniforge3/include/hip/amd_detail/amd_warp_functions.h:87:33: error: use of undeclared identifier '__AMDGCN_WAVEFRONT_SIZE'
+   87 | static constexpr int warpSize = __AMDGCN_WAVEFRONT_SIZE;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/event.hip:4:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/device.h:28:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   28 |   bool operator==(const Device&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/event.hip:4:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:18:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   18 |   bool operator==(const Stream&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary.hip:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:7:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/utils.h:7:
+In file included from /home/antmi/miniforge3/include/hip/hip_runtime.h:62:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_runtime.h:115:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_atomic.h:26:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_device_functions.h:342:
+/home/antmi/miniforge3/include/hip/amd_detail/amd_warp_functions.h:87:33: error: use of undeclared identifier '__AMDGCN_WAVEFRONT_SIZE'
+   87 | static constexpr int warpSize = __AMDGCN_WAVEFRONT_SIZE;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/utils.h:9:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/device.h:28:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   28 |   bool operator==(const Device&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/utils.h:9:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:18:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   18 |   bool operator==(const Stream&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/flash_attention_bwd_wmma.hip:11:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/gpu/copy.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/copy.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/utils.h:9:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/device.h:28:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   28 |   bool operator==(const Device&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/flash_attention_bwd_wmma.hip:11:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/gpu/copy.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/copy.h:5:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/utils.h:9:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:18:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   18 |   bool operator==(const Stream&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary_two.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/binary.h:6:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/device.h:28:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   28 |   bool operator==(const Device&) const = default;
+      |                                          ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary_two.hip:3:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/common/binary.h:6:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/array.h:13:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/event.h:8:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/stream.h:18:42: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   18 |   bool operator==(const Stream&) const = default;
+      |                                          ^
+   Compiling syn v2.0.119
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/event.hip:4:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:7:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/utils.h:7:
+In file included from /home/antmi/miniforge3/include/hip/hip_runtime.h:62:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_runtime.h:115:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_atomic.h:26:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_device_functions.h:342:
+/home/antmi/miniforge3/include/hip/amd_detail/amd_warp_functions.h:87:33: error: use of undeclared identifier '__AMDGCN_WAVEFRONT_SIZE'
+   87 | static constexpr int warpSize = __AMDGCN_WAVEFRONT_SIZE;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:4:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:7:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/utils.h:7:
+In file included from /home/antmi/miniforge3/include/hip/hip_runtime.h:62:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_runtime.h:115:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_atomic.h:26:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_device_functions.h:342:
+/home/antmi/miniforge3/include/hip/amd_detail/amd_warp_functions.h:87:33: error: use of undeclared identifier '__AMDGCN_WAVEFRONT_SIZE'
+   87 | static constexpr int warpSize = __AMDGCN_WAVEFRONT_SIZE;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/flash_attention_bwd_wmma.hip:12:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:7:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/utils.h:7:
+In file included from /home/antmi/miniforge3/include/hip/hip_runtime.h:62:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_runtime.h:115:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_atomic.h:26:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_device_functions.h:342:
+/home/antmi/miniforge3/include/hip/amd_detail/amd_warp_functions.h:87:33: error: use of undeclared identifier '__AMDGCN_WAVEFRONT_SIZE'
+   87 | static constexpr int warpSize = __AMDGCN_WAVEFRONT_SIZE;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary_two.hip:4:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:7:
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/utils.h:7:
+In file included from /home/antmi/miniforge3/include/hip/hip_runtime.h:62:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_runtime.h:115:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_hip_atomic.h:26:
+In file included from /home/antmi/miniforge3/include/hip/amd_detail/amd_device_functions.h:342:
+/home/antmi/miniforge3/include/hip/amd_detail/amd_warp_functions.h:87:33: error: use of undeclared identifier '__AMDGCN_WAVEFRONT_SIZE'
+   87 | static constexpr int warpSize = __AMDGCN_WAVEFRONT_SIZE;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~
+   Compiling stable_deref_trait v1.2.1
+   Compiling crossbeam-utils v0.8.22
+   Compiling jobserver v0.1.35
+   Compiling crossbeam-epoch v0.9.20
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling cc v1.2.67
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary.hip:5:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary_two.hip:4:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/flash_attention_bwd_wmma.hip:12:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arange.hip:3:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/event.hip:4:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:4:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+7 warnings and 1 error generated when compiling for gfx1150.
+failed to execute:/opt/rocm/core-7.13/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  -c -x hip /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/flash_attention_bwd_wmma.hip -o "/home/antmi/lemon-mlx-engine-main/build/_deps/mlx-build/mlx/backend/rocm/hip_objs/flash_attention_bwd_wmma.o" -fPIC -DMLX_USE_ROCM -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src -I/home/antmi/miniforge3/include -I/usr/include/c++/15 -I/usr/include/x86_64-linux-gnu/c++/15 -I/usr/include/c++/15/backward -I/usr/include/x86_64-linux-gnu -I/usr/include -I/home/antmi/miniforge3/include -I/usr/include/ -I/usr/include -I/usr/include -I/usr/include -I/usr/include/hiprand -I/usr/include -I/usr/include -std=c++17 -parallel-jobs=12
+gmake[3]: *** [_deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/build.make:167: _deps/mlx-build/mlx/backend/rocm/hip_objs/flash_attention_bwd_wmma.o] Error 1
+gmake[3]: *** Waiting for unfinished jobs....
+   Compiling synstructure v0.13.2
+   Compiling displaydoc v0.2.6
+   Compiling zerofrom-derive v0.1.7
+7 warnings and 1 error generated when compiling for gfx1150.
+failed to execute:/opt/rocm/core-7.13/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  -c -x hip /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary_two.hip -o "/home/antmi/lemon-mlx-engine-main/build/_deps/mlx-build/mlx/backend/rocm/hip_objs/binary_two.o" -fPIC -DMLX_USE_ROCM -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src -I/home/antmi/miniforge3/include -I/usr/include/c++/15 -I/usr/include/x86_64-linux-gnu/c++/15 -I/usr/include/c++/15/backward -I/usr/include/x86_64-linux-gnu -I/usr/include -I/home/antmi/miniforge3/include -I/usr/include/ -I/usr/include -I/usr/include -I/usr/include -I/usr/include/hiprand -I/usr/include -I/usr/include -std=c++17 -parallel-jobs=12
+gmake[3]: *** [_deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/build.make:127: _deps/mlx-build/mlx/backend/rocm/hip_objs/binary_two.o] Error 1
+   Compiling yoke-derive v0.8.2
+7 warnings and 1 error generated when compiling for gfx1150.
+   Compiling zerovec-derive v0.11.3
+failed to execute:/opt/rocm/core-7.13/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  -c -x hip /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/event.hip -o "/home/antmi/lemon-mlx-engine-main/build/_deps/mlx-build/mlx/backend/rocm/hip_objs/event.o" -fPIC -DMLX_USE_ROCM -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src -I/home/antmi/miniforge3/include -I/usr/include/c++/15 -I/usr/include/x86_64-linux-gnu/c++/15 -I/usr/include/c++/15/backward -I/usr/include/x86_64-linux-gnu -I/usr/include -I/home/antmi/miniforge3/include -I/usr/include/ -I/usr/include -I/usr/include -I/usr/include -I/usr/include/hiprand -I/usr/include -I/usr/include -std=c++17 -parallel-jobs=12
+gmake[3]: *** [_deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/build.make:159: _deps/mlx-build/mlx/backend/rocm/hip_objs/event.o] Error 1
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:451:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  451 |           size_t nn = 0; hipGraphGetNodes(child, nullptr, &nn);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:236:13: note: in instantiation of function template specialization 'mlx::core::rocm::CommandEncoder::launch_kernel<(lambda at /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:236:27)>' requested here
+  236 |     encoder.launch_kernel([&](hipStream_t stream) {
+      |             ^
+In file included from /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip:4:
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:454:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  454 |             hipGraphDestroy(child);
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:457:11: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  457 |           hipGraphDestroy(child);
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:458:27: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  458 |         } else if (child) hipGraphDestroy(child);
+      |                           ^~~~~~~~~~~~~~~~~~~~~~
+/home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/device.h:459:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  459 |         if (child) hipGraphDestroy(child);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~
+   Compiling crossbeam-deque v0.8.7
+7 warnings and 1 error generated when compiling for gfx1150.
+   Compiling serde_core v1.0.228
+failed to execute:/opt/rocm/core-7.13/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  -c -x hip /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arange.hip -o "/home/antmi/lemon-mlx-engine-main/build/_deps/mlx-build/mlx/backend/rocm/hip_objs/arange.o" -fPIC -DMLX_USE_ROCM -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src -I/home/antmi/miniforge3/include -I/usr/include/c++/15 -I/usr/include/x86_64-linux-gnu/c++/15 -I/usr/include/c++/15/backward -I/usr/include/x86_64-linux-gnu -I/usr/include -I/home/antmi/miniforge3/include -I/usr/include/ -I/usr/include -I/usr/include -I/usr/include -I/usr/include/hiprand -I/usr/include -I/usr/include -std=c++17 -parallel-jobs=12
+gmake[3]: *** [_deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/build.make:115: _deps/mlx-build/mlx/backend/rocm/hip_objs/arange.o] Error 1
+   Compiling memchr v2.8.3
+   Compiling zerofrom v0.1.8
+   Compiling pkg-config v0.3.33
+   Compiling yoke v0.8.3
+   Compiling tinystr v0.8.3
+12 warnings and 1 error generated when compiling for gfx1150.
+failed to execute:/opt/rocm/core-7.13/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  -c -x hip /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/arg_reduce.hip -o "/home/antmi/lemon-mlx-engine-main/build/_deps/mlx-build/mlx/backend/rocm/hip_objs/arg_reduce.o" -fPIC -DMLX_USE_ROCM -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src -I/home/antmi/miniforge3/include -I/usr/include/c++/15 -I/usr/include/x86_64-linux-gnu/c++/15 -I/usr/include/c++/15/backward -I/usr/include/x86_64-linux-gnu -I/usr/include -I/home/antmi/miniforge3/include -I/usr/include/ -I/usr/include -I/usr/include -I/usr/include -I/usr/include/hiprand -I/usr/include -I/usr/include -std=c++17 -parallel-jobs=12
+gmake[3]: *** [_deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/build.make:119: _deps/mlx-build/mlx/backend/rocm/hip_objs/arg_reduce.o] Error 1
+   Compiling zmij v1.0.23
+   Compiling icu_normalizer_data v2.2.0
+   Compiling writeable v0.6.3
+   Compiling litemap v0.8.2
+   Compiling rayon-core v1.13.0
+   Compiling zerovec v0.11.6
+   Compiling aho-corasick v1.1.4
+   Compiling icu_locale_core v2.2.0
+   Compiling pcre2-sys v0.2.10
+   Compiling potential_utf v0.1.5
+   Compiling zerotrie v0.2.4
+   Compiling serde v1.0.228
+   Compiling utf8_iter v1.0.4
+   Compiling thiserror v2.0.18
+   Compiling regex-syntax v0.8.11
+   Compiling serde_json v1.0.150
+   Compiling bit-vec v0.8.0
+   Compiling heck v0.5.0
+   Compiling strum_macros v0.27.2
+   Compiling bit-set v0.8.0
+   Compiling icu_provider v2.2.0
+   Compiling icu_collections v2.2.0
+7 warnings and 1 error generated when compiling for gfx1150.
+failed to execute:/opt/rocm/core-7.13/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  -c -x hip /home/antmi/lemon-mlx-engine/build/_deps/mlx-src/mlx/backend/rocm/binary.hip -o "/home/antmi/lemon-mlx-engine-main/build/_deps/mlx-build/mlx/backend/rocm/hip_objs/binary.o" -fPIC -DMLX_USE_ROCM -I/home/antmi/lemon-mlx-engine/build/_deps/mlx-src -I/home/antmi/miniforge3/include -I/usr/include/c++/15 -I/usr/include/x86_64-linux-gnu/c++/15 -I/usr/include/c++/15/backward -I/usr/include/x86_64-linux-gnu -I/usr/include -I/home/antmi/miniforge3/include -I/usr/include/ -I/usr/include -I/usr/include -I/usr/include -I/usr/include/hiprand -I/usr/include -I/usr/include -std=c++17 -parallel-jobs=12
+gmake[3]: *** [_deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/build.make:123: _deps/mlx-build/mlx/backend/rocm/hip_objs/binary.o] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:2315: _deps/mlx-build/mlx/backend/rocm/CMakeFiles/mlx_rocm_kernels_lib.dir/all] Error 2
+gmake[2]: *** Waiting for unfinished jobs....
+   Compiling regex-automata v0.4.16
+   Compiling serde_derive v1.0.228
+   Compiling thiserror-impl v2.0.18
+   Compiling write16 v1.0.0
+   Compiling smallvec v1.15.2
+   Compiling either v1.16.0
+   Compiling utf16_iter v1.0.5
+   Compiling log v0.4.33
+   Compiling itoa v1.0.18
+   Compiling icu_normalizer v2.2.0
+   Compiling rayon v1.12.0
+   Compiling strum v0.27.2
+   Compiling daachorse v1.0.1
+   Compiling fancy-regex v0.17.0
+   Compiling pcre2 v0.2.11
+   Compiling fastokens v0.2.1 (https://github.com/crusoecloud/fastokens?rev=326cb5afc5a033d2f7885832d12fd43b9ea50cdd#326cb5af)
+   Compiling fastokens_c v0.1.0 (/home/antmi/lemon-mlx-engine-main/third_party/fastokens_cpp/rust)
+    Finished `release` profile [optimized] target(s) in 22.98s
+[  7%] Built target fastokens_c_build
+gmake[1]: *** [CMakeFiles/Makefile2:1230: CMakeFiles/server.dir/rule] Error 2
+gmake: *** [Makefile:397: server] Error 2

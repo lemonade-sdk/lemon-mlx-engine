@@ -1,0 +1,33 @@
+[2026-07-19T14:08:08-07:00] === THINKING-ON LADDER START branch=feat ===
+[2026-07-19T14:08:08-07:00] START tag=T0 branch=feat bin=/home/antmi/lemon-mlx-engine/build/server env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=
+[2026-07-19T14:08:08-07:00] pid=1208925
+[2026-07-19T14:08:14-07:00] health ok attempt=3
+[2026-07-19T14:08:14-07:00] REQUEST T0-short max_tokens=1024 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T0-short.json
+[2026-07-19T14:08:51-07:00] RESPONSE T0-short http=200 size=4009
+OK finish=stop chars=3543
+[2026-07-19T14:08:51-07:00] REQUEST T0-long max_tokens=1600 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T0-long.json
+[2026-07-19T14:09:50-07:00] RESPONSE T0-long http=200 size=4653
+OK finish=length chars=4003
+[2026-07-19T14:09:50-07:00] Stopping server pid=1208925
+[2026-07-19T14:09:51-07:00] START tag=T2 branch=feat bin=/home/antmi/lemon-mlx-engine/build/server env=(defaults) args=
+[2026-07-19T14:09:51-07:00] pid=1221233
+[2026-07-19T14:09:57-07:00] health ok attempt=3
+[2026-07-19T14:09:57-07:00] REQUEST T2-short max_tokens=1024 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T2-short.json
+[2026-07-19T14:10:45-07:00] RESPONSE T2-short http=200 size=3883
+OK finish=stop chars=3403
+[2026-07-19T14:10:45-07:00] REQUEST T2-long max_tokens=1600 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T2-long.json
+[2026-07-19T14:11:14-07:00] RESPONSE T2-long http=200 size=2113
+OK finish=stop chars=1253
+[2026-07-19T14:11:14-07:00] Stopping server pid=1221233
+[2026-07-19T14:11:15-07:00] START tag=T4 branch=feat bin=/home/antmi/lemon-mlx-engine/build/server env=MLX_DECODE_GRAPH_PURE_OFF=1 MLX_SYNC_DECODE=1 args=--use-mtp
+[2026-07-19T14:11:15-07:00] pid=1230584
+[2026-07-19T14:11:51-07:00] health ok attempt=13
+[2026-07-19T14:11:51-07:00] REQUEST T4-short-mtp max_tokens=1024 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T4-short-mtp.json
+[2026-07-19T14:11:52-07:00] RESPONSE T4-short-mtp http=500 size=133
+OK finish=error chars=159
+[2026-07-19T14:11:52-07:00] REQUEST T4-long-mtp max_tokens=1600 -> /home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/raw/T4-long-mtp.json
+[2026-07-19T14:11:53-07:00] RESPONSE T4-long-mtp http=500 size=133
+OK finish=error chars=159
+rows 6
+[2026-07-19T14:11:53-07:00] === COMPLETE branch=feat results=/home/antmi/lemon-mlx-engine/docs/experiments/gibberish-isolation-thinking-on-2026-07-19/feat/RESULTS.md ===
+[2026-07-19T14:11:53-07:00] Stopping server pid=1230584

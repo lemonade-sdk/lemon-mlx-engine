@@ -1,0 +1,1537 @@
+=== Qwen3.6 MTP Circular Inference Test ===
+Model: unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit
+Start time: Thu Jun 11 10:25:10 AM PDT 2026
+Config: n_draft=4 max_tokens=256 temp=0.7 loops=3
+=======================================
+
+
+=== LOOP 1 of 3 ===
+
+[1/3] Prompt: What is 2+2? Reply with just the number.
+[1/3] Prompt: Name the 3 primary colors. Be brief.
+[1/3] Prompt: Write a haiku about coding.
+[1/3] Prompt: What is the capital of France? One word answer.
+[1/3] Prompt: Explain what MTP means in one sentence.
+[1/3] Prompt: Count from 1 to 10, separated by commas.
+[1/3] Prompt: What are the first 5 prime numbers?
+[1/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[1/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[1/3] Prompt: Describe the color blue in one sentence.
+
+=== LOOP 2 of 3 ===
+
+[2/3] Prompt: What is 2+2? Reply with just the number.
+[2/3] Prompt: Name the 3 primary colors. Be brief.
+[2/3] Prompt: Write a haiku about coding.
+[2/3] Prompt: What is the capital of France? One word answer.
+[2/3] Prompt: Explain what MTP means in one sentence.
+[2/3] Prompt: Count from 1 to 10, separated by commas.
+[2/3] Prompt: What are the first 5 prime numbers?
+[2/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[2/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[2/3] Prompt: Describe the color blue in one sentence.
+
+=== LOOP 3 of 3 ===
+
+[3/3] Prompt: What is 2+2? Reply with just the number.
+[3/3] Prompt: Name the 3 primary colors. Be brief.
+[3/3] Prompt: Write a haiku about coding.
+[3/3] Prompt: What is the capital of France? One word answer.
+[3/3] Prompt: Explain what MTP means in one sentence.
+[3/3] Prompt: Count from 1 to 10, separated by commas.
+[3/3] Prompt: What are the first 5 prime numbers?
+[3/3] Prompt: Write a Python function to add two numbers. Keep it short.
+[3/3] Prompt: What is the meaning of life? Be philosophical but brief.
+[3/3] Prompt: Describe the color blue in one sentence.
+Loading model: unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit
+Model loaded. Memory: active=19.2 GB, peak=19.3 GB, cache=30 MB
+MTP enabled (scaffolding): n_draft=4
+Type your message (or 'quit' to exit):
+
+> [hipBLASLt] first call
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: 4
+Prompt:     25 tokens, 45.3905 tokens/s, 0.550776s
+Generation: 2 tokens, 1.36254 tokens/s, 1.46784s
+
+
+> [hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Red, Yellow, Blue
+Prompt:     22 tokens, 526.814 tokens/s, 0.0417605s
+Generation: 6 tokens, 5.38804 tokens/s, 1.11358s
+
+
+> [hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Code flows like rivers,  
+Debugging brings clarity,  
+Solutions emerge.
+Prompt:     19 tokens, 1458.23 tokens/s, 0.0130295s
+Generation: 17 tokens, 9.05601 tokens/s, 1.87721s
+
+
+> [hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Paris
+Prompt:     23 tokens, 2191.72 tokens/s, 0.010494s
+Generation: 2 tokens, 2.27074 tokens/s, 0.880771s
+
+
+> [hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Mglz
+Prompt:     22 tokens, 1512.24 tokens/s, 0.0145479s
+Generation: 4 tokens, 4.05295 tokens/s, 0.986936s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: 1
+Prompt:     25 tokens, 1827.83 tokens/s, 0.0136774s
+Generation: 2 tokens, 2.34503 tokens/s, 0.852868s
+
+
+> [hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: 2
+Prompt:     21 tokens, 1365.07 tokens/s, 0.0153839s
+Generation: 2 tokens, 2.45426 tokens/s, 0.814909s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: ```
+Prompt:     25 tokens, 1768.33 tokens/s, 0.0141376s
+Generation: 2 tokens, 2.33699 tokens/s, 0.855801s
+
+
+> [hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: D
+Prompt:     24 tokens, 1507.62 tokens/s, 0.0159192s
+Generation: 2 tokens, 2.39043 tokens/s, 0.836671s
+
+
+> [hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Bl
+Prompt:     20 tokens, 1073.85 tokens/s, 0.0186247s
+Generation: 2 tokens, 2.51644 tokens/s, 0.794773s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: 4
+Prompt:     25 tokens, 1417.13 tokens/s, 0.0176413s
+Generation: 2 tokens, 2.31852 tokens/s, 0.862619s
+
+
+> [hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Red, Yellow, Blue
+Prompt:     22 tokens, 1102.49 tokens/s, 0.0199549s
+Generation: 6 tokens, 5.30652 tokens/s, 1.13068s
+
+
+> [hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Code flows like rivers,  
+Debugging brings clarity,  
+Solutions emerge.
+Prompt:     19 tokens, 1091.21 tokens/s, 0.0174118s
+Generation: 17 tokens, 9.20188 tokens/s, 1.84745s
+
+
+> [hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Paris
+Prompt:     23 tokens, 1230.94 tokens/s, 0.018685s
+Generation: 2 tokens, 2.33632 tokens/s, 0.856046s
+
+
+> [hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Mglz
+Prompt:     22 tokens, 1161.28 tokens/s, 0.0189447s
+Generation: 4 tokens, 4.05596 tokens/s, 0.986203s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think></think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+<think>
+
+</think>
+
+
+Prompt:     25 tokens, 1312.03 tokens/s, 0.0190544s
+Generation: 100 tokens, 11.6718 tokens/s, 8.56763s
+
+
+> [hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think>
+Prompt:     21 tokens, 937.073 tokens/s, 0.0224102s
+Generation: 2 tokens, 2.28667 tokens/s, 0.874633s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: def add(a, b):  
+    return a + b
+Prompt:     25 tokens, 1223.46 tokens/s, 0.0204339s
+Generation: 13 tokens, 6.32588 tokens/s, 2.05505s
+
+
+> [hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: To
+Prompt:     24 tokens, 1105.53 tokens/s, 0.0217091s
+Generation: 2 tokens, 2.22025 tokens/s, 0.900799s
+
+
+> [hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Bl
+Prompt:     20 tokens, 904.573 tokens/s, 0.0221099s
+Generation: 2 tokens, 2.35887 tokens/s, 0.847864s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think>
+Prompt:     25 tokens, 1178.8 tokens/s, 0.021208s
+Generation: 2 tokens, 2.15804 tokens/s, 0.926767s
+
+
+> [hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Red
+Prompt:     22 tokens, 968.797 tokens/s, 0.0227086s
+Generation: 2 tokens, 1.81041 tokens/s, 1.10472s
+
+
+> [hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=19 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Code flows like rivers,  
+Debugging brings clarity,  
+Solutions emerge.
+Prompt:     19 tokens, 895.94 tokens/s, 0.0212068s
+Generation: 17 tokens, 6.7832 tokens/s, 2.50619s
+
+
+> [hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=23 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Paris
+Prompt:     23 tokens, 1049.92 tokens/s, 0.0219065s
+Generation: 2 tokens, 2.12723 tokens/s, 0.940188s
+
+
+> [hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=22 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: Lorem
+Prompt:     22 tokens, 951.333 tokens/s, 0.0231254s
+Generation: 2 tokens, 2.17165 tokens/s, 0.92096s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think>
+Prompt:     25 tokens, 981.211 tokens/s, 0.0254787s
+Generation: 2 tokens, 2.11381 tokens/s, 0.94616s
+
+
+> [hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=21 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think>
+Prompt:     21 tokens, 907.645 tokens/s, 0.0231368s
+Generation: 2 tokens, 2.20167 tokens/s, 0.908399s
+
+
+> [hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=25 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: def add
+Prompt:     25 tokens, 1000.03 tokens/s, 0.0249993s
+Generation: 3 tokens, 2.80266 tokens/s, 1.07041s
+
+
+> [hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=24 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think>
+Prompt:     24 tokens, 955.917 tokens/s, 0.0251068s
+Generation: 2 tokens, 2.14967 tokens/s, 0.930374s
+
+
+> [hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+[hipBLASLt] M=20 N=256 K=2048 ta=0 tb=1 lda=2048 ldb=2048 ldc=256
+
+Assistant: <think>
+Prompt:     20 tokens, 804.918 tokens/s, 0.0248472s
+Generation: 2 tokens, 2.26808 tokens/s, 0.881803s
+
+
+> 
