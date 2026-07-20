@@ -433,10 +433,7 @@ struct Server::Impl {
             return;
         }
 
-        // v1: multi-turn tool history not supported (MASTER freeze).
-        // OWUI Memory / native tools often inject role=tool turns; return a clear
-        // 400 (not 200 soup) so operators can disable Memory/tools rather than
-        // blame decode. Full multi-turn tools product is deferred.
+        // v1: role=tool multi-turn not supported.
         for (const auto& m : chat_req.messages) {
             if (m.role == "tool") {
                 send_error(res, 400,

@@ -54,9 +54,7 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
     std::cerr << "[ModelManager] Loading model: " << model_id << "\n";
 
 #if defined(MLX_BUILD_ROCM)
-    // gfx115x dual large-model load: exclusive OK; second process often SIGSEGV
-    // in mlx ROCm copy_contiguous → hipLaunchKernel (NripeshN/mlx#13 investigation).
-    // Soft warn only — do not hard-fail (discrete GPUs / multi-model servers differ).
+    // Soft warn if GPU already under pressure (dual large-model load risk).
     {
         size_t free_b = 0, total_b = 0;
         if (hipMemGetInfo(&free_b, &total_b) == hipSuccess && total_b > 0) {
