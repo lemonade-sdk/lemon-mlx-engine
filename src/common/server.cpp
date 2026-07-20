@@ -6,6 +6,8 @@
 #include <mlx-lm/common/chat.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/kv_cache.h>
+#include <mlx-lm/common/thinking_budget.h>
+#include <mlx-lm/common/stop_sequences.h>
 #include <mlx-lm/common/tool_calling.h>
 #include <mlx-lm/common/types.h>
 #include <mlx-lm/common/wired_limit_guard.h>
@@ -212,15 +214,25 @@ ToolCallFormat resolve_tool_format(const ModelContext& ctx) {
 // Mutates shared template_extra_context under ModelContainer::perform mutex.
 // Caller MUST restore previous value after apply_chat_template_fn (RAII below)
 // so tools_auto does not sticky-disable thinking for later non-tools requests.
+//
 struct ThinkingContextGuard {
     nlohmann::json* ctx = nullptr;
     bool had_prev = false;
     bool prev_value = true;
+    bool thinking_on = true;  // resolved polarity for this request
 
     ThinkingContextGuard(ModelContext& model_ctx,
                          bool inject_tools,
                          const std::optional<bool>& request_enable_thinking) {
         if (!model_ctx.template_extra_context) {
+            // No template context — still resolve polarity for budget warnings.
+            if (request_enable_thinking.has_value()) {
+                thinking_on = *request_enable_thinking;
+            } else if (inject_tools) {
+                thinking_on = false;
+            } else {
+                thinking_on = true;
+            }
             return;
         }
         ctx = model_ctx.template_extra_context.get();
@@ -244,6 +256,7 @@ struct ThinkingContextGuard {
             thinking = true;
             reason = "process_default";
         }
+        thinking_on = thinking;
         (*ctx)["enable_thinking"] = thinking;
         std::cerr << "[server] effective_thinking=" << (thinking ? "on" : "off")
                   << " reason=" << reason << std::endl;
@@ -263,6 +276,19 @@ struct ThinkingContextGuard {
     ThinkingContextGuard(const ThinkingContextGuard&) = delete;
     ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
 };
+
+// Soft floor wrapper with logging (policy in thinking_budget.h).
+static void apply_thinking_budget_floor_logged(
+    GenerateParameters& params,
+    bool thinking_on)
+{
+    const int before = params.max_tokens.value_or(-1);
+    if (apply_thinking_budget_floor(params.max_tokens, thinking_on)) {
+        std::cerr << "[server] thinking_budget_floor: max_tokens "
+                  << before << " → " << kThinkingBudgetRecommend
+                  << " (thinking=on; CoT often exhausts lower budgets)\n";
+    }
+}
 
 } // namespace
 
@@ -408,10 +434,16 @@ struct Server::Impl {
         }
 
         // v1: multi-turn tool history not supported (MASTER freeze).
+        // OWUI Memory / native tools often inject role=tool turns; return a clear
+        // 400 (not 200 soup) so operators can disable Memory/tools rather than
+        // blame decode. Full multi-turn tools product is deferred.
         for (const auto& m : chat_req.messages) {
             if (m.role == "tool") {
                 send_error(res, 400,
-                    "role \"tool\" messages are not supported in this version");
+                    "role \"tool\" messages are not supported in this version. "
+                    "Disable OpenWebUI Memory/RAG and native function-tools "
+                    "(tool follow-up turns require multi-turn tools support). "
+                    "Plain chat: send only user/assistant messages.");
                 return;
             }
         }
@@ -512,9 +544,11 @@ struct Server::Impl {
                 WiredLimitGuard wired_guard;
 
                 std::vector<int> tokens;
+                bool thinking_on = true;
                 {
                     ThinkingContextGuard thinking_guard(
                         ctx, inject_tools, chat_req.enable_thinking);
+                    thinking_on = thinking_guard.thinking_on;
                     auto raw_messages = to_raw_messages(chat_req.messages);
                     const nlohmann::json* tools_ptr =
                         (inject_tools && chat_req.tools.has_value())
@@ -527,6 +561,10 @@ struct Server::Impl {
                         tokens = ctx.encode_fn(chat_req.messages.back().content);
                     }
                 } // restore process thinking default after template apply
+                // params is local to this request; floor after template so
+                // tools_auto thinking-off is not over-budgeted.
+                GenerateParameters gen_params = params;
+                apply_thinking_budget_floor_logged(gen_params, thinking_on);
 
                 if (tokens.empty()) {
                     throw std::runtime_error("tokenization produced no tokens");
@@ -542,12 +580,17 @@ struct Server::Impl {
 
                 std::string output_text;
                 int generated_count = 0;
+                bool stopped_on_string = false;
 
                 auto info = generate_text(
-                    ctx, lm_input, params, eos_set,
+                    ctx, lm_input, gen_params, eos_set,
                     [&](const std::string& text, int /*token*/) {
                         output_text += text;
                         generated_count++;
+                        if (apply_stop_sequences(output_text, chat_req.stop)) {
+                            stopped_on_string = true;
+                            return GenerateDisposition::stop;
+                        }
                         return GenerateDisposition::more;
                     });
 
@@ -592,13 +635,19 @@ struct Server::Impl {
                         choice.finish_reason = "tool_calls";
                     } else {
                         choice.message.content = output_text;
-                        choice.finish_reason = (params.max_tokens.has_value() &&
-                            generated_count >= *params.max_tokens) ? "length" : "stop";
+                        choice.finish_reason =
+                            (!stopped_on_string && gen_params.max_tokens.has_value() &&
+                             generated_count >= *gen_params.max_tokens)
+                                ? "length"
+                                : "stop";
                     }
                 } else {
                     choice.message.content = output_text;
-                    choice.finish_reason = (params.max_tokens.has_value() &&
-                        generated_count >= *params.max_tokens) ? "length" : "stop";
+                    choice.finish_reason =
+                        (!stopped_on_string && gen_params.max_tokens.has_value() &&
+                         generated_count >= *gen_params.max_tokens)
+                            ? "length"
+                            : "stop";
                 }
                 response.choices.push_back(std::move(choice));
 
@@ -638,9 +687,11 @@ struct Server::Impl {
                         WiredLimitGuard wired_guard;
 
                         std::vector<int> tokens;
+                        bool thinking_on = true;
                         {
                             ThinkingContextGuard thinking_guard(
                                 ctx, inject_tools, chat_req.enable_thinking);
+                            thinking_on = thinking_guard.thinking_on;
                             auto raw_messages = to_raw_messages(chat_req.messages);
                             const nlohmann::json* tools_ptr =
                                 (inject_tools && chat_req.tools.has_value())
@@ -655,6 +706,8 @@ struct Server::Impl {
                                     ctx.encode_fn(chat_req.messages.back().content);
                             }
                         } // restore process thinking default after template apply
+                        GenerateParameters gen_params = params;
+                        apply_thinking_budget_floor_logged(gen_params, thinking_on);
 
                         if (tokens.empty()) {
                             throw std::runtime_error("tokenization produced no tokens");
@@ -696,12 +749,14 @@ struct Server::Impl {
                                 resolve_tool_format(ctx), tools_opt);
                         }
                         int generated_count = 0;
+                        std::string stream_accum;
+                        bool stopped_on_string = false;
 
                         // Generate tokens and stream as SSE. Tier-1 tools:
                         // suppress tool markup in content; emit complete
                         // tool_calls after generation (not true arg streaming).
                         auto info = generate_text(
-                            ctx, lm_input, params, eos_set,
+                            ctx, lm_input, gen_params, eos_set,
                             [&](const std::string& text, int /*token*/) {
                                 generated_count++;
                                 std::string out_text = text;
@@ -711,6 +766,20 @@ struct Server::Impl {
                                         return GenerateDisposition::more;
                                     }
                                     out_text = *display;
+                                }
+
+                                // Honor request stop strings. Strip the match from
+                                // the tail of this chunk when possible; stop gen.
+                                const size_t before = stream_accum.size();
+                                stream_accum += out_text;
+                                if (apply_stop_sequences(stream_accum, chat_req.stop)) {
+                                    stopped_on_string = true;
+                                    if (stream_accum.size() > before) {
+                                        out_text = stream_accum.substr(before);
+                                    } else {
+                                        // Entire chunk was part of the stop tail.
+                                        return GenerateDisposition::stop;
+                                    }
                                 }
 
                                 openai::ChatCompletionChunk chunk;
@@ -725,6 +794,9 @@ struct Server::Impl {
 
                                 if (!send_sse(sink, nlohmann::json(chunk).dump())) {
                                     client_gone = true;
+                                    return GenerateDisposition::stop;
+                                }
+                                if (stopped_on_string) {
                                     return GenerateDisposition::stop;
                                 }
                                 return GenerateDisposition::more;
@@ -747,8 +819,8 @@ struct Server::Impl {
                         std::cerr << "[TPS] " << info.summary() << std::endl;
 
                         std::string finish = "stop";
-                        if (params.max_tokens.has_value() &&
-                            generated_count >= *params.max_tokens) {
+                        if (!stopped_on_string && gen_params.max_tokens.has_value() &&
+                            generated_count >= *gen_params.max_tokens) {
                             finish = "length";
                         }
 
@@ -862,12 +934,17 @@ struct Server::Impl {
 
                 std::string output_text;
                 int generated_count = 0;
+                bool stopped_on_string = false;
 
                 auto info = generate_text(
                     ctx, lm_input, params, eos_set,
                     [&](const std::string& text, int /*token*/) {
                         output_text += text;
                         generated_count++;
+                        if (apply_stop_sequences(output_text, comp_req.stop)) {
+                            stopped_on_string = true;
+                            return GenerateDisposition::stop;
+                        }
                         return GenerateDisposition::more;
                     });
 
@@ -881,8 +958,11 @@ struct Server::Impl {
                 openai::CompletionChoice choice;
                 choice.index = 0;
                 choice.text = output_text;
-                choice.finish_reason = (params.max_tokens.has_value() &&
-                    generated_count >= *params.max_tokens) ? "length" : "stop";
+                choice.finish_reason =
+                    (!stopped_on_string && params.max_tokens.has_value() &&
+                     generated_count >= *params.max_tokens)
+                        ? "length"
+                        : "stop";
                 response.choices.push_back(std::move(choice));
 
                 response.usage.prompt_tokens = info.prompt_token_count;
@@ -919,6 +999,8 @@ struct Server::Impl {
         }
         return eos_set;
     }
+
+    // apply_stop_sequences — see mlx-lm/common/stop_sequences.h
 
     // Returns false if the client disconnected (or write failed) so callers
     // can stop generation and release the model lock promptly.
