@@ -29,12 +29,13 @@ if(MLX_LM_BUILD_NPU)
     set(MLX_BUILD_NPU ON CACHE BOOL "Build NPU backend" FORCE)
 endif()
 
-# MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
+# MLX C++ (NripeshN/mlx ROCm support). Pin SHA for reproducible builds matching
+# local evidence (exclusive 35B OK; dual-load SEGV docs: NripeshN/mlx#13).
+# To track branch tip instead: GIT_TAG rocm-support (non-reproducible).
 FetchContent_Declare(
     mlx
-    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        rocm-support
+    GIT_TAG        0dadb703d77301af29405cf7e12627efb88a6d0f
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
@@ -267,6 +268,15 @@ if(MLX_LM_BUILD_EXAMPLES)
         src/common/model_manager.cpp
     )
     target_link_libraries(server PRIVATE mlx-lm-llm mlx-lm-common mlx-lm-core httplib::httplib)
+    if(MLX_BUILD_ROCM)
+        # Match chat: hipMemGetInfo dual-load warn in model_manager needs hip::host
+        # + AMD platform define (HIP headers error without exactly one platform).
+        find_package(hip QUIET)
+        target_compile_definitions(server PRIVATE MLX_BUILD_ROCM __HIP_PLATFORM_AMD__=1)
+        if(TARGET hip::host)
+            target_link_libraries(server PRIVATE hip::host)
+        endif()
+    endif()
 endif()
 
 if(MLX_LM_BUILD_TESTS)
