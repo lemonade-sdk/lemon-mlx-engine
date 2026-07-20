@@ -26,11 +26,16 @@ env:
   OPERATING_SYSTEMS: ${{ github.event.inputs.operating_systems || 'ubuntu,macos' }}
   ROCM_VERSION: '7.13'
   # Runner package arch only (apt package names). Do NOT put a semicolon list here.
+  # Name and role unchanged: single-token arch for amdrocm*-${ROCM_ARCH} packages.
   ROCM_ARCH: 'gfx1151'
-  # HIP fatbin targets for CMAKE_HIP_ARCHITECTURES (release binaries).
-  # gfx1150 = Radeon 890M / Strix Point APUs; gfx1151 = Strix Halo / CI runner.
-  # Keep in sync with CMakeLists.txt RDNA 3.5 entries when expanding further.
-  ROCM_HIP_ARCHITECTURES: 'gfx1150;gfx1151'
+  # HIP fatbin targets for -DCMAKE_HIP_ARCHITECTURES (release binaries only).
+  # Additive env (does not rename ROCM_ARCH). Full client RDNA set from
+  # CMakeLists.txt default: RDNA3 + RDNA3.5 + RDNA4. CDNA (gfx90x/gfx942) and
+  # RDNA1/2 omitted from releases (bundle size / pain) — still in local CMake default.
+  #   RDNA3:   gfx1100–gfx1103
+  #   RDNA3.5: gfx1150–gfx1152  (1150 = 890M / Strix Point; 1151 = CI runner)
+  #   RDNA4:   gfx1200–gfx1201
+  ROCM_HIP_ARCHITECTURES: 'gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201'
 
 jobs:
   prepare-matrix:

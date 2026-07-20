@@ -99,9 +99,13 @@ eGPU link. When mixing a discrete RDNA 4 GPU with an integrated APU, make sure
 `HSA_OVERRIDE_GFX_VERSION` is **unset** so kernels compile for each GPU's real
 architecture (`chat` clears it automatically).
 
-Ubuntu ROCm release builds fatbin **gfx1150** and **gfx1151** so official
-binaries work on both APU variants. A local rebuild for a single arch still
-works via `-DCMAKE_HIP_ARCHITECTURES=gfx1150` (or your GPU's arch).
+Ubuntu ROCm release builds fatbin **all RDNA3 + RDNA 3.5 + RDNA4**
+(`gfx1100`–`gfx1103`, `gfx1150`–`gfx1152`, `gfx1200`–`gfx1201`) so official
+binaries cover discrete RDNA3, Strix Point/Halo APUs (including **gfx1150**
+890M), and RDNA4. A local rebuild for a single arch still works via
+`-DCMAKE_HIP_ARCHITECTURES=gfx1150` (or your GPU's arch). CI package install
+still uses a single runner arch (`ROCM_ARCH`); that is separate from the HIP
+fatbin list.
 
 ## API Server
 
