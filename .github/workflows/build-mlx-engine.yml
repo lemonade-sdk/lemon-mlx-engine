@@ -371,8 +371,8 @@ jobs:
         retention-days: 30
 
   test-simple-math:
-    # Dual lanes (Clear Thought / operator): no-think (fast gate) AND thinking
-    # (analysis). Never mix thinking-on with max_tokens 5 (floor→4096 OOM).
+    # Dual lanes: no-think (fast) + thinking (CoT). Thinking uses max_tokens>=4096
+    # (floor raises lower explicit budgets → OOM if paired with max_tokens=5).
     name: test-simple-math-${{ matrix.os }}-${{ matrix.mode }}
     needs: [build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
     if: |
@@ -386,7 +386,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # --- no-think lane (fast arithmetic) ---
+          # --- no-think lane ---
           - os: ubuntu-rocm
             mode: no-think
             artifact: mlx-engine-ubuntu-rocm-x64
@@ -424,9 +424,7 @@ jobs:
             infer_max_tokens: 128
             infer_curl_max_time: 180
             probe_floor: false
-          # --- thinking lane (analysis; real CoT budget, product floor intact) ---
-          # Self-hosted ROCm first for full gen; GH-hosted CPU/mac also covered
-          # with longer timeouts so both modes remain visible in CI.
+          # --- thinking lane (max_tokens 4096; floor probe on) ---
           - os: ubuntu-rocm
             mode: thinking
             artifact: mlx-engine-ubuntu-rocm-x64
@@ -467,22 +465,7 @@ jobs:
             infer_curl_max_time: 600
             probe_floor: true
             timeout_minutes: 40
-          # MTP decode still deferred (Stream(cpu,0) / --use-mtp). Re-enable when
-          # engine MTP path is fixed; keep separate from thinking lanes.
-          # - os: ubuntu-rocm
-          #   mode: mtp-no-think
-          #   artifact: mlx-engine-ubuntu-rocm-x64
-          #   runs_on: '["self-hosted", "Linux", "X64", "gfx1151"]'
-          #   install_rocm: true
-          #   hip_device: 0
-          #   model: mlx-community/Qwen3.5-4B-MTP-4bit
-          #   use_mtp: true
-          #   no_think: true
-          #   enable_thinking: false
-          #   infer_max_tokens: 128
-          #   infer_curl_max_time: 300
-          #   probe_floor: false
-          #   timeout_minutes: 30
+          # MTP smoke deferred (engine path not ready); keep off thinking lanes.
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
@@ -591,9 +574,7 @@ jobs:
           MTP_FLAG="--use-mtp --n-draft-tokens 3"
         fi
 
-        # Dual lanes: no-think (matrix.no_think=true) vs thinking (false).
-        # Product thinking_budget floor stays; thinking lane must use max_tokens>=4096
-        # (never 5) so floor is not a surprise OOM.
+        # matrix.no_think=true → --no-think; thinking lane omits flag.
         NO_THINK_FLAG="--no-think"
         if [ "${{ matrix.no_think }}" = "false" ]; then
           NO_THINK_FLAG=""
@@ -674,7 +655,7 @@ jobs:
           exit 1
         fi
 
-        # Warm-up always no-think / short: load weights only (not the thinking experiment).
+        # Warm-up: short, thinking off (load only).
         echo "Sending warm-up request (enable_thinking=false, max_tokens=5)..."
         curl -s --max-time 120 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
@@ -687,10 +668,9 @@ jobs:
             \"stream\": false
           }" 2>/dev/null || echo "Warm-up request skipped (non-fatal)"
 
-        # Floor probe (thinking lane): log is written at request start before gen.
-        # Use short curl timeout so we do not wait out full 4096 CoT just to read the log.
+        # Floor probe: expect 64→4096 log (raise-low policy). Short curl timeout.
         if [ "$PROBE_FLOOR" = "true" ]; then
-          echo "=== Thinking budget floor probe (client max_tokens=64, expect floor log) ==="
+          echo "=== Floor probe (max_tokens=64, expect 64 → 4096 log) ==="
           curl -s --max-time 25 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
             -H "Content-Type: application/json" \
             -d "{

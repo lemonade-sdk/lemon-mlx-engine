@@ -218,7 +218,7 @@ struct ThinkingContextGuard {
                          bool inject_tools,
                          const std::optional<bool>& request_enable_thinking) {
         if (!model_ctx.template_extra_context) {
-            // No template context — still resolve polarity for budget warnings.
+            // No template context — still resolve thinking_on for the floor.
             if (request_enable_thinking.has_value()) {
                 thinking_on = *request_enable_thinking;
             } else if (inject_tools) {
@@ -270,7 +270,7 @@ struct ThinkingContextGuard {
     ThinkingContextGuard& operator=(const ThinkingContextGuard&) = delete;
 };
 
-// Thinking budget floor + log (see thinking_budget.h).
+// Floor max_tokens when thinking on (see thinking_budget.h).
 static void apply_thinking_budget_floor_logged(
     GenerateParameters& params,
     bool thinking_on)
@@ -279,7 +279,7 @@ static void apply_thinking_budget_floor_logged(
     if (apply_thinking_budget_floor(params.max_tokens, thinking_on)) {
         std::cerr << "[server] thinking_budget_floor: max_tokens "
                   << before << " → " << kThinkingBudgetRecommend
-                  << " (thinking=on; CoT often exhausts lower budgets)\n";
+                  << " (thinking=on)\n";
     }
 }
 
