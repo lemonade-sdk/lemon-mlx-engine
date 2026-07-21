@@ -34,7 +34,8 @@ struct CliArgs {
     std::string model_path;         // empty = auto-load mode
     std::string host = "127.0.0.1";
     int port = 8080;
-    int max_tokens = 2048;
+    // Default 4096 for thinking/CoT headroom.
+    int max_tokens = 4096;
     float temperature = 0.6f;
     float top_p = 1.0f;
     float repetition_penalty = 0.0f;
@@ -93,7 +94,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "Options:\n"
                       << "  --host HOST             Bind address (default: 127.0.0.1)\n"
                       << "  --port PORT             Listen port (default: 8080)\n"
-                      << "  --max-tokens N          Default max tokens (default: 2048)\n"
+                      << "  --max-tokens N          Default max tokens (default: 4096)\n"
                       << "  --temperature T         Default temperature (default: 0.6)\n"
                       << "  --top-p P               Default top-p (default: 1.0)\n"
                       << "  --repetition-penalty F  Default repetition penalty (off)\n"
