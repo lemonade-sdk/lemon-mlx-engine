@@ -176,9 +176,7 @@ public:
                                  MambaCache* cache = nullptr);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
-    /// Build T=1 decode invariants once at weight load (not mid-forward).
-    /// Avoids forced bf16→f32 copy_contiguous eval inside the first GDN step
-    /// (observed intermittent hipLaunchKernel SIGSEGV on gfx115x).
+    /// Eval T=1 GDN decode constants once at load (not mid-forward).
     void materialize_decode_constants();
 };
 

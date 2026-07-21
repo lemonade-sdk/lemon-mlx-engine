@@ -67,7 +67,7 @@ static std::string format_bytes(size_t bytes) {
 struct CliArgs {
     std::string model_path;
     std::string system_prompt;
-    // Match server default: thinking-on needs CoT headroom.
+    // Default 4096 for CoT headroom (matches server).
     int max_tokens = 4096;
     float temperature = 0.7f;
     float top_p = 0.9f;
@@ -175,21 +175,15 @@ int main(int argc, char* argv[]) {
 
         auto ctx = mlx_lm::load_llm(args.model_path);
 
-        // Match server/ModelManager: set thinking polarity before any forward so
-        // template/extra_context state is stable if warmup ever uses the template.
+        // Set enable_thinking before any forward (incl. warmup).
         if (ctx.template_extra_context) {
             (*ctx.template_extra_context)["enable_thinking"] = !args.no_think;
         }
 
-        // Drain any post-load HIP work before the first GDN/attention launch.
-        // On gfx115x a cold hipLaunchKernel right after weight materialize has
-        // intermittently SIGSEGV'd in copy_contiguous during chat warmup.
+        // Sync after load before first GDN/attention launch.
         mx::synchronize();
 
-        // Warmup: run a dummy forward pass to prime the GPU allocator cache.
-        // Without this, the first real prompt pays ~2s of hipExtMallocWithFlags
-        // cold-start overhead. After warmup, allocations hit the buffer cache.
-        // Skip with MLX_SKIP_WARMUP=1 if diagnosing first-forward crashes.
+        // Warmup: prime GPU allocator. Skip with MLX_SKIP_WARMUP=1.
         if (std::getenv("MLX_SKIP_WARMUP") == nullptr) {
             mlx_lm::GenerateParameters warmup_params;
             warmup_params.max_tokens = 1;

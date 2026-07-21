@@ -167,9 +167,7 @@ static bool fuse_quant_projections(
     std::optional<mx::array>& dst)
 {
     if (dst.has_value()) return true;
-    // ROCm: concatenating packed quant weights then hipLaunchKernel has
-    // SIGSEGV'd during warmup on gfx115x (see verify-loop5-load gdb). Default
-    // keep separate matmuls (eager-safe). Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
+    // Default: separate matmuls. Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
     if (std::getenv("MLX_ENABLE_QUANT_FUSE") == nullptr) {
         return false;
     }
@@ -196,9 +194,7 @@ static bool fuse_quant_projections(
         ss.push_back(qis[i]->scales);
         if (have_biases) bs.push_back(*qis[i]->biases);
     }
-    // Guard shapes before concatenate: mismatched non-axis-0 dims have been
-    // observed to SIGSEGV inside hipLaunchKernel on ROCm rather than throw.
-    // Fail soft → caller keeps separate matmuls (eager path stays usable).
+    // Soft-fail on shape mismatch (caller keeps separate matmuls).
     auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
         if (arrs.empty()) return false;
         for (size_t i = 1; i < arrs.size(); ++i) {
@@ -399,7 +395,7 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
 {}
 
 void Qwen35MoEGatedDeltaNet::materialize_decode_constants() {
-    // Idempotent: first T=1 step may also fill these if load skipped them.
+    // Idempotent (first T=1 step can fill if load skipped this).
     const auto dtype = a_log_.dtype();
     if (!q_norm_w_.has_value()) {
         float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
@@ -410,7 +406,6 @@ void Qwen35MoEGatedDeltaNet::materialize_decode_constants() {
         a_log_f32_ = mx::astype(a_log_, mx::float32);
         dt_bias_f32_ = mx::astype(dt_bias_, mx::float32);
     }
-    // Single load-time eval (not mid-forward during first decode token).
     std::vector<mx::array> to_eval;
     if (q_norm_w_.has_value()) to_eval.push_back(*q_norm_w_);
     if (k_norm_w_.has_value()) to_eval.push_back(*k_norm_w_);
@@ -506,8 +501,7 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, 1, conv_dim_}),
                                   {B, 1, num_v_heads_, head_v_dim_});
 
-        // Q/K norms + a_log/dt_bias f32: prefer load-time materialize_decode_constants().
-        // Fallback if that was skipped (e.g. tests without full load_weights).
+        // Prefer load-time materialize; fallback if skipped (e.g. unit tests).
         if (!q_norm_w_.has_value() || !a_log_f32_.has_value()) {
             materialize_decode_constants();
         }
@@ -1253,14 +1247,11 @@ void Qwen35MoEModel::load_weights(const std::unordered_map<std::string, mx::arra
             lm_head_weight_ = std::nullopt;
         }
     }
-    // Wire MTPHead if we have MTP weights. Optional for the eager / no-MTP
-    // product path: building the head can crash or mis-infer dims on some
-    // hybrid checkpoints. Set MLX_LOAD_MTP_HEAD=1 to enable (needed before
-    // --use-mtp decode). Without a head, TokenIterator falls back to plain step().
+    // MTP head: default skip; MLX_LOAD_MTP_HEAD=1 to build (needed for --use-mtp).
     if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
         if (std::getenv("MLX_LOAD_MTP_HEAD") == nullptr) {
             std::cerr << "[MTP] skipping optional MTP head build "
-                         "(set MLX_LOAD_MTP_HEAD=1 to enable; not needed for eager/no-MTP)\n";
+                         "(set MLX_LOAD_MTP_HEAD=1 to enable)\n";
         } else {
             try {
                 build_mtp_head();

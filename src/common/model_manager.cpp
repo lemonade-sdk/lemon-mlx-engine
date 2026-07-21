@@ -13,8 +13,7 @@
 #include <iostream>
 
 #if defined(MLX_BUILD_ROCM)
-// HIP headers require exactly one platform macro; chat/server CMake set this,
-// but define a fallback when model_manager is compiled into other targets.
+// Fallback if this TU is built without CMake's __HIP_PLATFORM_AMD__.
 #  ifndef __HIP_PLATFORM_AMD__
 #    define __HIP_PLATFORM_AMD__ 1
 #  endif
@@ -54,7 +53,7 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
     std::cerr << "[ModelManager] Loading model: " << model_id << "\n";
 
 #if defined(MLX_BUILD_ROCM)
-    // Soft warn if GPU already under pressure (dual large-model load risk).
+    // Warn if VRAM already tight (dual full-model load risk on low-VRAM APUs).
     {
         size_t free_b = 0, total_b = 0;
         if (hipMemGetInfo(&free_b, &total_b) == hipSuccess && total_b > 0) {
@@ -63,13 +62,11 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
                                used_b > (total_b / 2);
             if (tight) {
                 std::cerr
-                    << "[ModelManager] WARNING: GPU memory already tight before load "
+                    << "[ModelManager] WARNING: GPU memory tight before load "
                     << "(free≈" << (free_b / (1024 * 1024)) << " MB, total≈"
                     << (total_b / (1024 * 1024))
-                    << " MB). Concurrent second full-model process on low-VRAM "
-                       "APUs (e.g. gfx1150) can SIGSEGV during load — prefer a "
-                       "single server/chat process. See NripeshN/mlx#13 / "
-                       "docs/experiments/mlx-need-confirm-2026-07-19/.\n";
+                    << " MB). Prefer a single load process on low-VRAM APUs "
+                       "(NripeshN/mlx#13).\n";
             }
         }
     }
@@ -126,10 +123,10 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
         (*ctx.template_extra_context)["enable_thinking"] = !no_think_;
     }
 
-    // Drain post-load HIP work before first GDN/attention launch (gfx115x).
+    // Sync after load before first GDN/attention launch.
     mx::synchronize();
 
-    // Warmup: prime GPU allocator cache. Skip with MLX_SKIP_WARMUP=1.
+    // Warmup: prime GPU allocator. Skip with MLX_SKIP_WARMUP=1.
     if (std::getenv("MLX_SKIP_WARMUP") == nullptr) {
         GenerateParameters warmup_params;
         warmup_params.max_tokens = 1;
