@@ -3,7 +3,6 @@
 #include <mlx-lm/common/chat_session.h>
 #include <mlx/mlx.h>
 #include <algorithm>
-#include <chrono>
 #include <stdexcept>
 
 namespace mlx_lm {
@@ -80,7 +79,11 @@ void ChatSession::clear() {
 }
 
 const std::vector<chat::ChatMessage>& ChatSession::message_history() const {
-    return messages_;
+    // Prefer folded messages_; else expose pending re-hydrate before first generate.
+    if (!messages_.empty() || pending_history_.empty()) {
+        return messages_;
+    }
+    return pending_history_;
 }
 
 // -- Private: build messages --------------------------------------------------
@@ -95,14 +98,15 @@ std::vector<chat::ChatMessage> ChatSession::build_messages(
         messages.push_back(chat::ChatMessage::system(instructions_.value()));
     }
 
-    // If we have pending history (re-hydration), include it
-    if (cache_state_ == CacheState::History && !pending_history_.empty()) {
+    // messages_ after fold; pending_history_ on first re-hydrate turn only
+    if (!messages_.empty()) {
+        messages.insert(messages.end(), messages_.begin(), messages_.end());
+    } else if (cache_state_ == CacheState::History && !pending_history_.empty()) {
         messages.insert(messages.end(),
                         pending_history_.begin(),
                         pending_history_.end());
     }
 
-    // Add the new user message
     messages.push_back(chat::ChatMessage::user(user_prompt));
 
     return messages;
@@ -113,10 +117,7 @@ std::vector<chat::ChatMessage> ChatSession::build_messages(
 void ChatSession::trim_cache(int n) {
     if (kv_cache_.empty() || n <= 0) return;
 
-    // Trim n positions from the end of each trimmable cache layer.
-    // This is available for advanced use cases (e.g., undoing a
-    // generation and re-prompting). It is NOT called automatically
-    // between turns -- the KV cache accumulates across turns.
+    // No-op between turns (kv_cache_ is cleared after each generate).
     for (auto& cache : kv_cache_) {
         if (cache.is_trimmable()) {
             cache.trim(n);
@@ -138,33 +139,25 @@ void ChatSession::generate_impl(
     // Upgrade GPU wired memory for the duration of generation.
     WiredLimitGuard wired_guard;
 
-    // Build messages for this turn, including system prompt + history + user msg
+    // Snapshot for this turn (includes pending re-hydrate if not yet folded).
     auto turn_messages = build_messages(prompt);
 
-    // Perform generation with model lock
     model_->perform([&](ModelContext& ctx) {
-        // Initialize or restore the KV cache
-        switch (cache_state_) {
-        case CacheState::Empty:
-            kv_cache_ = ctx.new_cache_fn(generate_params_);
-            cache_state_ = CacheState::KVCache;
-            break;
-
-        case CacheState::History:
-            kv_cache_ = ctx.new_cache_fn(generate_params_);
-            cache_state_ = CacheState::KVCache;
+        // Fold re-hydrate into messages_ for later turns (this turn already
+        // templated from turn_messages). User/assistant append after success.
+        if (cache_state_ == CacheState::History && !pending_history_.empty()) {
+            messages_.insert(messages_.end(),
+                             pending_history_.begin(),
+                             pending_history_.end());
             pending_history_.clear();
-            break;
-
-        case CacheState::KVCache:
-            break;
         }
+        // Fresh KV every turn — residual reuse + full re-template double-prefills.
+        kv_cache_ = ctx.new_cache_fn(generate_params_);
+        cache_state_ = CacheState::KVCache;
 
-        // Convert ChatMessages to raw Messages for the chat template
         DefaultMessageGenerator msg_gen;
         auto raw_messages = msg_gen.generate(turn_messages);
 
-        // Apply chat template to get token IDs
         if (!ctx.apply_chat_template_fn) {
             throw std::runtime_error(
                 "ChatSession: apply_chat_template_fn is not set on ModelContext");
@@ -175,8 +168,6 @@ void ChatSession::generate_impl(
             throw std::runtime_error("ChatSession: chat template produced no tokens");
         }
 
-
-        // Create token array
         auto token_array = mx::array(
             tokens.data(),
             {static_cast<int>(tokens.size())},
@@ -184,31 +175,23 @@ void ChatSession::generate_impl(
 
         int prompt_token_count = static_cast<int>(tokens.size());
 
-        // Build LMInput and use TokenIterator for generation.
-        // This gives us async pipelining ("compute next, return current")
-        // and all the optimizations from the shared generate path.
         LMInput lm_input(token_array);
 
-        // Use the external-cache + params constructor so the session keeps its
-        // persistent multi-turn KV cache AND enables MTP speculative decoding
-        // when generate_params_.use_mtp is set and the model has an MTP head.
+        // External-cache + params ctor (fresh cache; MTP still via params).
         TokenIterator iter(
             ctx, lm_input, std::move(kv_cache_), generate_params_);
 
-        // Set up streaming detokenizer
         NaiveStreamingDetokenizer detokenizer;
         auto decode = [&ctx](const std::vector<int>& toks) -> std::string {
             return ctx.decode_fn(toks);
         };
 
-        // Accumulate the full assistant response for message history
         std::string assistant_response;
         int generated_count = 0;
 
         while (auto maybe_token = iter.next()) {
             int token_id = *maybe_token;
 
-            // Check for EOS
             if (ctx.eos_token_ids.has_value()) {
                 auto& eos = ctx.eos_token_ids.value();
                 if (std::find(eos.begin(), eos.end(), token_id) != eos.end()) {
@@ -218,12 +201,10 @@ void ChatSession::generate_impl(
 
             generated_count++;
 
-            // Periodically clear the memory cache.
             if (generated_count % 256 == 0) {
                 mx::clear_cache();
             }
 
-            // Decode token through streaming detokenizer
             detokenizer.append(token_id);
             auto text = detokenizer.next(decode);
             if (text.has_value() && !text->empty()) {
@@ -236,19 +217,15 @@ void ChatSession::generate_impl(
             }
         }
 
-        // Synchronize to ensure all pending GPU work completes.
         mx::synchronize();
 
-        // Add user and assistant messages to history
         messages_.push_back(chat::ChatMessage::user(prompt));
         messages_.push_back(chat::ChatMessage::assistant(assistant_response));
 
-        // Reclaim the KV cache from the iterator for multi-turn reuse.
-        // The KV cache includes all prompt + generated tokens, so the
-        // next turn can process on top of the existing cache.
+        // Drop iterator cache; next turn re-prefills from messages_.
         kv_cache_ = iter.take_cache();
+        kv_cache_.clear();
 
-        // Invoke completion callback with stats
         if (on_complete) {
             auto info_full = iter.completion_info(prompt_token_count);
             GenerateInfo info;
