@@ -12,6 +12,8 @@
 #include <mlx-lm/common/gated_delta.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 
 namespace mx = mlx::core;
 
@@ -787,9 +789,19 @@ void Qwen3NextModel::load_weights(const std::unordered_map<std::string, mx::arra
         auto it = weights.find(name);
         if (it != weights.end()) *target = it->second;
     }
-    // Wire MTPHead if we have MTP weights.
+    // MTP head: default skip; MLX_LOAD_MTP_HEAD=1 to build.
     if (!mtp_weights_.empty() && !mtp_head_.has_value()) {
-        build_mtp_head();
+        if (std::getenv("MLX_LOAD_MTP_HEAD") == nullptr) {
+            std::cerr << "[MTP] skipping optional MTP head build "
+                         "(set MLX_LOAD_MTP_HEAD=1 to enable)\n";
+        } else {
+            try {
+                build_mtp_head();
+            } catch (const std::exception& e) {
+                std::cerr << "[MTP] head build failed (continuing without head): "
+                          << e.what() << "\n";
+            }
+        }
     }
 }
 
