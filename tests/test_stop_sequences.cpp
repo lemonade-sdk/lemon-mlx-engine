@@ -1,4 +1,4 @@
-// Unit tests for OpenAI stop sequence suffix matching (no model load).
+// OpenAI stop suffix matching (no model load).
 #include <catch2/catch_test_macros.hpp>
 #include <mlx-lm/common/stop_sequences.h>
 
@@ -33,9 +33,8 @@ TEST_CASE("stop sequences strips suffix match", "[stop_sequences]") {
 
 TEST_CASE("stop sequences multi-candidate first match wins", "[stop_sequences]") {
     std::string text = "foo###END###";
-    // Longer/first matching candidate in list order that is a suffix.
+    // List order: first suffix match wins ("END###" before "###END###").
     CHECK(apply_stop_sequences(text, {"END###", "###END###"}));
-    // First entry "END###" matches as suffix of "foo###END###"
     CHECK(text == "foo###");
 }
 

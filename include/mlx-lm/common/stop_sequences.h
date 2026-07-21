@@ -6,12 +6,8 @@
 
 namespace mlx_lm {
 
-/// OpenAI `stop`: if `accumulated` ends with any stop string, strip that
-/// suffix and return true (caller should halt generation).
-///
-/// Tier-1 behavior (suffix-only): matches after full detokenized text so far.
-/// Empty stop strings are ignored. First matching stop wins (order in vector).
-/// Never lowers or mutates the stop list.
+/// If `accumulated` ends with any stop string, strip that suffix and return true.
+/// Empty stops ignored; first match in list order wins. Does not mutate `stops`.
 inline bool apply_stop_sequences(std::string& accumulated,
                                  const std::vector<std::string>& stops) {
     if (stops.empty() || accumulated.empty()) {

@@ -96,9 +96,7 @@ struct ChatCompletionRequest {
     std::vector<ChatMessage> messages;
     float temperature = 0.6f;
     float top_p = 1.0f;
-    // Default 4096: Qwen thinking-on often needs CoT headroom. Explicit client
-    // max_tokens always wins (server floor only applies when the field is omitted
-    // from the request body and GenerateParameters still has nullopt).
+    // Default 4096 for CoT headroom when the field is omitted (not optional).
     int max_tokens = 4096;
     float repetition_penalty = 0.0f;
     bool stream = false;

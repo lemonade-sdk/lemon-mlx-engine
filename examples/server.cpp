@@ -34,7 +34,7 @@ struct CliArgs {
     std::string model_path;         // empty = auto-load mode
     std::string host = "127.0.0.1";
     int port = 8080;
-    // 4096: thinking-on CoT often exhausts 2048 before a final answer.
+    // Default 4096 for thinking/CoT headroom.
     int max_tokens = 4096;
     float temperature = 0.6f;
     float top_p = 1.0f;

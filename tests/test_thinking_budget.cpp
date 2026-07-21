@@ -1,4 +1,4 @@
-// Unit tests for thinking budget floor (no model load).
+// Thinking budget floor (no model load).
 #include <catch2/catch_test_macros.hpp>
 #include <mlx-lm/common/thinking_budget.h>
 
@@ -21,7 +21,7 @@ TEST_CASE("thinking budget floor leaves explicit low budget alone",
     CHECK(*m == 5);
 }
 
-TEST_CASE("thinking budget floor raises missing budget when thinking on",
+TEST_CASE("thinking budget floor fills nullopt when thinking on",
           "[thinking_budget]") {
     std::optional<int> m;
     CHECK(apply_thinking_budget_floor(m, /*thinking_on=*/true));

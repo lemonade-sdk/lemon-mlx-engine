@@ -5,12 +5,11 @@
 
 namespace mlx_lm {
 
-/// Soft target when thinking/CoT is on and the client omitted max_tokens.
-/// Explicit client max_tokens is never overwritten.
+/// Default max_tokens when thinking is on and the optional budget is unset.
 inline constexpr int kThinkingBudgetRecommend = 4096;
 
-/// When thinking is on and max_tokens is unset, set it to the recommend floor.
-/// Returns true if max_tokens was changed. Explicit budgets always win.
+/// If thinking_on and max_tokens is nullopt, set kThinkingBudgetRecommend.
+/// Explicit values are never overwritten. Returns true if changed.
 inline bool apply_thinking_budget_floor(std::optional<int>& max_tokens,
                                         bool thinking_on) {
     if (!thinking_on) {
