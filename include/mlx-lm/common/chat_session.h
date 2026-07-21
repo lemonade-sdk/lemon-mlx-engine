@@ -26,8 +26,8 @@ namespace mlx_lm {
 ///
 /// ChatSession manages:
 ///   - Multi-turn message history
-///   - Per-turn full re-prefill of the chat-templated history (fresh KV each
-///     turn — correctness over residual KV reuse; matches HTTP multi-turn)
+///   - Full re-prefill of templated history into a fresh KV each turn
+///     (same strategy as HTTP chat: full messages + new cache per call)
 ///   - Streaming token-by-token output via callbacks
 ///
 /// Thread safety: ChatSession itself is NOT thread-safe. Each session should be
@@ -58,8 +58,7 @@ public:
         std::optional<std::string> instructions = std::nullopt,
         GenerateParameters generate_params = GenerateParameters{});
 
-    /// Initialize a ChatSession with existing message history for prompt
-    /// re-hydration (restoring a previous conversation).
+    /// Re-hydrate from a message transcript (does not restore KV).
     ///
     /// \param model            Shared pointer to the ModelContainer
     /// \param history          Previous chat messages to restore
@@ -112,10 +111,10 @@ public:
 
     // -- Session management ---------------------------------------------------
 
-    /// Clear the session history and cache, preserving system instructions.
+    /// Clear history and residual session state; keep system instructions.
     void clear();
 
-    /// Get the current message history.
+    /// Current message history (pending re-hydrate until first generate).
     const std::vector<chat::ChatMessage>& message_history() const;
 
     /// Get/set system instructions.
@@ -128,11 +127,11 @@ public:
     void set_generate_parameters(const GenerateParameters& params) { generate_params_ = params; }
 
 private:
-    /// Session conversation state (KV is not retained across turns).
+    /// Conversation phase (KV is not retained across turns).
     enum class CacheState {
-        Empty,     // No conversation yet
-        KVCache,   // Has message history in messages_ (fresh KV each generate)
-        History,   // Re-hydration: pending_history_ not yet folded into messages_
+        Empty,     // No history
+        KVCache,   // Active session; history in messages_ after successful turns
+        History,   // pending_history_ not yet folded into messages_
     };
 
     /// Core generation implementation shared by all respond/stream methods.
@@ -148,8 +147,7 @@ private:
     /// any history messages, and the new user message.
     std::vector<chat::ChatMessage> build_messages(const std::string& user_prompt) const;
 
-    /// Trim n positions from the end of the KV cache. Available for advanced
-    /// use cases (e.g., undoing a generation). Not called automatically.
+    /// Trim n positions from kv_cache_ (unused by default multi-turn path).
     void trim_cache(int n);
 
     // -- Members --------------------------------------------------------------
@@ -158,14 +156,12 @@ private:
     std::optional<std::string> instructions_;
     GenerateParameters generate_params_;
 
-    // Cache management
+    // Conversation phase; kv_cache_ is ephemeral within a turn only
     CacheState cache_state_ = CacheState::Empty;
     std::vector<KVCache> kv_cache_;
 
-    // Conversation history
     std::vector<chat::ChatMessage> messages_;
-
-    // History for re-hydration (consumed on first generate call)
+    // Re-hydrate buffer; folded into messages_ on first generate
     std::vector<chat::ChatMessage> pending_history_;
 };
 

@@ -318,8 +318,7 @@ ModelContext load_llm_from_directory(
         auto chat_tmpl = load_chat_template(model_directory);
         if (chat_tmpl.has_value() && tokenizer) {
             auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
-            // Merge template EOS into the stop set — never replace multi-id EOS
-            // (e.g. Qwen [im_end, endoftext]) with a singleton.
+            // Union template eos_token into stop set (do not replace multi-id config).
             if (!shared_tmpl->eos_token().empty()) {
                 int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
                 if (eos_id >= 0) {
@@ -618,7 +617,7 @@ ModelContext load_mtp_delta_model(
     auto chat_tmpl = load_chat_template(delta_dir);
     if (chat_tmpl.has_value() && tokenizer) {
         auto shared_tmpl = std::make_shared<ChatTemplate>(std::move(*chat_tmpl));
-        // Merge template EOS — never collapse multi-id sets to a singleton.
+        // Union template eos_token even when config already set multi-id EOS.
         if (!shared_tmpl->eos_token().empty()) {
             int eos_id = tokenizer->token_to_id(shared_tmpl->eos_token());
             if (eos_id >= 0) {

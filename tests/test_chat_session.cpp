@@ -277,15 +277,8 @@ TEST_CASE("GenerateParameters defaults", "[chat_session]") {
     CHECK(params.repetition_context_size == 20);
 }
 
-// ===========================================================================
-// Multi-turn prefill regression (double-prefill guard)
-// ===========================================================================
-//
-// Old bug: turn 2+ re-used non-empty KV while (mis)templating only the new
-// user turn — double-prefill / wrong framing. Fix: every turn templates the
-// full history into a FRESH cache. This test fails if:
-//   - turn2 prefill token count <= turn1 (history not re-included), or
-//   - new_cache_fn is not called again on turn2 (residual KV reuse).
+// Multi-turn: full history re-prefill + new_cache_fn each turn.
+// Stub template length = messages * 10 + 2 framing.
 
 TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
         "[chat_session][multi_turn]") {
@@ -306,14 +299,12 @@ TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
         return std::vector<KVCache>{};
     };
     ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
-        // tokens are 1D [seq]
         prefill_token_counts.push_back(static_cast<int>(input.text.tokens.size()));
         return PrepareResult::tokens(input.text);
     };
     ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
                      const LMOutput::State*) {
-        // First decode step: emit a visible token; second would be EOS if we
-        // kept going — max_tokens=1 stops after one generated token.
+        // Always emit non-EOS; generation capped by max_tokens=1.
         std::vector<float> logits(kVocabSize, 0.0f);
         logits[kForcedToken] = 10.0f;
         return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
@@ -325,7 +316,6 @@ TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
         [&](const std::vector<std::unordered_map<std::string, std::string>>& messages,
             const nlohmann::json*) -> std::vector<int> {
         template_message_counts.push_back(messages.size());
-        // Deterministic length: 10 tokens per message + 2 framing.
         const int n = static_cast<int>(messages.size()) * 10 + 2;
         std::vector<int> toks(static_cast<size_t>(n));
         for (int i = 0; i < n; ++i) {
@@ -342,7 +332,7 @@ TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
 
     ChatSession session(container, std::nullopt, params);
 
-    // Turn 1: single user message → template sees 1 msg → 12 tokens.
+    // Turn 1: 1 user → 12 stub tokens.
     (void)session.respond("My name is Ada.");
     REQUIRE(template_message_counts.size() == 1);
     CHECK(template_message_counts[0] == 1);
@@ -351,16 +341,14 @@ TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
     const int caches_after_turn1 = cache_creates;
     REQUIRE(caches_after_turn1 >= 1);
 
-    // Turn 2: history has user+assistant, plus new user → 3 messages → 32 tokens.
+    // Turn 2: user+assistant+user → 3 msgs → 32 stub tokens; fresh cache.
     (void)session.respond("What is my name?");
     REQUIRE(template_message_counts.size() == 2);
     CHECK(template_message_counts[1] == 3);
     REQUIRE(prefill_token_counts.size() == 2);
     CHECK(prefill_token_counts[1] == 32);
-    // Fresh cache allocated for turn 2 (not residual reuse only).
     CHECK(cache_creates > caches_after_turn1);
 
-    // History recorded both turns.
     REQUIRE(session.message_history().size() == 4);
     CHECK(session.message_history()[0].content == "My name is Ada.");
     CHECK(session.message_history()[2].content == "What is my name?");
@@ -412,22 +400,20 @@ TEST_CASE("ChatSession history re-hydration folds into messages_ for later turns
     params.max_tokens = 1;
     ChatSession session(container, std::move(history), std::nullopt, params);
 
-    // Visible before first generate (pending history).
+    // Pending history visible before first generate.
     REQUIRE(session.message_history().size() == 2);
     CHECK(session.message_history()[0].content == "Capital of France?");
 
-    // Turn 1: system none + 2 history + new user = 3 messages.
+    // Turn 1: 2 history + new user → 3 templated messages.
     (void)session.respond("And Germany?");
     REQUIRE(template_message_counts.size() == 1);
     CHECK(template_message_counts[0] == 3);
 
-    // After turn1: history folded + new user/assistant → 4 messages.
     REQUIRE(session.message_history().size() == 4);
     CHECK(session.message_history()[0].content == "Capital of France?");
     CHECK(session.message_history()[2].content == "And Germany?");
 
-    // Turn 2 must still see original history (not drop it).
-    // messages_: 4 prior + new user = 5 templated messages.
+    // Turn 2: folded history retained → 5 templated messages.
     (void)session.respond("Summarize in one word.");
     REQUIRE(template_message_counts.size() == 2);
     CHECK(template_message_counts[1] == 5);
