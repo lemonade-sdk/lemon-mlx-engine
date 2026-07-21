@@ -92,20 +92,15 @@ index:
 ./chat mlx-community/Qwen3-8B-4bit --device 1
 ```
 
-On AMD ROCm the engine runs on integrated RDNA 3.5 APUs (**gfx1150**, e.g.
-Radeon 890M on Ryzen AI HX 370 / Strix Point; **gfx1151**, e.g. Strix Halo) and
-discrete RDNA 4 GPUs (gfx1201, e.g. Radeon AI PRO R9700), including over an
-eGPU link. When mixing a discrete RDNA 4 GPU with an integrated APU, make sure
-`HSA_OVERRIDE_GFX_VERSION` is **unset** so kernels compile for each GPU's real
-architecture (`chat` clears it automatically).
+On AMD ROCm the engine runs on integrated RDNA 3.5 APUs (**gfx1150** / 890M,
+**gfx1151** / Strix Halo) and discrete RDNA 4 (e.g. gfx1201), including eGPU.
+When mixing discrete + iGPU, leave `HSA_OVERRIDE_GFX_VERSION` **unset** so each
+GPU uses its real ISA (`chat` clears it automatically).
 
-Ubuntu ROCm release builds fatbin **all RDNA3 + RDNA 3.5 + RDNA4**
-(`gfx1100`–`gfx1103`, `gfx1150`–`gfx1152`, `gfx1200`–`gfx1201`) so official
-binaries cover discrete RDNA3, Strix Point/Halo APUs (including **gfx1150**
-890M), and RDNA4. A local rebuild for a single arch still works via
-`-DCMAKE_HIP_ARCHITECTURES=gfx1150` (or your GPU's arch). CI package install
-still uses a single runner arch (`ROCM_ARCH`); that is separate from the HIP
-fatbin list.
+Ubuntu ROCm **release** builds fatbin RDNA3 + 3.5 + 4 (`gfx1100`–`1103`,
+`1150`–`1152`, `1200`–`1201`), including **gfx1150** (#60). Local single-arch:
+`-DCMAKE_HIP_ARCHITECTURES=gfx1150`. CI `ROCM_ARCH` is package install only,
+not the HIP fatbin list (`ROCM_HIP_ARCHITECTURES`).
 
 ## API Server
 
