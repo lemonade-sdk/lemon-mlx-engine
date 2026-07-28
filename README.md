@@ -2,15 +2,20 @@
 
 C++ inference engine for large language models, built on [MLX](https://github.com/ml-explore/mlx).
 
-Run LLMs locally on **Apple M-series**, **AMD GPUs** (Linux/Windows), and CPU -- no Python required.
+Run LLMs locally on **Apple M-series**, **AMD GPUs** (Linux/Windows), **AMD XDNA2 NPU** (Strix Halo), and CPU -- no Python required.
 
 ## Features
 
 - **50+ LLM architectures** -- Llama, Qwen, Gemma, Phi, DeepSeek, Mistral, Granite, GLM, Falcon, and more
 - **12 VLM architectures** -- Qwen-VL, PaliGemma, Pixtral, Gemma3, SmolVLM, and more
 - **Embedders** -- BERT, Nomic-BERT, Qwen3-Embed
-- **Quantized inference** -- 4-bit/8-bit via `quantized_matmul`
-- **HuggingFace integration** -- auto-downloads models, tokenizers, and chat templates
+- **1-bit / ternary model support** -- BitNet b1.58, Falcon-E (BitLinear), Bonsai, full 1.58-bit and 1-bit variants
+- **GGUF quant format support** -- Q4_0 through Q6_K, K-quants, auto-quantize on load
+- **NPU backend** -- AMD XDNA2 NPU (Strix Halo) via XRT, custom BFP16 xclbins, zero-copy dispatch
+- **ROCm GPU optimization** -- HIP graph decode, fused MoE/GDN kernels, O(1) memory reuse
+- **Multi-token prediction (MTP)** -- Speculative decoding with MTP head support (Qwen3.5-Next)
+- **Quantized inference** -- 4-bit/8-bit via `quantized_matmul`, KV cache quantization (4/8-bit)
+- **Universal HuggingFace loading** -- auto-quantize, GGUF, PyTorch → safetensors converter
 - **fastokens** -- high-performance BPE tokenizer ([crusoecloud/fastokens](https://github.com/crusoecloud/fastokens))
 - **OpenAI-compatible API server** -- drop-in replacement for local inference
 - **Streaming generation** -- async token pipeline with KV caching
@@ -101,6 +106,24 @@ Ubuntu ROCm **release** builds fatbin RDNA3 + 3.5 + 4 (`gfx1100`–`1103`,
 `1150`–`1152`, `1200`–`1201`), including **gfx1150** (#60). Local single-arch:
 `-DCMAKE_HIP_ARCHITECTURES=gfx1150`. CI `ROCM_ARCH` is package install only,
 not the HIP fatbin list (`ROCM_HIP_ARCHITECTURES`).
+
+### NPU Backend (AMD XDNA2)
+
+The engine also supports the **AMD XDNA2 NPU** on Strix Halo (Ryzen AI MAX 300)
+via the XRT runtime. The NPU backend dispatches quantized GEMM to format-specific
+BFP16 xclbins on the NPU, with zero-copy memory access via shared UMA.
+
+Build with NPU support:
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DMLX_LM_BUILD_NPU=ON
+make -j
+```
+
+Requires the XRT development headers and the amdxdna kernel driver. The NPU
+backend auto-selects between Q4NX, FP16, and BitNet xclbins based on weight
+format, falling back to CPU/GPU if the NPU is unavailable.
 
 ## API Server
 

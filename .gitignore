@@ -42,3 +42,4 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 build-ci/
+start-mlx-server.sh
