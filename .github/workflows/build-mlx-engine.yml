@@ -380,8 +380,9 @@ jobs:
   test-simple-math:
     # Dual lanes: no-think (fast arithmetic) + thinking (CoT path).
     # Thinking budgets: ROCm 4096; CPU/mac smaller to avoid OOM/timeout class fails.
-    # Floor probe (thinking lanes): omit max_tokens — main #71 is nullopt-only
-    # (log: max_tokens -1 → 4096). Does NOT re-land raise-low stack policy.
+    # #71 nullopt-only floor is covered by tests/test_thinking_budget.cpp — not via HTTP
+    # smoke (ChatCompletionRequest::max_tokens defaults to 4096 when omitted).
+    # Does NOT re-land raise-low stack policy or change server C++.
     name: test-simple-math-${{ matrix.os }}-${{ matrix.mode }}
     needs: [build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
     if: |
@@ -408,7 +409,6 @@ jobs:
             enable_thinking: false
             infer_max_tokens: 128
             infer_curl_max_time: 180
-            probe_floor: false
           - os: ubuntu-cpu
             mode: no-think
             artifact: mlx-engine-ubuntu-cpu-x64
@@ -420,7 +420,6 @@ jobs:
             enable_thinking: false
             infer_max_tokens: 128
             infer_curl_max_time: 180
-            probe_floor: false
           - os: macos-arm64
             mode: no-think
             artifact: mlx-engine-macos-arm64
@@ -432,7 +431,6 @@ jobs:
             enable_thinking: false
             infer_max_tokens: 128
             infer_curl_max_time: 180
-            probe_floor: false
           # --- thinking lane ---
           - os: ubuntu-rocm
             mode: thinking
@@ -446,7 +444,6 @@ jobs:
             enable_thinking: true
             infer_max_tokens: 4096
             infer_curl_max_time: 600
-            probe_floor: true
             timeout_minutes: 40
           - os: ubuntu-cpu
             mode: thinking
@@ -460,7 +457,6 @@ jobs:
             # Smaller budget than ROCm: prior #67 CPU thinking OOM/timeout class fails.
             infer_max_tokens: 512
             infer_curl_max_time: 300
-            probe_floor: true
             timeout_minutes: 35
           - os: macos-arm64
             mode: thinking
@@ -473,7 +469,6 @@ jobs:
             enable_thinking: true
             infer_max_tokens: 512
             infer_curl_max_time: 300
-            probe_floor: true
             timeout_minutes: 35
           # MTP smoke deferred (engine path not ready); keep off thinking lanes.
     steps:
@@ -592,7 +587,6 @@ jobs:
         ENABLE_THINKING="${{ matrix.enable_thinking }}"
         INFER_MAX_TOKENS="${{ matrix.infer_max_tokens }}"
         INFER_CURL_MAX_TIME="${{ matrix.infer_curl_max_time }}"
-        PROBE_FLOOR="${{ matrix.probe_floor }}"
         MODE="${{ matrix.mode }}"
         echo "Smoke mode=$MODE no_think_flag=${NO_THINK_FLAG:-<empty>} enable_thinking=$ENABLE_THINKING infer_max_tokens=$INFER_MAX_TOKENS"
 
@@ -677,30 +671,6 @@ jobs:
             \"enable_thinking\": false,
             \"stream\": false
           }" 2>/dev/null || echo "Warm-up request skipped (non-fatal)"
-
-        # Floor probe for #71 nullopt-only: omit max_tokens so floor applies.
-        # Server logs: thinking_budget_floor: max_tokens -1 → 4096 (thinking=on, budget was unset)
-        if [ "$PROBE_FLOOR" = "true" ]; then
-          echo "=== Floor probe (omit max_tokens, expect -1 → 4096 nullopt-only log) ==="
-          curl -s --max-time 25 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"model\": \"${{ matrix.model }}\",
-              \"messages\": [{\"role\": \"user\", \"content\": \"Say ok.\"}],
-              \"temperature\": 0.0,
-              \"enable_thinking\": true,
-              \"stream\": false
-            }" 2>/dev/null || echo "Floor probe curl ended (timeout/error OK if log present)"
-          if grep -qE 'thinking_budget_floor: max_tokens -1 → 4096' server.log; then
-            echo "FLOOR_PROBE_PASS -- saw thinking_budget_floor -1 → 4096 (nullopt-only)"
-          else
-            echo "FLOOR_PROBE_FAIL -- expected thinking_budget_floor -1 → 4096"
-            echo "=== Server log (floor probe) ==="
-            grep -E 'thinking_budget|effective_thinking' server.log | tail -20 || true
-            stop_server
-            exit 1
-          fi
-        fi
 
         # Inference test with retry logic (max 2 attempts)
         MAX_RETRIES=2
