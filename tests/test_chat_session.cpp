@@ -11,6 +11,8 @@
 #include <mlx-lm/common/chat_session.h>
 #include <mlx-lm/common/generate_params.h>
 #include <mlx-lm/common/model_container.h>
+#include <mlx-lm/common/types.h>
+#include <mlx/mlx.h>
 #include <nlohmann/json.hpp>
 
 #include <memory>
@@ -18,6 +20,7 @@
 #include <vector>
 
 using namespace mlx_lm;
+namespace mx = mlx::core;
 
 // ---------------------------------------------------------------------------
 // Helper: create a minimal ModelContainer with stub functions.
@@ -272,4 +275,149 @@ TEST_CASE("GenerateParameters defaults", "[chat_session]") {
     CHECK(params.quantized_kv_start == 0);
     CHECK(!params.repetition_penalty.has_value());
     CHECK(params.repetition_context_size == 20);
+}
+
+// Multi-turn: full history re-prefill + new_cache_fn each turn.
+// Stub template length = messages * 10 + 2 framing.
+
+TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
+        "[chat_session][multi_turn]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;  // non-EOS
+    constexpr int kEosToken = 2;
+
+    int cache_creates = 0;
+    std::vector<int> prefill_token_counts;
+    std::vector<size_t> template_message_counts;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-chat-session";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_token_counts.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        // Always emit non-EOS; generation capped by max_tokens=1.
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& tokens) -> std::string {
+        return std::string(tokens.size(), 'x');
+    };
+    ctx.apply_chat_template_fn =
+        [&](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+            const nlohmann::json*) -> std::vector<int> {
+        template_message_counts.push_back(messages.size());
+        const int n = static_cast<int>(messages.size()) * 10 + 2;
+        std::vector<int> toks(static_cast<size_t>(n));
+        for (int i = 0; i < n; ++i) {
+            toks[static_cast<size_t>(i)] = 100 + i;
+        }
+        return toks;
+    };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+
+    ChatSession session(container, std::nullopt, params);
+
+    // Turn 1: 1 user → 12 stub tokens.
+    (void)session.respond("My name is Ada.");
+    REQUIRE(template_message_counts.size() == 1);
+    CHECK(template_message_counts[0] == 1);
+    REQUIRE(prefill_token_counts.size() == 1);
+    CHECK(prefill_token_counts[0] == 12);
+    const int caches_after_turn1 = cache_creates;
+    REQUIRE(caches_after_turn1 >= 1);
+
+    // Turn 2: user+assistant+user → 3 msgs → 32 stub tokens; fresh cache.
+    (void)session.respond("What is my name?");
+    REQUIRE(template_message_counts.size() == 2);
+    CHECK(template_message_counts[1] == 3);
+    REQUIRE(prefill_token_counts.size() == 2);
+    CHECK(prefill_token_counts[1] == 32);
+    CHECK(cache_creates > caches_after_turn1);
+
+    REQUIRE(session.message_history().size() == 4);
+    CHECK(session.message_history()[0].content == "My name is Ada.");
+    CHECK(session.message_history()[2].content == "What is my name?");
+}
+
+TEST_CASE("ChatSession history re-hydration folds into messages_ for later turns",
+          "[chat_session][multi_turn][rehydrate]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+
+    int cache_creates = 0;
+    std::vector<size_t> template_message_counts;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-rehydrate";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{};
+    };
+    ctx.prepare_fn = [](const LMInput& input, std::vector<KVCache>&, int) {
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& tokens) -> std::string {
+        return std::string(tokens.size(), 'y');
+    };
+    ctx.apply_chat_template_fn =
+        [&](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+            const nlohmann::json*) -> std::vector<int> {
+        template_message_counts.push_back(messages.size());
+        return std::vector<int>(messages.size() * 10 + 2, 1);
+    };
+
+    std::vector<chat::ChatMessage> history = {
+        chat::ChatMessage::user("Capital of France?"),
+        chat::ChatMessage::assistant("Paris."),
+    };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    ChatSession session(container, std::move(history), std::nullopt, params);
+
+    // Pending history visible before first generate.
+    REQUIRE(session.message_history().size() == 2);
+    CHECK(session.message_history()[0].content == "Capital of France?");
+
+    // Turn 1: 2 history + new user → 3 templated messages.
+    (void)session.respond("And Germany?");
+    REQUIRE(template_message_counts.size() == 1);
+    CHECK(template_message_counts[0] == 3);
+
+    REQUIRE(session.message_history().size() == 4);
+    CHECK(session.message_history()[0].content == "Capital of France?");
+    CHECK(session.message_history()[2].content == "And Germany?");
+
+    // Turn 2: folded history retained → 5 templated messages.
+    (void)session.respond("Summarize in one word.");
+    REQUIRE(template_message_counts.size() == 2);
+    CHECK(template_message_counts[1] == 5);
+    REQUIRE(session.message_history().size() == 6);
+    CHECK(session.message_history()[0].content == "Capital of France?");
+    CHECK(cache_creates >= 2);
 }
