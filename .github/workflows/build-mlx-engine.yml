@@ -378,11 +378,7 @@ jobs:
         retention-days: 30
 
   test-simple-math:
-    # Dual lanes: no-think (fast arithmetic) + thinking (CoT path).
-    # Thinking budgets: ROCm 4096; CPU/mac smaller to avoid OOM/timeout class fails.
-    # #71 nullopt-only floor is covered by tests/test_thinking_budget.cpp — not via HTTP
-    # smoke (ChatCompletionRequest::max_tokens defaults to 4096 when omitted).
-    # Does NOT re-land raise-low stack policy or change server C++.
+    # Dual lanes: no-think + thinking (matrix.mode).
     name: test-simple-math-${{ matrix.os }}-${{ matrix.mode }}
     needs: [build-ubuntu-rocm, build-ubuntu-cpu, build-macos]
     if: |
@@ -454,8 +450,7 @@ jobs:
             use_mtp: false
             no_think: false
             enable_thinking: true
-            # Keep max_tokens=512. GH ubuntu-cpu ~1.2 tok/s → 512 tokens ~421s
-            # wall (PR73); curl --max-time must exceed that (was 300 → empty fail).
+            # CPU is slow; curl must cover full 512-token thinking gen.
             infer_max_tokens: 512
             infer_curl_max_time: 600
             timeout_minutes: 35
@@ -468,11 +463,9 @@ jobs:
             use_mtp: false
             no_think: false
             enable_thinking: true
-            # Keep max_tokens=512; only raise curl timeout for thinking-lane headroom.
             infer_max_tokens: 512
             infer_curl_max_time: 600
             timeout_minutes: 35
-          # MTP smoke deferred (engine path not ready); keep off thinking lanes.
     steps:
     - name: ROCm runtime setup (Ubuntu ROCm only)
       if: matrix.install_rocm
@@ -581,7 +574,7 @@ jobs:
           MTP_FLAG="--use-mtp --n-draft-tokens 3"
         fi
 
-        # matrix.no_think=true → --no-think; thinking lane omits flag.
+        # --no-think when matrix.no_think is true.
         NO_THINK_FLAG="--no-think"
         if [ "${{ matrix.no_think }}" = "false" ]; then
           NO_THINK_FLAG=""
@@ -661,7 +654,7 @@ jobs:
           exit 1
         fi
 
-        # Warm-up: short, thinking off (load only).
+        # Warm-up (thinking off).
         echo "Sending warm-up request (enable_thinking=false, max_tokens=5)..."
         curl -s --max-time 120 -o /dev/null -X POST http://127.0.0.1:$PORT/v1/chat/completions \
           -H "Content-Type: application/json" \
