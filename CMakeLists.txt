@@ -29,11 +29,12 @@ if(MLX_LM_BUILD_NPU)
     set(MLX_BUILD_NPU ON CACHE BOOL "Build NPU backend" FORCE)
 endif()
 
-# MLX ROCm fork — pin SHA for reproducible builds (NripeshN/mlx#13 dual-load notes).
+# MLX C++ (lemonade-sdk fork with ROCm/AMD GPU + NPU support)
 FetchContent_Declare(
     mlx
+    # Repo + branch — always build against the latest ROCm backend work.
     GIT_REPOSITORY https://github.com/NripeshN/mlx.git
-    GIT_TAG        0dadb703d77301af29405cf7e12627efb88a6d0f
+    GIT_TAG        rocm-support
     GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(mlx)
