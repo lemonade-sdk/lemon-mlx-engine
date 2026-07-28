@@ -454,9 +454,10 @@ jobs:
             use_mtp: false
             no_think: false
             enable_thinking: true
-            # Smaller budget than ROCm: prior #67 CPU thinking OOM/timeout class fails.
+            # Keep max_tokens=512. GH ubuntu-cpu ~1.2 tok/s → 512 tokens ~421s
+            # wall (PR73); curl --max-time must exceed that (was 300 → empty fail).
             infer_max_tokens: 512
-            infer_curl_max_time: 300
+            infer_curl_max_time: 600
             timeout_minutes: 35
           - os: macos-arm64
             mode: thinking
@@ -467,8 +468,9 @@ jobs:
             use_mtp: false
             no_think: false
             enable_thinking: true
+            # Keep max_tokens=512; only raise curl timeout for thinking-lane headroom.
             infer_max_tokens: 512
-            infer_curl_max_time: 300
+            infer_curl_max_time: 600
             timeout_minutes: 35
           # MTP smoke deferred (engine path not ready); keep off thinking lanes.
     steps:
