@@ -175,6 +175,9 @@ public:
                                  const std::optional<mlx::core::array>& mask = std::nullopt,
                                  MambaCache* cache = nullptr);
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+
+    /// Eval T=1 GDN decode constants once at load (not mid-forward).
+    void materialize_decode_constants();
 };
 
 // Dense MLP (reuses gate/up/down pattern)
@@ -239,6 +242,12 @@ public:
         KVCache* cache);
 
     std::unordered_map<std::string, mlx::core::array*> weight_map();
+
+    void materialize_decode_constants() {
+        if (linear_attn_.has_value()) {
+            linear_attn_->materialize_decode_constants();
+        }
+    }
 };
 
 class Qwen35MoEModelInner {
@@ -273,6 +282,12 @@ public:
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
     const std::vector<Qwen35MoEDecoderLayer>& get_layers() const { return layers_; }
+
+    void materialize_gdn_decode_constants() {
+        for (auto& layer : layers_) {
+            layer.materialize_decode_constants();
+        }
+    }
 };
 
 class Qwen35MoEModel
