@@ -504,10 +504,19 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             q_norm_w_->dtype() != dtype) {
             materialize_decode_constants(dtype);
         }
-        // gdn_fused_decode default ON; MLX_GDN_NO_FUSED2=1 → rms_norm+update.
+        // gdn_fused_decode: auto ON (unset). Opt-in: MLX_GDN_FUSED2=1.
+        // Off: MLX_GDN_FUSED2=0 or MLX_GDN_NO_FUSED2=1.
         static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        static const bool fused2_auto_or_on = [] {
+            const char* v = std::getenv("MLX_GDN_FUSED2");
+            if (!v) return true;
+            if (v[0] == '0' && v[1] == '\0') return false;
+            return true;
+        }();
+        static const bool fused2_force_off =
+            std::getenv("MLX_GDN_NO_FUSED2") != nullptr;
         const bool use_fused2 =
-            use_fused_gdn && std::getenv("MLX_GDN_NO_FUSED2") == nullptr;
+            use_fused_gdn && fused2_auto_or_on && !fused2_force_off;
 
         if (!use_fused2) {
             q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
