@@ -26,16 +26,16 @@ TEST_CASE("loop brake empty / short text is no-op", "[loop_brake]") {
     CHECK_FALSE(has_generation_loop(repeat("abc", 20))); // short phrase < 40 chars
 }
 
-TEST_CASE("loop brake consecutive char phrase >= 4 trips", "[loop_brake]") {
-    // ~44-char phrase (within 40–80), repeated 4 times packed.
+TEST_CASE("loop brake consecutive char phrase >= 3 trips", "[loop_brake]") {
+    // ~44-char phrase (within 32–120), repeated 3 times packed.
     const std::string phrase =
         "Fact Check: The capital of France is Paris. "; // 44 chars
     REQUIRE(phrase.size() >= 32);
     REQUIRE(phrase.size() <= 120);
 
-    CHECK_FALSE(has_generation_loop(repeat(phrase, 3)));
-    CHECK(has_generation_loop(repeat(phrase, 4)));
-    CHECK(has_generation_loop("prefix noise " + repeat(phrase, 4)));
+    CHECK_FALSE(has_generation_loop(repeat(phrase, 2)));
+    CHECK(has_generation_loop(repeat(phrase, 3)));
+    CHECK(has_generation_loop("prefix noise " + repeat(phrase, 3)));
 }
 
 TEST_CASE("loop brake streaming feed_text trips on phrase", "[loop_brake]") {
@@ -44,7 +44,7 @@ TEST_CASE("loop brake streaming feed_text trips on phrase", "[loop_brake]") {
     REQUIRE(phrase.size() >= 40);
 
     LoopBrake brake;
-    const std::string full = repeat(phrase, 4);
+    const std::string full = repeat(phrase, 3);
     bool tripped = false;
     for (std::size_t i = 0; i < full.size(); i += 7) {
         auto chunk = std::string_view(full).substr(
@@ -58,26 +58,26 @@ TEST_CASE("loop brake streaming feed_text trips on phrase", "[loop_brake]") {
     CHECK(brake.reason() == LoopBrakeReason::PhraseChars);
 }
 
-TEST_CASE("loop brake same line >= 6 trips", "[loop_brake]") {
-    // Disable char-phrase path so we isolate SameLine (line+\\n is a packed
-    // phrase of length line.size()+1 and would trip PhraseChars at 4 repeats).
+TEST_CASE("loop brake same line >= 5 trips", "[loop_brake]") {
+    // Disable char-phrase path so we isolate SameLine.
     LoopBrakeParams p;
     p.min_phrase_chars = 10000;
     p.max_phrase_chars = 10000;
+    p.ngram_freq_threshold = 10000; // disable word-ngram path too
 
     const std::string line =
         "    *   Fact Check: The capital of France is Paris.";
     REQUIRE(line.size() >= 20);
 
     std::string text;
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 5; ++i) {
         text += line;
         text += '\n';
     }
     CHECK(has_generation_loop(text, p));
 
     LoopBrake brake(p);
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 4; ++i) {
         CHECK_FALSE(brake.feed_text(line + "\n"));
     }
     CHECK(brake.feed_text(line + "\n"));
@@ -86,12 +86,17 @@ TEST_CASE("loop brake same line >= 6 trips", "[loop_brake]") {
 
 TEST_CASE("loop brake alternating long lines does not trip same-line early",
           "[loop_brake]") {
+    // Isolate SameLine: disable packed char-phrase + word-ngram frequency.
+    LoopBrakeParams p;
+    p.min_phrase_chars = 10000;
+    p.max_phrase_chars = 10000;
+    p.ngram_freq_threshold = 10000;
     const std::string a =
         "    *   Wait, I need to check the museum in the capital city.";
     const std::string b =
         "    *   Actually, I need to check the museum in capital city.";
-    LoopBrake brake;
-    // 5 pairs alternate — never 6 consecutive same lines.
+    LoopBrake brake(p);
+    // Pairs alternate — never 5 consecutive same lines.
     for (int i = 0; i < 5; ++i) {
         CHECK_FALSE(brake.feed_text(a + "\n"));
         CHECK_FALSE(brake.feed_text(b + "\n"));
@@ -99,13 +104,14 @@ TEST_CASE("loop brake alternating long lines does not trip same-line early",
     CHECK_FALSE(brake.tripped());
 }
 
-TEST_CASE("loop brake token n-gram phrase >= 4 trips", "[loop_brake]") {
+TEST_CASE("loop brake token n-gram phrase >= 3 trips", "[loop_brake]") {
     std::vector<int> phrase = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
     REQUIRE(phrase.size() >= 8);
     REQUIRE(phrase.size() <= 16);
 
     LoopBrake brake;
-    for (int r = 0; r < 3; ++r) {
+    // threshold default 3: two full repeats must not trip; third completes trip.
+    for (int r = 0; r < 2; ++r) {
         for (int t : phrase) {
             CHECK_FALSE(brake.feed_token(t));
         }
@@ -143,7 +149,7 @@ TEST_CASE("loop brake feed combines token and text", "[loop_brake]") {
     LoopBrake brake;
     const std::string phrase =
         "Fact Check: The capital of France is Paris!! "; // 44
-    const std::string full = repeat(phrase, 4);
+    const std::string full = repeat(phrase, 3);
     bool tripped = false;
     int tok = 1;
     for (std::size_t i = 0; i < full.size(); ++i) {
@@ -157,4 +163,16 @@ TEST_CASE("loop brake feed combines token and text", "[loop_brake]") {
 
 TEST_CASE("loop brake ignores pure punctuation stacks", "[loop_brake]") {
     CHECK_FALSE(has_generation_loop(repeat("----", 40)));
+}
+
+TEST_CASE("loop brake trips on frequent word n-grams not pure suffix",
+          "[loop_brake]") {
+    // Slightly interleaved so pure end-suffix stack may miss; frequency hits.
+    std::string body;
+    for (int i = 0; i < 6; ++i) {
+        body += "Fact Check: The capital of France is Paris. ";
+        body += "Also note context briefly. ";
+    }
+    CHECK(has_frequent_word_ngram_loop(body, 8, 12, 5, 400));
+    CHECK(has_generation_loop(body));
 }

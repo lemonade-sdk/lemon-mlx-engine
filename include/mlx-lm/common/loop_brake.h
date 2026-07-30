@@ -17,15 +17,23 @@ struct LoopBrakeParams {
     // Task: ~40–80 chars; slightly widened so line-with-prefix units still match.
     int min_phrase_chars = 32;
     int max_phrase_chars = 120;
-    int phrase_repeat_threshold = 4;
+    // Consecutive suffix stack (tight). Frequency window uses ngram_freq_threshold.
+    int phrase_repeat_threshold = 3;
 
     int min_phrase_tokens = 8;
     int max_phrase_tokens = 16;
-    int token_phrase_repeat_threshold = 4;
+    int token_phrase_repeat_threshold = 3;
 
-    int same_line_threshold = 6;
+    int same_line_threshold = 5;
     /// Ignore very short lines (list markers, blank-ish noise).
     int min_line_chars = 20;
+
+    /// Non-adjacent thrash: same 8–12 word n-gram count in a trailing window.
+    int ngram_min_words = 8;
+    int ngram_max_words = 12;
+    int ngram_freq_threshold = 5;
+    /// Only scan the last N words for frequency (cost bound).
+    int ngram_window_words = 400;
 };
 
 /// Why the brake fired (for tests / diagnostics).
@@ -34,7 +42,85 @@ enum class LoopBrakeReason {
     PhraseChars,
     PhraseTokens,
     SameLine,
+    WordNgramFreq,
 };
+
+/// Split `text` into whitespace-separated words (simple; good enough for CoT).
+inline std::vector<std::string_view> split_words(std::string_view text) {
+    std::vector<std::string_view> words;
+    std::size_t i = 0;
+    const std::size_t n = text.size();
+    while (i < n) {
+        while (i < n && (text[i] == ' ' || text[i] == '\n' || text[i] == '\t' ||
+                         text[i] == '\r')) {
+            ++i;
+        }
+        if (i >= n) {
+            break;
+        }
+        std::size_t j = i;
+        while (j < n && text[j] != ' ' && text[j] != '\n' && text[j] != '\t' &&
+               text[j] != '\r') {
+            ++j;
+        }
+        words.emplace_back(text.substr(i, j - i));
+        i = j;
+    }
+    return words;
+}
+
+/// True if any 8–12 word n-gram appears ≥ threshold times in a trailing word window
+/// (catches CoT thrash that is not a pure end-suffix stack).
+inline bool has_frequent_word_ngram_loop(std::string_view text,
+                                         int min_words,
+                                         int max_words,
+                                         int threshold,
+                                         int window_words) {
+    if (min_words < 1 || max_words < min_words || threshold < 2) {
+        return false;
+    }
+    auto words = split_words(text);
+    if (static_cast<int>(words.size()) < min_words * threshold) {
+        return false;
+    }
+    const int n = static_cast<int>(words.size());
+    const int start = std::max(0, n - window_words);
+    // Map key = joined words with single spaces (bounded work: only max_words
+    // lengths, and only ngrams that appear as candidates from end first).
+    for (int L = max_words; L >= min_words; --L) {
+        if (n - start < L * threshold) {
+            continue;
+        }
+        // Count n-grams in [start, n).
+        // Use a simple O(W*L) pass with a hash of string keys — W<=400.
+        std::vector<std::string> keys;
+        keys.reserve(static_cast<std::size_t>(n - start));
+        for (int i = start; i + L <= n; ++i) {
+            std::string key;
+            key.reserve(static_cast<std::size_t>(L) * 8);
+            for (int k = 0; k < L; ++k) {
+                if (k) {
+                    key.push_back(' ');
+                }
+                key.append(words[static_cast<std::size_t>(i + k)]);
+            }
+            keys.push_back(std::move(key));
+        }
+        std::sort(keys.begin(), keys.end());
+        int run = 1;
+        for (std::size_t i = 1; i < keys.size(); ++i) {
+            if (keys[i] == keys[i - 1]) {
+                ++run;
+                if (run >= threshold) {
+                    return true;
+                }
+            } else {
+                run = 1;
+            }
+        }
+    }
+    return false;
+}
 
 /// Check a full string for a consecutive char-phrase loop (stateless helper).
 inline bool has_consecutive_phrase_loop(std::string_view text,
@@ -181,6 +267,13 @@ public:
                                         params_.max_phrase_chars,
                                         params_.phrase_repeat_threshold)) {
             reason_ = LoopBrakeReason::PhraseChars;
+        } else if (!tripped() &&
+                   has_frequent_word_ngram_loop(text_,
+                                               params_.ngram_min_words,
+                                               params_.ngram_max_words,
+                                               params_.ngram_freq_threshold,
+                                               params_.ngram_window_words)) {
+            reason_ = LoopBrakeReason::WordNgramFreq;
         }
         return tripped();
     }
@@ -278,6 +371,13 @@ inline bool has_generation_loop(std::string_view text,
                                     params.min_phrase_chars,
                                     params.max_phrase_chars,
                                     params.phrase_repeat_threshold)) {
+        return true;
+    }
+    if (has_frequent_word_ngram_loop(text,
+                                     params.ngram_min_words,
+                                     params.ngram_max_words,
+                                     params.ngram_freq_threshold,
+                                     params.ngram_window_words)) {
         return true;
     }
     LoopBrake brake(params);
