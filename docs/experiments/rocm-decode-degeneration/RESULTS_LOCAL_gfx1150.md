@@ -108,22 +108,32 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 | **Refuted** | H2 async/KV as primary residual | P1/P2 ladder |
 | **Fixed** | Decode `g` f32 vs prefill bf16 HIP type-pun | `d218c7c` |
 
-### Residual mitigations (product candidates)
+### Residual mitigations (product)
 
-1. **`--repetition-penalty ~1.1–1.2`** during thinking multi-turn (measured help on R1).  
-2. **N-gram / phrase-loop stop** in generate/chat (stop when same phrase ≥N).  
-3. Do **not** “fix” residual by raising max_tokens alone (worsens R1).  
-4. Keep **fused2 opt-in** for H1 catastrophic class.  
+1. **`LoopBrake` in ChatSession** (`64387f8`) — char phrase (≥4× 40–80), same-line (≥6), token n-gram (≥4× 8–16). Stops generation early; does not change sampling. Logs: `LB_france_mt.txt`, `LB_radar_mt.txt`.  
+2. **`--repetition-penalty ~1.1–1.2`** still helps as sampling-side option (measured on R1).  
+3. Do **not** “fix” residual by raising max_tokens alone (worsens R1 without brake).  
+4. Keep **fused2 opt-in** for H1 catastrophic class until more fused2 green cells.  
 5. Optional: strip unfinished think blocks before history append (experiment).
+
+### Loop brake local verify (`64387f8`, HISTORY_OK)
+
+| Cell | Result |
+|------|--------|
+| France multi-turn default | t2–4 **hard=N**; gen cut ~400→152/118/113 (`LB_france_mt.txt`); t1 soft residual |
+| Radar multi-turn default | all turns **hard=N** max12≤4; gens partially cut (`LB_radar_mt.txt`) |
+| Radar + `MLX_GDN_FUSED2=1` | all turns **hard=N** max12≤5 but still fills 400 tokens soft Wait (`LB_FUSED2_radar_mt.txt`) — improved vs B0; **do not re-default fused2** from one ladder |
 
 ## Remaining work (not closed)
 
 1. ~~History confound on FIX logs~~ — gate defined; HIST_gate PASS.  
 2. ~~P0 `g` activation-dtype / prefill–decode HIP type-pun~~ — `d218c7c`.  
-3. **Residual CoT loop brake** (rep-penalty default policy and/or n-gram stop) — next code work.  
-4. **True kernel fix** for `gdn_fused_decode` (RMSNorm = MLX `1/sqrt` + InT weight order; stable softplus) so fused2 can return for perf.  
-5. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
-6. **q-norm `1/D` vs `1/√D`** A/B only after residual product policy (consistent across paths today).  
+3. ~~Residual CoT loop brake (n-gram/phrase stop)~~ — `LoopBrake` + unit tests (`64387f8`).  
+4. ~~Fused2 RMSNorm/softplus parity patch~~ — `gdn_fused_decode` HIP (`64387f8`); still **opt-in** pending more cells.  
+5. Optional: default-on fused2 only after multi-cell + 35B confidence.  
+6. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
+7. **q-norm `1/D` vs `1/√D`** A/B only after residual product policy (consistent across paths today).  
+8. Optional server-path LoopBrake (chat path only today). 
 
 ## Supervisor consensus (quintuple)
 
@@ -138,7 +148,8 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 ## Bottom line
 
 **H1 (default fused2 hard-loop): mitigated** — `gdn_fused_decode` opt-in + output dtype cast (`ab1b518`).  
-**P0 decode `g` type-pun: fixed** — cast decay `g` to activation dtype + model `a_log` on T=1 update (`d218c7c`); radar turn1 factually correct post-fix.  
-**Residual multi-turn thinking loops: open** — primarily CoT self-reinforcement; larger budget worsens; rep-penalty helps; not a cross-turn GDN cache bug.  
-**Do not wait on CI**; next code: loop brake / policy for thinking multi-turn; fused2 RMSNorm parity.  
+**P0 decode `g` type-pun: fixed** — cast decay `g` to activation dtype + model `a_log` on T=1 update (`d218c7c`).  
+**Residual CoT loops: braked in chat** — `LoopBrake` (`64387f8`); France/radar hard-loop rule largely clear post-brake.  
+**Fused2 numerics: partial** — RMSNorm/softplus aligned (`64387f8`); remains **opt-in**; soft Wait under fused2 still possible.  
+**Do not wait on CI**; next: 35B confirmation; optional server LoopBrake; fused2 default only after more green cells.  
 **Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main` — **human merge only**.
