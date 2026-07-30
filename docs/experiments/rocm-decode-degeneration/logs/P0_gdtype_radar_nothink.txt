@@ -1,0 +1,37 @@
+Loading model: mlx-community/Qwen3.5-0.8B-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=889 MB, peak=911 MB, cache=24 MB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+A phased array radar steers a beam without moving antennas by utilizing **electromagnetic beam steering** based on the **phase of the transmitted signals**. Unlike traditional radars that use moving antennas to change the direction of the beam, this method relies on the physical properties of the electromagnetic waves to control the direction of the signal.
+
+Here is the step-by-step explanation of how this works:
+
+### 1. The Principle of Phase Control
+In a phased array, each antenna in the array is connected to a control unit (often called a "phase shifter"). These control units adjust the **delay time** (or phase shift) applied to each antenna's signal.
+*   **Phase Shift:** This delay is calculated by the control unit based on the desired beam direction.
+*   **Signal Combination:** When the radar transmits a signal, it sends a signal from one antenna, a delayed version from another, and so on.
+*   **Interference:** The radar receiver
+Prompt:     27 tokens, 128.822 tokens/s, 0.209591s
+Generation: 200 tokens, 101.884 tokens/s, 1.96302s
+
+
+> 
+Assistant: Imagine you are holding a flashlight beam that is currently pointing straight ahead. To change where the beam goes, you would need to move the flashlight physically.
+
+But there is a special kind of flashlight called a **phased array**. It works like this:
+
+1.  **The "Lights":** There are many small lights (antennas) on the side of the flashlight.
+2.  **The "Delay":** Each light has a special switch attached to it. This switch can be turned on or off at a specific speed (delay).
+3.  **The "Beam":** When you turn the switch on, the light from one light travels forward, but the light from another light travels forward at a different speed (because it is delayed).
+4.  **The "Result":** By changing the speed of the light from different lights, you can make the beam point anywhere you want, even if the flashlight stays still.
+
+**In short:** You
+Prompt:     245 tokens, 466.316 tokens/s, 0.525394s
+Generation: 200 tokens, 100.899 tokens/s, 1.98218s
+
+
+> 

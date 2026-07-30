@@ -545,12 +545,15 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         if (use_fused_gdn) {
             mx::array o(0.0f), ns(0.0f);
             if (use_fused2) {
+                // Fused kernel wants f32 a_log/dt_bias for on-chip g math.
                 std::tie(o, ns) = gdn_fused_decode(
                     q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
                     *q_norm_w_, *k_norm_w_, ssm_state, /*inplace=*/gdn_inplace);
             } else {
+                // Match prefill: model-dtype a_log/dt_bias so compiled_beta_and_g
+                // and HIP gated_delta_step see the same g element type as prefill.
                 std::tie(o, ns) = gated_delta_update(
-                    q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
+                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
                     ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
             }
             // Non-fused2 recurrence can promote to f32; residual/gate HIP kernels

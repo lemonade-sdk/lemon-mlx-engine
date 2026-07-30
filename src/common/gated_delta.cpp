@@ -619,11 +619,16 @@ mx::array compute_gated_delta_g(
 // ---------------------------------------------------------------------------
 static auto compiled_beta_and_g = mx::compile(
     [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+        // inputs: b, a_log, a, dt_bias. Softplus/exp use f32 a_log for range,
+        // but g must match activation dtype (b/a/q/k/v/state). Casting to
+        // a_log.dtype() is wrong when decode passes a_log_f32: g becomes f32
+        // while the ROCm gated_delta_step HIP module is often first JITed at
+        // prefill with bf16 g (JIT key ignores input dtypes → type-pun decay).
         auto beta = mx::sigmoid(inputs[0]);
         auto a_log_f32 = mx::astype(inputs[1], mx::float32);
         auto softplus_val = mx::log(mx::add(mx::exp(mx::add(inputs[2], inputs[3])), mx::array(1.0f)));
         auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), softplus_val)));
-        g = mx::astype(g, inputs[1].dtype());
+        g = mx::astype(g, inputs[0].dtype());  // b / activation dtype, not a_log
         return {beta, g};
     },
     /*shapeless=*/true);
