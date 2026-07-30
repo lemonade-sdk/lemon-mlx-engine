@@ -10,9 +10,9 @@
 namespace mlx_lm {
 
 /// Thresholds for detecting runaway decode loops (thinking / CoT thrash).
-/// Defaults match residual multi-turn hard-loop criteria used in local ROCm
-/// experiments: ~40–80 char (or 8–16 token) phrase repeated ≥4 consecutively,
-/// or the same non-empty line repeated ≥6 times in a row.
+/// Defaults (tightened for 0.8B CoT): ~32–120 char phrase or 8–16 token n-gram
+/// stacked ≥3 times, same non-empty line ≥5 times, or frequent 8–12 word
+/// n-grams (≥5) in a trailing window.
 struct LoopBrakeParams {
     // Task: ~40–80 chars; slightly widened so line-with-prefix units still match.
     int min_phrase_chars = 32;
