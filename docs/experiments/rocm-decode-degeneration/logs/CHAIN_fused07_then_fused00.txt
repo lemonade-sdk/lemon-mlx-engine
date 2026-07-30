@@ -1,0 +1,23 @@
+CHAIN2_START 2026-07-29T20:52:26-07:00 wait_pid=873081 then=MLX_GDN_FUSED2=1 temp=0
+FUSED07_CHAT_GONE 2026-07-29T21:02:06-07:00
+FUSED00_START 2026-07-29T21:02:16-07:00 tip=a372276 bin=1785380863 MLX_GDN_FUSED2=1 temp=0 max=20480
+FUSED00_DONE 2026-07-29T21:13:01-07:00
+START 2026-07-29T21:02:16-07:00 binary=1785380863 tip=a372276 path=MLX_GDN_FUSED2=1 temp=0.0 max-tokens=20480 rep=1.0 ctx=32768 no_code_change=1
+Prompt:     17 tokens, 23.8298 tokens/s, 0.713392s
+Generation: 2502 tokens, 27.4573 tokens/s, 91.1232s
+Prompt:     1131 tokens, 123.566 tokens/s, 9.15297s
+Generation: 2927 tokens, 27.0907 tokens/s, 108.045s
+Prompt:     2481 tokens, 130.695 tokens/s, 18.9832s
+Generation: 2506 tokens, 26.834 tokens/s, 93.3888s
+Prompt:     3659 tokens, 130.827 tokens/s, 27.9683s
+Generation: 2652 tokens, 26.4768 tokens/s, 100.163s
+Prompt:     4748 tokens, 131.716 tokens/s, 36.0474s
+Generation: 3785 tokens, 26.1935 tokens/s, 144.501s
+> EXIT:0 2026-07-29T21:13:01-07:00
+FUSED00 gens [('2502', '27.4573'), ('2927', '27.0907'), ('2506', '26.834'), ('2652', '26.4768'), ('3785', '26.1935')]
+FUSED00 prompts ['17', '1131', '2481', '3659', '4748']
+python 3 numpy True
+f_s thrash pairs 0
+sync thrash 0
+EXIT ['EXIT:0']
+CHAIN2_END 2026-07-29T21:13:01-07:00
