@@ -41,11 +41,13 @@ static const char* gdn_hip_source = R"(
     auto i_state = state_in + (n * Dv + dv_idx) * Dk;
     auto o_state = state_out + (n * Dv + dv_idx) * Dk;
 
-    // Load state into registers (float32 accumulation)
+    // SSM state is float32 for the full sequence lifetime (prefill multi-T and
+    // decode T=1). Only activations y are quantized to InT each step — matches
+    // keeping state in f32 across tokens instead of InT RMW every decode step.
     float state[n_per_t];
     for (int i = 0; i < n_per_t; ++i) {
         auto s_idx = n_per_t * dk_idx + i;
-        state[i] = static_cast<float>(i_state[s_idx]);
+        state[i] = i_state[s_idx];
     }
 
     for (int t = 0; t < T_val; ++t) {
@@ -87,10 +89,10 @@ static const char* gdn_hip_source = R"(
         beta_ += Hv;
     }
 
-    // Write state back
+    // Write float32 state back (no InT truncate between tokens).
     for (int i = 0; i < n_per_t; ++i) {
         auto s_idx = n_per_t * dk_idx + i;
-        o_state[s_idx] = static_cast<InT>(state[i]);
+        o_state[s_idx] = state[i];
     }
 )";
 
@@ -119,10 +121,11 @@ static const char* gdn_seq_hip_source = R"(
     auto i_state = state_in + (n * Dv + dv_idx) * Dk;
     auto o_state = state_out + (n * Dv + dv_idx) * Dk;
 
+    // float32 SSM lifetime (see gdn_hip_source).
     float state[n_per_t];
     for (int i = 0; i < n_per_t; ++i) {
         auto s_idx = n_per_t * dk_idx + i;
-        state[i] = static_cast<float>(i_state[s_idx]);
+        state[i] = i_state[s_idx];
     }
 
     for (int t = 0; t < T_val; ++t) {
@@ -152,11 +155,11 @@ static const char* gdn_seq_hip_source = R"(
         }
 
         // Per-token state snapshot: state AFTER processing token t.
-        // state_seq layout [B, T, Hv, Dv, Dk].
+        // state_seq layout [B, T, Hv, Dv, Dk] — float32.
         auto seq_base = (((b_idx * T_val + t) * Hv + hv_idx) * Dv + dv_idx) * Dk;
         for (int i = 0; i < n_per_t; ++i) {
             auto s_idx = n_per_t * dk_idx + i;
-            state_seq[seq_base + s_idx] = static_cast<InT>(state[i]);
+            state_seq[seq_base + s_idx] = state[i];
         }
 
         q_ += Hk * Dk;
@@ -169,7 +172,7 @@ static const char* gdn_seq_hip_source = R"(
 
     for (int i = 0; i < n_per_t; ++i) {
         auto s_idx = n_per_t * dk_idx + i;
-        o_state[s_idx] = static_cast<InT>(state[i]);
+        o_state[s_idx] = state[i];
     }
 )";
 
@@ -444,8 +447,9 @@ static const char* gdn_fused_decode_hip_source = R"(
     const InT* q_ = q + (long)b_idx * Hk * Dk + hk_idx * Dk;
     const InT* k_ = k + (long)b_idx * Hk * Dk + hk_idx * Dk;
     const InT* v_ = v + (long)b_idx * Hv * Dv + hv_idx * Dv;
-    const InT* i_state = state_in + ((long)n * Dv + dv_idx) * Dk;
-    InT* o_state = state_out + ((long)n * Dv + dv_idx) * Dk;
+    // float32 SSM (match gated_delta_step).
+    const float* i_state = state_in + ((long)n * Dv + dv_idx) * Dk;
+    float* o_state = state_out + ((long)n * Dv + dv_idx) * Dk;
 
     // beta, g (per head). Stable softplus: max(x,0)+log1p(exp(-|x|)).
     float beta = 1.0f / (1.0f + expf(-static_cast<float>(b[(long)b_idx * Hv + hv_idx])));
@@ -483,10 +487,10 @@ static const char* gdn_fused_decode_hip_source = R"(
         kl[i] = static_cast<float>(kn) * static_cast<float>(k_norm_w[s]);
     }
 
-    // state load (column layout, coalesced)
+    // state load (column layout, coalesced) — float32 SSM
     float state[n_per_t];
     #pragma unroll
-    for (int i = 0; i < n_per_t; ++i) state[i] = static_cast<float>(i_state[dk_idx + 32 * i]);
+    for (int i = 0; i < n_per_t; ++i) state[i] = i_state[dk_idx + 32 * i];
 
     // recurrence (single timestep)
     float kv_mem = 0.0f;
@@ -500,7 +504,7 @@ static const char* gdn_fused_decode_hip_source = R"(
     for (int o = 16; o > 0; o >>= 1) out += __shfl_xor(out, o);
     if (dk_idx == 0) y[(long)b_idx * Hv * Dv + hv_idx * Dv + dv_idx] = static_cast<InT>(out);
     #pragma unroll
-    for (int i = 0; i < n_per_t; ++i) o_state[dk_idx + 32 * i] = static_cast<InT>(state[i]);
+    for (int i = 0; i < n_per_t; ++i) o_state[dk_idx + 32 * i] = state[i];
 )";
 
 static mx::fast::CustomKernelFunction& get_gdn_fused_decode_kernel() {
@@ -541,12 +545,17 @@ static std::pair<mx::array, mx::array> gated_delta_kernel(
     int Hk = k.shape(2), Dk = k.shape(3);
     int Hv = v.shape(2), Dv = v.shape(3);
     auto input_type = q.dtype();
+    // State buffers are float32 (see gdn_hip_source). Promote if caller still
+    // has bf16 residual cache from older builds/tests.
+    mx::array state_f32 = (state.dtype() == mx::float32)
+                              ? state
+                              : mx::astype(state, mx::float32);
 
     auto& kern = inplace_state ? get_gdn_kernel_inplace() : get_gdn_kernel();
     auto results = kern(
-        {q, k, v, g, beta, state, mx::array(T)},
-        {{B, T, Hv, Dv}, state.shape()},
-        {input_type, input_type},
+        {q, k, v, g, beta, state_f32, mx::array(T)},
+        {{B, T, Hv, Dv}, state_f32.shape()},
+        {input_type, mx::float32},
         {32, Dv, B * Hv},      // grid
         {32, 4, 1},             // threadGroup
         {{"InT", input_type}, {"Dk", Dk}, {"Dv", Dv}, {"Hk", Hk}, {"Hv", Hv}},
@@ -581,11 +590,14 @@ static std::tuple<mx::array, mx::array, mx::array> gated_delta_kernel_seq(
     int Hk = k.shape(2), Dk = k.shape(3);
     int Hv = v.shape(2), Dv = v.shape(3);
     auto input_type = q.dtype();
+    mx::array state_f32 = (state.dtype() == mx::float32)
+                              ? state
+                              : mx::astype(state, mx::float32);
 
     auto results = get_gdn_seq_kernel()(
-        {q, k, v, g, beta, state, mx::array(T)},
-        {{B, T, Hv, Dv}, state.shape(), {B, T, Hv, Dv, Dk}},
-        {input_type, input_type, input_type},
+        {q, k, v, g, beta, state_f32, mx::array(T)},
+        {{B, T, Hv, Dv}, state_f32.shape(), {B, T, Hv, Dv, Dk}},
+        {input_type, mx::float32, mx::float32},
         {32, Dv, B * Hv},      // grid
         {32, 4, 1},             // threadGroup
         {{"InT", input_type}, {"Dk", Dk}, {"Dv", Dv}, {"Hk", Hk}, {"Hv", Hv}},
@@ -637,9 +649,10 @@ static auto compiled_beta_and_g = mx::compile(
         // prefill with bf16 g (JIT key ignores input dtypes → type-pun decay).
         auto beta = mx::sigmoid(inputs[0]);
         auto a_log_f32 = mx::astype(inputs[1], mx::float32);
-        // Stable softplus (matches fused2 HIP + torch F.softplus).
-        auto softplus_val =
-            mx::logaddexp(mx::add(inputs[2], inputs[3]), mx::array(0.0f));
+        // Softplus in f32 (torch: softplus(a.float()+dt_bias)); then g → act dtype.
+        auto a_f = mx::astype(inputs[2], mx::float32);
+        auto db_f = mx::astype(inputs[3], mx::float32);
+        auto softplus_val = mx::logaddexp(mx::add(a_f, db_f), mx::array(0.0f));
         auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), softplus_val)));
         g = mx::astype(g, inputs[0].dtype());  // b / activation dtype, not a_log
         return {beta, g};
@@ -784,7 +797,11 @@ std::pair<mx::array, mx::array> gated_delta_ops(
     int Hv = v.shape(2), Dv = v.shape(3);
 
     int repeat_factor = Hv / Hk;
-    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
+    // float32 SSM for full prefill/decode lifetime (see gdn_hip_source).
+    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, mx::float32));
+    if (s.dtype() != mx::float32) {
+        s = mx::astype(s, mx::float32);
+    }
 
     // Fused HIP kernel (all T, no mask) — ROCm only.
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
@@ -860,7 +877,10 @@ std::pair<mx::array, mx::array> gated_delta_update(
     int B = q.shape(0), Dk = q.shape(3);
     int Hv = v.shape(2), Dv = v.shape(3);
 
-    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
+    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, mx::float32));
+    if (s.dtype() != mx::float32) {
+        s = mx::astype(s, mx::float32);
+    }
 
     return gated_delta_ops(q, k, v, g, beta, s, mask, inplace_state);
 }
@@ -890,10 +910,13 @@ std::pair<mx::array, mx::array> gdn_fused_decode(
         }
         auto& kern = inplace ? get_gdn_fused_decode_kernel_inplace()
                              : get_gdn_fused_decode_kernel();
+        mx::array st = (state.dtype() == mx::float32)
+                           ? state
+                           : mx::astype(state, mx::float32);
         auto results = kern(
-            {q, k, v, b, a, al, db, q_norm_w, k_norm_w, state},
-            {{B, 1, Hv, Dv}, state.shape()},
-            {t, t},
+            {q, k, v, b, a, al, db, q_norm_w, k_norm_w, st},
+            {{B, 1, Hv, Dv}, st.shape()},
+            {t, mx::float32},
             {32, Dv, B * Hv},      // grid (total threads, Metal-style)
             {32, 4, 1},            // threadgroup
             {{"InT", t}, {"Dk", Dk}, {"Dv", Dv}, {"Hk", Hk}, {"Hv", Hv}},

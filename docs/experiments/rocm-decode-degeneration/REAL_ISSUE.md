@@ -82,3 +82,22 @@ Every cycle must:
 | fused HIP | `gdn_fused_decode` in `gated_delta.cpp` |
 | Multi-turn session | `src/common/chat_session.cpp` (fresh cache, history append) |
 | Decode async | `src/common/generate.cpp` (`TokenIterator::next`) |
+
+## Implemented this cycle (f32 SSM + norm dtype)
+
+Supervisors (explore + senior): primary residual was **decode T=1 InT state RMW** vs
+**prefill multi-T f32 accumulate**, plus **q/k norm weights in a_log dtype (f32)**
+vs prefill **activation dtype (bf16)**.
+
+### Code
+1. **HIP `gated_delta_step` / seq / fused2**: SSM `state_in`/`state_out` are **float32**;
+   only `y` is quantized to InT each step.
+2. **Cache zeros / promote**: f32 SSM; do not cast `ns` back to bf16.
+3. **q/k RMSNorm materialize** in **activation dtype**; prefill uses same `q_norm_w_`.
+4. **softplus**: `a`/`dt_bias` cast to f32 before `logaddexp` (torch-aligned).
+
+### Smoke
+- 0.8B no-think who-are-you / 2+2: PASS (`F32SSM_0.8B_smoke.txt`)
+
+### Still required for "resolved"
+Field Maxwell→…→Python on **LemonMLXE 35B** without seatbelts.

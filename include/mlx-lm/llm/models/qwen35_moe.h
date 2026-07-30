@@ -177,7 +177,10 @@ public:
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
     /// Eval T=1 GDN decode constants once at load (not mid-forward).
-    void materialize_decode_constants();
+    /// Materialize q/k RMSNorm constants in *activation* dtype (must match
+    /// prefill's `q_out.dtype()`, typically bf16 — not a_log_ which may be f32).
+    void materialize_decode_constants(
+        mlx::core::Dtype act_dtype = mlx::core::bfloat16);
 };
 
 // Dense MLP (reuses gate/up/down pattern)
@@ -243,9 +246,10 @@ public:
 
     std::unordered_map<std::string, mlx::core::array*> weight_map();
 
-    void materialize_decode_constants() {
+    void materialize_decode_constants(
+        mlx::core::Dtype act_dtype = mlx::core::bfloat16) {
         if (linear_attn_.has_value()) {
-            linear_attn_->materialize_decode_constants();
+            linear_attn_->materialize_decode_constants(act_dtype);
         }
     }
 };
@@ -283,9 +287,10 @@ public:
 
     const std::vector<Qwen35MoEDecoderLayer>& get_layers() const { return layers_; }
 
-    void materialize_gdn_decode_constants() {
+    void materialize_gdn_decode_constants(
+        mlx::core::Dtype act_dtype = mlx::core::bfloat16) {
         for (auto& layer : layers_) {
-            layer.materialize_decode_constants();
+            layer.materialize_decode_constants(act_dtype);
         }
     }
 };
