@@ -46,7 +46,7 @@ Same binary, same prompts, MTP off, no LoopBrake:
 
 | Path | temp = 0 | temp = 0.7 (product-like) |
 |------|----------|---------------------------|
-| **Default** (no fused2) | **PASS** (D0) | **MIXED** — FAIL n=1 thrash / **PASS n=2** |
+| **Default** (no fused2) | **PASS** (D0) | **MIXED** — FAIL n=1 thrash / **PASS n=2 + n=3** (2/3) |
 | **`MLX_GDN_FUSED2=1`** | **PASS** (F0) | **PASS** 2/2 (F7 n=1 + n=2) |
 
 Do not over-claim statistical certainty. Product bar = default@0.7 without seatbelts.
@@ -56,7 +56,7 @@ Do not over-claim statistical certainty. Product bar = default@0.7 without seatb
 | Claim | Verdict |
 |-------|---------|
 | f32 SSM / prefill≡decode is the real correctness class | **Supported** |
-| Field collapse “fully fixed” for product defaults | **No** — default@0.7 thrash still observed once; n=2 green is not enough alone |
+| Field collapse “fully fixed” for product defaults | **No** — default@0.7 thrash still observed once; 2 later greens (n=2,n=3) do not erase residual risk |
 | fused2 known poison forever | **No** — fused@0 and @0.7 PASS; F7 **2/2** on tip |
 | fused2 as product **code** default tonight | **Not yet** — keep opt-in; operator may `export MLX_GDN_FUSED2=1` |
 | ~63 t/s expected on 35B gfx1150 | **No** — measured ~25–27; ~63 is 0.8B-class |
@@ -241,6 +241,7 @@ Full branch vs `origin/main`: ~21 commits (includes docs/logs).
 | **D0** | default | 0 | — | 8192 | `logs/FIELD_SAR_35B_prefill_f32.txt` | **PASS** |
 | **D7 n=1** | default | 0.7 | 0.9 | 20480 | `logs/FIELD_SAR_35B_temp07.txt` | **FAIL** thrash |
 | **D7 n=2** | default | 0.7 | 0.9 | 20480 | `logs/FIELD_SAR_35B_temp07_n2.txt` | **PASS** |
+| **D7 n=3** | default | 0.7 | 0.9 | 20480 | `logs/FIELD_SAR_35B_temp07_n3.txt` | **PASS** |
 | **F7 n=1** | `MLX_GDN_FUSED2=1` | 0.7 | 0.9 | 20480 | `logs/FIELD_SAR_35B_temp07_FUSED2.txt` | **PASS** |
 | **F7 n=2** | `MLX_GDN_FUSED2=1` | 0.7 | 0.9 | 20480 | `logs/FIELD_SAR_35B_temp07_FUSED2_n2.txt` | **PASS** |
 | **F0** | `MLX_GDN_FUSED2=1` | 0 | — | 20480 | `logs/FIELD_SAR_35B_temp00_FUSED2.txt` | **PASS** |
@@ -257,7 +258,7 @@ Full branch vs `origin/main`: ~21 commits (includes docs/logs).
 | Python | 4× fences, `import numpy`, usable Doppler/FFT-style code |
 | Thrash | None |
 
-#### D7 — default temp=0.7 (mixed n=1 FAIL / n=2 PASS)
+#### D7 — default temp=0.7 (mixed n=1 FAIL / n=2+n=3 PASS → **2/3**)
 
 **n=1 FAIL** (`FIELD_SAR_35B_temp07.txt`):
 
@@ -284,7 +285,20 @@ Full branch vs `origin/main`: ~21 commits (includes docs/logs).
 | Python | 3× fences, `import numpy`, Doppler/FFT scaffolding |
 | Thrash | **None** (`f_s_orig=0`, max same-word run **2**) |
 
-**Interpretation:** Product-like sampling **can** hit field collapse (n=1) but **can also clear** (n=2) on the same binary. Default@0.7 is **mixed**, not solid red after n=2. Prefer more n or parity isolation only if thrash reappears; do not claim product bar fully closed.
+**n=3 PASS** (`FIELD_SAR_35B_temp07_n3.txt`):
+
+| Metric | Value |
+|--------|--------|
+| Wall | ~11 min (22:27:23 → 22:38:08) |
+| EXIT | **0** |
+| START | binary=`1785380863` tip=`04b860b` path=default_no_fused2 |
+| Prompts | 17 → 1109 → 2631 → 3858 → 5051 (**HISTORY_OK**) |
+| Gens | 2384 / 2780 / 2282 / 3119 / **3103** |
+| Avg gen t/s | ~25.8 |
+| Python | 2× fences, `import numpy`, Doppler/FFT demo |
+| Thrash | **None** (max same-word run **3**) |
+
+**Interpretation:** Product-like sampling **can** hit field collapse (n=1) but **cleared twice** (n=2, n=3) on the same binary. Default@0.7 is **2 PASS / 1 FAIL** — residual thrash risk remains; not solid red; do not claim product bar fully sealed. Parity still deferred (charter: only if D7 stays solid red after n=2).
 
 #### F7 — fused2 temp=0.7 PASS (n=1 and n=2)
 
@@ -485,6 +499,7 @@ This restores **original fused2 polarity** via env without flipping the repo def
 | `logs/FIELD_SAR_35B_prefill_f32.txt` | D0 PASS |
 | `logs/FIELD_SAR_35B_temp07.txt` | D7 n=1 FAIL thrash |
 | `logs/FIELD_SAR_35B_temp07_n2.txt` | D7 n=2 PASS |
+| `logs/FIELD_SAR_35B_temp07_n3.txt` | D7 n=3 PASS |
 | `logs/FIELD_SAR_35B_temp07_FUSED2.txt` | F7 n=1 PASS |
 | `logs/FIELD_SAR_35B_temp07_FUSED2_n2.txt` | F7 n=2 PASS |
 | `logs/FIELD_SAR_35B_temp00_FUSED2.txt` | F0 PASS |

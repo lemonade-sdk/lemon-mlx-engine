@@ -17,14 +17,14 @@
 
 | Question | Answer |
 |----------|--------|
-| Is multi-turn GDN field collapse still real? | **Yes, residual risk** — default@0.7 n=1 thrash (`f_s_orig*…`); **n=2 PASS** same path. |
+| Is multi-turn GDN field collapse still real? | **Yes, residual risk** — default@0.7 n=1 thrash (`f_s_orig*…`); **n=2 and n=3 PASS** same path. |
 | Does f32 SSM + prefill keep-f32 help? | **Yes** — default @ temp=0 full SAR **PASS**; default@0.7 can PASS too (n=2). |
 | Is fused2 (`MLX_GDN_FUSED2=1`) still poison? | **Not on this matrix** — fused2 **PASS** at temp=0 and 0.7 (**F7 2/2**). |
 | Should fused2 become product default tonight? | **Not yet** — keep opt-in; product bar prioritizes **default** path; need parity + more green before flip. |
 | Is ~63 t/s expected on 35B here? | **No** — measured ~25–27 gen t/s; ~63 is 0.8B-class on this host. |
 | Did temp alone fix collapse? | **No** — temp=0 default PASS; temp=0.7 **mixed** (FAIL then PASS). Sampling interacts with residual fragility. |
 
-**Headline:** On tip `52d64de`, field SAR is achievable on default and fused. Default@0.7 is **mixed 1/2** (not closed, not solid red). Fused@0.7 is **2/2 PASS**. Keep fused2 **opt-in**. No LoopBrake.
+**Headline:** On tip `52d64de`, field SAR is achievable on default and fused. Default@0.7 is **2 PASS / 1 FAIL** (residual thrash risk; not solid red). Fused@0.7 is **2/2 PASS**. Keep fused2 **opt-in**. No LoopBrake.
 
 ---
 
@@ -94,11 +94,12 @@ Same binary, same model, same 5 prompts, MTP off, no pure-graph, no LoopBrake, n
 | **D0** default@0 | 5 | OK 17→…→4692 | Yes (4 fences, numpy) | None | 0 | 25.3 | **PASS** |
 | **D7 n=1** default@0.7 | 4 (+T5 mid) | OK 17→…→4056 | Started then thrash | **`f_s_orig` ×3101 run** | 143 (killed) | 25.6 | **FAIL** |
 | **D7 n=2** default@0.7 | 5 | OK 17→…→5020 | Yes (3 fences, numpy) | None | 0 | 26.2 | **PASS** |
+| **D7 n=3** default@0.7 | 5 | OK 17→…→5051 | Yes (2 fences, numpy) | None | 0 | 25.8 | **PASS** |
 | **F7 n=1** fused2@0.7 | 5 | OK 17→…→5343 | Yes (3 fences, numpy) | None | 0 | 26.3 | **PASS** |
 | **F7 n=2** fused2@0.7 | 5 | OK 17→…→4892 | Yes (4 fences, numpy) | None | 0 | 25.3 | **PASS** |
 | **F0** fused2@0 | 5 | OK 17→…→4748 | Yes (3 fences, numpy) | None | 0 | 26.8 | **PASS** |
 
-**D7 product path aggregate:** **1 FAIL / 1 PASS** (mixed). Not deterministic red after n=2; not product-closed.  
+**D7 product path aggregate:** **1 FAIL / 2 PASS** (mixed residual thrash risk). Not deterministic red; not product-sealed.  
 **F7 fused2@0.7 aggregate:** **2/2 PASS**.
 
 ### 5.2 Detail — D0 default temp=0 (PASS)
@@ -124,7 +125,15 @@ Same binary, same model, same 5 prompts, MTP off, no pure-graph, no LoopBrake, n
 - Gens **2360 / 2626 / 2315 / 3117 / 5222** @ ~25.4–26.7 t/s  
 - Thrash: **none** (`f_s_orig=0`, `synchronization=0`, max same-word run **2**)  
 - Turn 5: usable Python (`import numpy`, matplotlib, Doppler/FFT scaffolding; 3× ` ```python ` fences); natural EOS ≪ 20480  
-- Establishes: D7 n=1 thrash is **not** a deterministic always-fail under product sampling; default@0.7 is **mixed**  
+
+#### n=3 PASS (`logs/FIELD_SAR_35B_temp07_n3.txt`)
+
+- START 22:27:23 → EXIT:0 22:38:08 (~11 min); binary=`1785380863` tip=`04b860b` path=default_no_fused2  
+- Prompts **17 → 1109 → 2631 → 3858 → 5051** HISTORY_OK  
+- Gens **2384 / 2780 / 2282 / 3119 / 3103** @ ~25.2–26.4 t/s  
+- Thrash: **none** (`f_s_orig=0`, max same-word run **3**)  
+- Turn 5: usable Python (`import numpy`, matplotlib, Maxwell→wave / Doppler demo; 2× fences); natural EOS  
+- Establishes: default@0.7 is **2 PASS / 1 FAIL** — residual thrash risk remains but product path can clear repeatedly  
 
 ### 5.4 Detail — F7 fused2 temp=0.7 (PASS n=1 and n=2)
 
@@ -172,7 +181,7 @@ Same binary, same model, same 5 prompts, MTP off, no pure-graph, no LoopBrake, n
 
 ### 6.2 What is not fully closed
 
-1. **D7 mixed (1 FAIL / 1 PASS)** — product temperature path still thrash-capable (n=1) but can also clear (n=2). Could be:  
+1. **D7 mixed (1 FAIL / 2 PASS)** — product temperature path thrash-capable (n=1) but cleared twice (n=2, n=3). Could be:  
    - residual GDN numeric fragility under longer/stochastic trajectories, and/or  
    - pure sampling/model self-reinforcement amplified at 0.7  
 2. **F7 n=2 PASS** — fused@0.7 is 2/2 green on this tip (still not a code-default flip without parity).  
@@ -184,12 +193,12 @@ Same binary, same model, same 5 prompts, MTP off, no pure-graph, no LoopBrake, n
 
 ```
                 temp=0              temp=0.7
-default         PASS (D0)           MIXED (D7: FAIL n=1, PASS n=2)
+default         PASS (D0)           MIXED (D7: FAIL n=1, PASS n=2+n=3)
 fused2          PASS (F0)           PASS 2/2 (F7)
 ```
 
 - Greedy + default works on this tip.  
-- Product sampling + default: thrash once, clean once — **not deterministic FAIL**.  
+- Product sampling + default: thrash once, clean twice — **not deterministic FAIL**.  
 - fused2@0.7: **2/2 PASS**.  
 
 **Do not overclaim** “fused2 fixes sampling” or “default is broken forever.” Claim: “after f32 SSM work, field bar is achievable on default and fused; product@0.7 still has residual thrash risk (seen once on default).”
@@ -213,7 +222,7 @@ Older field notes emphasized `synchronization synchronization…`. This matrix�
 
 | Priority | Experiment |
 |----------|------------|
-| P0 | ~~D7 n=2~~ **PASS**; ~~F7 n=2~~ **PASS**; optional D7 n=3 only if policy wants ≥2 green default@0.7 |
+| P0 | ~~D7 n=2~~ **PASS**; ~~F7 n=2~~ **PASS**; ~~D7 n=3~~ **PASS** (default@0.7 now 2 green / 1 thrash) |
 | P1 | 0.8B multi-turn thinking ladder default vs fused2 on this tip (TIP_* logs exist) |
 | P2 | Teacher-force / SSM checksum: prefill multi-T vs T=1 default vs T=1 fused2 — **if thrash reappears** or before fused2 code default-on |
 | P3 | Only if default@0.7 stable green + parity: consider default-on fused2 with kill-switch env |
@@ -241,6 +250,7 @@ Older field notes emphasized `synchronization synchronization…`. This matrix�
 | `logs/FIELD_SAR_35B_prefill_f32.txt` | D0 PASS |
 | `logs/FIELD_SAR_35B_temp07.txt` | D7 n=1 FAIL thrash |
 | `logs/FIELD_SAR_35B_temp07_n2.txt` | D7 n=2 PASS |
+| `logs/FIELD_SAR_35B_temp07_n3.txt` | D7 n=3 PASS |
 | `logs/FIELD_SAR_35B_temp07_FUSED2.txt` | F7 n=1 PASS |
 | `logs/FIELD_SAR_35B_temp07_FUSED2_n2.txt` | F7 n=2 PASS |
 | `logs/FIELD_SAR_35B_temp00_FUSED2.txt` | F0 PASS |

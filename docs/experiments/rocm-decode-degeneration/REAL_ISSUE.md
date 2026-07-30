@@ -110,7 +110,7 @@ started from a bf16-truncated SSM.
 
 ### Still required for "resolved" (product bar)
 1. ~~Stamped field on prefill+decode f32~~ — **PASS** (`FIELD_SAR_35B_prefill_f32.txt`). Prefer n≥2 for confidence.  
-2. Product temp 0.7 default path: **MIXED** after n=2 — FAIL n=1 thrash (`FIELD_SAR_35B_temp07.txt`), PASS n=2 (`FIELD_SAR_35B_temp07_n2.txt`). Need more green default@0.7 or parity isolation before claiming closed.  
+2. Product temp 0.7 default path: **2 PASS / 1 FAIL** — FAIL n=1 thrash (`FIELD_SAR_35B_temp07.txt`); PASS n=2 (`..._temp07_n2.txt`); PASS n=3 (`..._temp07_n3.txt`). Residual thrash risk remains; do not claim fully closed.  
 3. Fused@0.7: **2/2 PASS** (`FIELD_SAR_35B_temp07_FUSED2.txt`, `..._FUSED2_n2.txt`) — still **opt-in**, not code default.  
-4. Optional: teacher-force / state checksum multi-T ≡ sequential T=1 ≡ fused2 (deferred: D7 not solid-red after n=2).  
+4. Optional: teacher-force / state checksum multi-T ≡ sequential T=1 ≡ fused2 (deferred: D7 not solid-red after n=2; thrash not reproduced on n=2/n=3).  
 5. fused2 remains opt-in until kernel parity proven.
