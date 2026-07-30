@@ -1,0 +1,23 @@
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.2 GB, peak=18.3 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+I am Qwen, a large language model independently developed by Alibaba Group's Tongyi Lab. I am designed to assist you with a wide variety of tasks, such as answering questions, writing stories, emails, scripts, performing logical reasoning, coding, and more.
+
+How can I help you today?
+Prompt:     16 tokens, 21.841 tokens/s, 0.732566s
+Generation: 62 tokens, 27.6202 tokens/s, 2.24473s
+
+
+> 
+Assistant: 2 + 2 equals 4.
+Prompt:     91 tokens, 62.871 tokens/s, 1.44741s
+Generation: 9 tokens, 31.2662 tokens/s, 0.287851s
+
+
+> 

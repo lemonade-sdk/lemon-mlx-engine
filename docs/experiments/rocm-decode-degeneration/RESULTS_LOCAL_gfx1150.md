@@ -168,3 +168,29 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 **Default-path softplus: stable** — `logaddexp` (torch-like); `SP_default_*` France/radar hard=N.  
 **35B A3B short smoke: PASS** on default path (gfx1150).  
 **Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main` — **human merge only**.
+
+## Standard models for local tests (locked)
+
+| Role | Model id | Notes |
+|------|----------|--------|
+| Fast / ladder | `mlx-community/Qwen3.5-0.8B-4bit` | Load smoke + residual A/B/C |
+| Field 35B | **`LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit`** | Not unsloth; MTP weights present, head **skipped** unless `MLX_LOAD_MTP_HEAD=1` |
+
+### Canonical 35B chat invocation (product defaults: MTP off, pure-graph unset)
+
+```bash
+./build/chat LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit \
+  --max-tokens 20480 \
+  --repetition-penalty 1.0 \
+  --ctx-size 32768
+```
+
+HF cache: `~/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4bit/` (~20G weights). Refresh: `hf download LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit`.
+
+### Smoke 2026-07-30 (gfx1150, branch fix/rocm-gdn-fused2-optin)
+
+| Cell | Result |
+|------|--------|
+| 0.8B load + who are you --no-think | PASS (`SMOKE_0.8B_load.txt`) active~889MB |
+| 35B LemonMLXE + user flags --no-think who are you / 2+2 | PASS (`SMOKE_35B_LemonMLXE_nothink.txt`) active~18.2GB, MTP head skipped, answers coherent |
+
