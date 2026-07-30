@@ -126,6 +126,17 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 | Radar multi-turn default | all turns **hard=N** max12≤4 (`LB_radar_mt.txt`) |
 | Radar + `MLX_GDN_FUSED2=1` | hard=N max12≤5 but fills 400 soft Wait (`LB_FUSED2_radar_mt.txt`, `F3_FUSED2_radar_mt.txt`) — **do not re-default fused2** |
 | Fused2 France ST after g/beta InT cast | coherent; gen hits 200 cap; hard=N (`F4_FUSED2_france_st.txt`) |
+| **F5 multi-cell (post full stack)** | see table below — **hard=N**; France gens ~match default; **still hold opt-in for merge** |
+
+### F5 multi-cell (post softplus + InT + LoopBrake, HISTORY_OK)
+
+| Cell | Env | hard-loop | gens | Log |
+|------|-----|-----------|------|-----|
+| France MT | default | **N** | 184/328/152 | `F5_default_france_mt.txt` |
+| France MT | `MLX_GDN_FUSED2=1` | **N** | 184/327/162 | `F5_FUSED2_france_mt.txt` |
+| Radar 2-turn | `MLX_GDN_FUSED2=1` | **N** | 303/333 | `F5_FUSED2_radar_2t.txt` |
+
+**Decision:** multi-cell hard-loop rule green for fused2 on 0.8B **after** full numeric stack, but **do not flip product default in this PR** (H1 was catastrophic historically; re-default = follow-up human decision).
 
 ### Field-size (35B A3B) smoke — gfx1150
 
@@ -145,9 +156,10 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 3. ~~Residual CoT loop brake (chat + server)~~ — `64387f8` / `0564ffc`.  
 4. ~~Fused2 RMSNorm/softplus + g/beta InT round-trip + Dk%32 guard~~ — still **opt-in**.  
 5. ~~Field-size short smoke~~ — 35B A3B PASS (`S35_*`).  
-6. Optional: default-on fused2 only after multi-cell fused2 green (soft Wait still weaker than default).  
-7. ~~Stable softplus on default GDN path~~ — `logaddexp` in `compiled_beta_and_g` / `compute_gated_delta_g` + NO_FUSED compile paths (`qwen35_moe`/`qwen35`/`qwen3_next`); smoke `SP_default_*` hard=N.  
-8. **q-norm `1/D` vs `1/√D`** A/B only if product asks (paths already consistent).
+6. ~~Multi-cell fused2 hard-loop re-check~~ — F5 France/radar hard=N, gens ~parity default; **opt-in held for this PR**.  
+7. ~~Stable softplus on default GDN path~~ — `logaddexp`; smoke `SP_default_*` hard=N.  
+8. Optional follow-up: re-default fused2 ON after human review of F5 + field load.  
+9. **q-norm `1/D` vs `1/√D`** A/B only if product asks (paths already consistent).
 
 ## Supervisor consensus (quintuple)
 
