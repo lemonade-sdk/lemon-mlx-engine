@@ -69,26 +69,69 @@ File: `src/llm/models/qwen35_moe.cpp`
 | Default, multi-turn thinking | turn1 improved; turns 2–4 still soft/hard loop on “Wait, I need to check…” (`FIX2_default_mt.txt`) — **better than baseline turn1 radar lock**, not fully clean |
 | `MLX_GDN_FUSED2=1`, multi-turn | still hard loops turns 2–4 (`FIX2_FUSED2_on_mt.txt`) — opt-in keeps old kernel for kernel debugging |
 
+## History integrity gate (required)
+
+Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
+
+| Run | Prompt tokens | Verdict |
+|-----|---------------|---------|
+| Pre-fix B0c / G1 | 25→442→860→1274 | HISTORY_OK |
+| Early FIX2_default_mt | 25→18→18→14 | **HISTORY_BROKEN** — do not use for residual ranking |
+| **HIST_gate_default_mt** (post ab1b518) | **25→443→861→1275** | **HISTORY_OK** |
+| R1_nonradar / R1_budget2048 | 17→… growing | HISTORY_OK |
+
+**ChatSession design:** fresh GDN/KV cache each turn; residual is **not** cross-turn SSM state.
+
+## Residual multi-turn (post fused2 opt-in, HISTORY_OK only)
+
+| Protocol | Result |
+|----------|--------|
+| Radar multi-turn, default (fused2 off), max=400 | **PASS** hard-loop rule (maxphrase≤5); soft “Wait…” still in CoT (`HIST_gate_default_mt.txt`) |
+| Radar + `MLX_GDN_FUSED2=1`, max=400 | HISTORY_OK; this re-run maxphrase≤4 (`HIST_gate_FUSED2_on_mt.txt`) — **flaky vs earlier B0**; do not un-lock H1 from one green |
+| R1 France multi-turn, max=400 | **FAIL** hard “Fact Check: capital of France is Paris” loops (`R1_nonradar_mt_think.txt`) |
+| R1 + max=2048 | **WORSE** — fills entire budget with Fact Check loops (gens all 2048) (`R1_budget2048_mt.txt`) |
+| R1 + `--repetition-penalty 1.15`, max=400 | **MUCH BETTER** — turn1 finishes `</think>` + answer; later turns softer/partial (`R1_reppenalty_mt.txt`) |
+| R2 math multi-turn | **PASS** (`R2_math_mt_think.txt`) |
+| Multi-turn `--no-think` | **PASS** (control) |
+
+### Residual root-cause rank (updated)
+
+| Rank | Cause | Confidence |
+|------|-------|------------|
+| **1** | Thinking CoT **self-reinforcement** on 0.8B (temp=0); incomplete mid-CoT re-seeded via history | **High** |
+| **2** | Tight/mid max_tokens amplifies unfinished CoT (400 truncates; 2048 extends the loop) | **High** |
+| **3** | Remaining GDN numeric (fused2 / gated_delta_update) | **Medium** (H1 still for catastrophic radar class; residual not pure-H1) |
+| **Refuted** | Cross-turn GDN cache reuse | Design + history gate |
+| **Refuted** | H2 async/KV as primary residual | P1/P2 ladder |
+
+### Residual mitigations (product candidates)
+
+1. **`--repetition-penalty ~1.1–1.2`** during thinking multi-turn (measured help on R1).  
+2. **N-gram / phrase-loop stop** in generate/chat (stop when same phrase ≥N).  
+3. Do **not** “fix” residual by raising max_tokens alone (worsens R1).  
+4. Keep **fused2 opt-in** for H1 catastrophic class.  
+5. Optional: strip unfinished think blocks before history append (experiment).
+
 ## Remaining work (not closed)
 
-1. **Multi-turn residual loops** under thinking even without fused2 — may need ChatSession/template/thinking interaction investigation, or further GDN/state work.  
-2. **True kernel fix** for `gdn_fused_decode` (numerics vs `gated_delta_update`) so fused2 can return as default for perf.  
-3. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
-4. **q-norm `1/D` vs `1/√D`** A/B after path isolation.  
-5. Move durable docs under `docs/experiments/rocm-decode-degeneration/`; do not treat root `ROCM_DECODE_DEGENERATION_TEST_PLAN.md` as proven root-cause claim.
+1. ~~History confound on FIX logs~~ — gate defined; HIST_gate PASS.  
+2. **Residual CoT loop brake** (rep-penalty default policy and/or n-gram stop) — next code work.  
+3. **True kernel fix** for `gdn_fused_decode` so fused2 can return for perf.  
+4. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
+5. **q-norm `1/D` vs `1/√D`** A/B after residual product policy.  
 
 ## Supervisor consensus (quintuple)
 
 | Lens | Verdict |
 |------|---------|
-| Code audit (explore) | Env names real; chat does not print gfx (use rocm-smi); MoE-only fused2 envs |
-| QA protocol | Plan needed defs; early-stop bad; we ran full matrix |
-| Senior ROCm | H1 first correct; H2 over-bundled; conv missing from original plan |
-| Planning | Ubuntu-first correct; success codes S1–S5 |
-| Local science | **H1 supported, H2 refuted** on this host/model |
+| Code audit (explore) | Env names real; MoE-only fused2; ChatSession fresh cache |
+| QA protocol | HISTORY gate mandatory; early FIX residual ranks invalid |
+| Senior ROCm | H1 fused2 still primary for catastrophic class |
+| Planning | Ubuntu-first; S1 locked for fused2; residual = new workstream |
+| Local science | H1 mitigated by default path; residual = thinking self-loop |
 
 ## Bottom line
 
-**Locally resolved for the catastrophic default fused2 hard-loop class** by making `gdn_fused_decode` opt-in and stabilizing dtypes on the safe path.  
-**Not fully resolved** for all multi-turn thinking residual loops.  
-**Do not wait on CI** to continue; next local step is residual multi-turn + optional 35B confirmation.
+**P0 H1 (default fused2 hard-loop): mitigated** — `gdn_fused_decode` opt-in + dtype cast (`ab1b518`).  
+**Residual multi-turn thinking loops: open** — primarily CoT self-reinforcement; larger budget worsens; rep-penalty helps; not a cross-turn GDN cache bug.  
+**Do not wait on CI**; next code: loop brake / policy for thinking multi-turn.
