@@ -505,13 +505,22 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         if (!q_norm_w_.has_value() || !a_log_f32_.has_value()) {
             materialize_decode_constants();
         }
-        // GDN decode step. MLX_GDN_NO_FUSED=1 -> inline mx::compile recurrence.
-        // MLX_GDN_NO_FUSED2=1 -> the per-op fused path (rms_norm + beta/g +
-        // gated_delta_step). Default: the FlashQLA-style gdn_fused_decode kernel
-        // that folds q/k-RMSNorm + beta/g + recurrence into one launch.
+        // GDN decode step selection (T=1):
+        // - Default: external rms_norm + gated_delta_update (per-op fused path).
+        // - MLX_GDN_FUSED2=1: FlashQLA-style gdn_fused_decode (folds q/k RMSNorm +
+        //   beta/g + recurrence). Opt-in only — local gfx1150 multi-turn thinking
+        //   ladder hard-looped under default fused2; MLX_GDN_NO_FUSED2 cleared it.
+        // - MLX_GDN_NO_FUSED=1: mx::compile inline recurrence (slowest / portable).
+        // - MLX_GDN_NO_FUSED2=1: force fused2 off even if MLX_GDN_FUSED2=1.
         static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        static const bool fused2_opt_in = [] {
+            const char* v = std::getenv("MLX_GDN_FUSED2");
+            return v && v[0] == '1' && v[1] == '\0';
+        }();
+        static const bool fused2_force_off =
+            std::getenv("MLX_GDN_NO_FUSED2") != nullptr;
         const bool use_fused2 =
-            use_fused_gdn && std::getenv("MLX_GDN_NO_FUSED2") == nullptr;
+            use_fused_gdn && fused2_opt_in && !fused2_force_off;
 
         // The fused kernel folds the q/k norm; only normalize here otherwise.
         if (!use_fused2) {
@@ -543,6 +552,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                 std::tie(o, ns) = gated_delta_update(
                     q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
                     ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
+            }
+            // Non-fused2 recurrence can promote to f32; residual/gate HIP kernels
+            // are monomorphic — restore model dtype before norm_/cache write.
+            if (o.dtype() != dtype) {
+                o = mx::astype(o, dtype);
+            }
+            if (ns.dtype() != dtype) {
+                ns = mx::astype(ns, dtype);
             }
             (*cache)[1] = ns;
             auto normalized = norm_(o, z);
@@ -599,7 +616,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto results = compiled_decode_step(
             {q_out, k_out, v_out, b_val, a_log_, a_val, dt_bias_, ssm_state});
         auto out = results[0];
-        (*cache)[1] = results[1];
+        auto ns = results[1];
+        if (out.dtype() != dtype) {
+            out = mx::astype(out, dtype);
+        }
+        if (ns.dtype() != dtype) {
+            ns = mx::astype(ns, dtype);
+        }
+        (*cache)[1] = ns;
 
         // Gated norm + output projection
         auto normalized = norm_(out, z);

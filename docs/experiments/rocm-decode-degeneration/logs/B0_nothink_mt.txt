@@ -1,0 +1,63 @@
+Loading model: mlx-community/Qwen3.5-0.8B-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=1.0 GB, peak=1.0 GB, cache=17 MB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+A phased array radar steers a beam without moving antennas by utilizing **electrical control of the antenna elements** rather than mechanical movement. Instead of moving the physical antenna elements, the radar system electronically adjusts the **amplitude (strength)** and **phase** of the signals sent to each antenna element.
+
+Here is the step-by-step explanation of how this works:
+
+### 1. The Principle of Operation
+In a phased array, the radar transmitters are arranged in a grid (or spiral) around the antenna array. Each element in the grid is connected to a separate control circuit. This control circuit allows the radar to adjust the **phase shift** (the timing delay) and the **amplitude** (voltage level) of the signal sent to each element.
+
+*   **Phase Control:** By changing the delay between the signals, the radar can align the waves to construct a specific direction (angle).
+*   **Amplitude Control:** By varying the voltage, the radar can increase or decrease the signal intensity, allowing the radar to focus on a specific target or scan a wider area.
+
+### 2. The Mechanism of Steering
+The steering process relies on the following logic:
+
+*   **Directional Beamforming:** The radar uses a
+Prompt:     27 tokens, 50.4937 tokens/s, 0.53472s
+Generation: 256 tokens, 122.882 tokens/s, 2.0833s
+
+
+> 
+Assistant: Imagine the radar is like a **radio telescope** that is not built on a wall, but is built inside a room with a big window.
+
+Here is how it works without moving the walls (antennas):
+
+1.  **The Setup:** There is a big window in the room where the radar is. Inside the window, there are many small boxes (antennas) arranged in a circle.
+2.  **The Control:** There is a big control box in the room that can turn the windows.
+    *   **The "Speed" Control:** The control box has a knob. When you turn it, the radar changes how fast the waves (radio signals) travel through the windows.
+    *   **The "Brightness" Control:** The control box has a dial. When you turn it, the radar changes how strong the waves are (how loud they are).
+3.  **The Result:**
+    *   If you turn the "Speed" knob, the waves travel at a different speed, and the radar sees the waves coming from a different direction.
+    *   If you turn the "Brightness" knob, the waves get louder or quieter, and the radar focuses on a specific spot or a wider area
+Prompt:     301 tokens, 569.731 tokens/s, 0.528319s
+Generation: 256 tokens, 114.977 tokens/s, 2.22654s
+
+
+> 
+Assistant: If phase synchronization drifts, the radar loses its ability to **focus on a specific target** or **scan a specific direction** effectively.
+
+Here is what happens when the waves don't align perfectly:
+
+*   **The "Speed" Control Fails:** If the waves travel at different speeds, the radar cannot tell which direction the waves are coming from. It will scan in a random direction, which is bad for tracking a moving object.
+*   **The "Brightness" Control Fails:** If the waves get too loud or too quiet, the radar will either miss the target entirely (if it is too weak) or scan a huge area that is too wide for the object (if it is too loud).
+*   **The Result:** The radar becomes a "blind spot" for the specific object it is trying to track, or it scans a large area that is too wide for the object to be detected.
+
+**In short:** Without proper phase alignment, the radar cannot distinguish between the waves coming from different directions, making it impossible to track a specific target or determine the direction of a moving object.
+Prompt:     575 tokens, 794.027 tokens/s, 0.724157s
+Generation: 228 tokens, 121.956 tokens/s, 1.86952s
+
+
+> 
+Assistant: I am Qwen3.5, the large language model developed by Tongyi AI. I am capable of answering a wide range of questions, including science, technology, arts, and more. I can help with tasks like coding, math, logic, and creative writing.
+Prompt:     816 tokens, 1011.34 tokens/s, 0.806849s
+Generation: 56 tokens, 119.493 tokens/s, 0.468647s
+
+
+> 

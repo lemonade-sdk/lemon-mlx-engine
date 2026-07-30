@@ -1,0 +1,8 @@
+Loading model: mlx-community/Qwen3.5-0.8B-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Error: Failed to compile kernel 'custom_kernel_gated_rms_norm_float_128_16': /tmp/comgr-143220-6-c59229/input/kernel_3251667441137678524.hip:68:16: error: cannot initialize a variable of type 'const InT *' (aka 'const float *') with an rvalue of type 'const hip_bfloat16 *'
+   68 |     const InT* gr = gate + (long)r * H;
+      |                ^    ~~~~~~~~~~~~~~~~~~
+1 error generated when compiling for gfx1150.
+
