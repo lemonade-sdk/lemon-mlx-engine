@@ -589,9 +589,43 @@ printf '%s\n' \
 
 ---
 
-## 12. One-line conclusion
+## 12. What is necessary (critical posture)
 
-**f32 SSM prefill≡decode is the real fix class; field bar is green on default@0, default@0.7 (2/3), and fused2@0.7 (2/2); one residual turn-5 thrash remains on record; keep fused2 opt-in; LoopBrake is not a fix; parity/history/perf deferred; human merge only on PR #74.**
+**Doing what is necessary** = close scientific/product gaps; do **not** spin field n forever once the bar is majority green.
+
+| Necessary | Status |
+|-----------|--------|
+| Fix GDN prefill≡decode f32 SSM + dtypes | **Done** |
+| Field SAR evidence (D7 n≥2, F7 n≥2) | **Done** — D7 **2/3**, F7 **2/2** |
+| Refute H-async / H-KV-primary (P1/P2 ladder) | **Done** |
+| Instrument attention KV offset for thrash repros | **Done** — `MLX_KV_OFFSET_LOG=1` in `generate.cpp` |
+| Smoke: offsets advance (no STALL) on healthy decode | **Done** (0.8B: offset 12→19 over 8 toks) |
+| Not reintroduce LoopBrake | **Done** |
+| Honest residual thrash disclaimer (1/3 default@0.7) | **Documented** |
+| Human merge PR #74 | **Human** |
+| More matrix n without new failure | **Not necessary** |
+| Parity teacher-force | **Optional** before fused2 code default-on |
+| Perf (MTP / pure-graph) | **Last** |
+
+### H-KV diagnostic (necessary if thrash returns)
+
+```bash
+# env MUST apply to ./build/chat (not only to printf left of a pipe)
+printf '...\nquit\n' | env MLX_KV_OFFSET_LOG=1 MLX_KV_OFFSET_EVERY=32 \
+  ./build/chat MODEL --temperature 0.7 ...
+# stderr: [kv] tok=N max_offset=M prev=P layers=L
+# If "STALL" → re-open H-KV as primary. If offset climbs during thrash → not H-KV.
+```
+
+**Theory:** broken KV advance *can* cause repetition→garbage.  
+**Evidence:** our primary residual was **GDN numerics**, not stuck KV (P1/P2; field thrash late).  
+**Necessary proof tool:** offset log above — use on next thrash; do not argue without it.
+
+---
+
+## 13. One-line conclusion
+
+**f32 SSM prefill≡decode is the real fix class; field bar majority green (D7 2/3, F7 2/2); residual thrash rare but real; H-KV is a valid mechanism but not primary without STALL evidence — use `MLX_KV_OFFSET_LOG=1`; keep fused2 opt-in; no LoopBrake; human merge only on PR #74.**
 
 ---
 
