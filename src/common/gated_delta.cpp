@@ -1124,7 +1124,11 @@ std::tuple<mx::array, mx::array, mx::array> gated_delta_ops_seq(
     int Hv = v.shape(2), Dv = v.shape(3);
 
     int repeat_factor = Hv / Hk;
-    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, q.dtype()));
+    // float32 SSM (match gated_delta_ops / decode cache lifetime).
+    auto s = state.value_or(mx::zeros({B, Hv, Dv, Dk}, mx::float32));
+    if (s.dtype() != mx::float32) {
+        s = mx::astype(s, mx::float32);
+    }
 
     // Fused HIP kernel (no mask) — ROCm only.
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM

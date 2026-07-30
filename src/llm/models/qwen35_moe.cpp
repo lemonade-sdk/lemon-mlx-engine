@@ -588,10 +588,12 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                 int Hv_ = v.shape(2), Dv_ = v.shape(3);
                 int rep_ = Hv_ / Hk_;
 
-                // beta + g fused (stable softplus via logaddexp)
+                // beta + g fused (stable softplus via logaddexp in f32)
                 auto beta = mx::sigmoid(b);
                 auto a_log_f32 = mx::astype(a_log, mx::float32);
-                auto sp = mx::logaddexp(mx::add(a, dt_bias), mx::array(0.0f));
+                auto a_f = mx::astype(a, mx::float32);
+                auto db_f = mx::astype(dt_bias, mx::float32);
+                auto sp = mx::logaddexp(mx::add(a_f, db_f), mx::array(0.0f));
                 auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), sp)));
                 g = mx::astype(g, a.dtype());
 
@@ -693,12 +695,15 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         new_state = ns;
     }
 
-    // Match T=1 decode: monomorphic residual/gate HIP kernels + cache dtype.
+    // Match T=1 decode: monomorphize *activations* only. SSM stays float32 for
+    // the full prefill→decode lifetime (HIP multi-T already accumulates in f32;
+    // casting state to bf16 here undid that and forced a lossy promote on the
+    // first decode step of every turn).
     if (out.dtype() != dtype) {
         out = mx::astype(out, dtype);
     }
-    if (new_state.dtype() != dtype) {
-        new_state = mx::astype(new_state, dtype);
+    if (new_state.dtype() != mx::float32) {
+        new_state = mx::astype(new_state, mx::float32);
     }
 
     if (cache) {
