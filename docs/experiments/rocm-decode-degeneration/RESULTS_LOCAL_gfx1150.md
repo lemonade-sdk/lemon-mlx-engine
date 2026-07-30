@@ -110,30 +110,32 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 
 ### Residual mitigations (product)
 
-1. **`LoopBrake` in ChatSession** (`64387f8`) — char phrase (≥4× 40–80), same-line (≥6), token n-gram (≥4× 8–16). Stops generation early; does not change sampling. Logs: `LB_france_mt.txt`, `LB_radar_mt.txt`.  
+1. **`LoopBrake` in ChatSession** (`64387f8`) + **`generate_text`** (`0564ffc`) — covers server chat/completions.  
+   Defaults after `0564ffc`: phrase ≥3× (32–120 chars), same-line ≥5, token n-gram ≥3× (8–16), word n-gram freq ≥5 in trailing window.  
 2. **`--repetition-penalty ~1.1–1.2`** still helps as sampling-side option (measured on R1).  
 3. Do **not** “fix” residual by raising max_tokens alone (worsens R1 without brake).  
 4. Keep **fused2 opt-in** for H1 catastrophic class until more fused2 green cells.  
 5. Optional: strip unfinished think blocks before history append (experiment).
 
-### Loop brake local verify (`64387f8`, HISTORY_OK)
+### Loop brake local verify (HISTORY_OK)
 
 | Cell | Result |
 |------|--------|
-| France multi-turn default | t2–4 **hard=N**; gen cut ~400→152/118/113 (`LB_france_mt.txt`); t1 soft residual |
-| Radar multi-turn default | all turns **hard=N** max12≤4; gens partially cut (`LB_radar_mt.txt`) |
-| Radar + `MLX_GDN_FUSED2=1` | all turns **hard=N** max12≤5 but still fills 400 tokens soft Wait (`LB_FUSED2_radar_mt.txt`) — improved vs B0; **do not re-default fused2** from one ladder |
+| France multi-turn (`64387f8`) | t2–4 **hard=N**; gen cut ~400→152/118/113 (`LB_france_mt.txt`) |
+| France multi-turn tighter (`0564ffc`) | **all turns hard=N** max12≤4; gens 312/138/104/100 (`LB2_france_mt.txt`) |
+| Radar multi-turn default | all turns **hard=N** max12≤4 (`LB_radar_mt.txt`) |
+| Radar + `MLX_GDN_FUSED2=1` | hard=N max12≤5 but fills 400 soft Wait (`LB_FUSED2_radar_mt.txt`) — **do not re-default fused2** |
 
 ## Remaining work (not closed)
 
 1. ~~History confound on FIX logs~~ — gate defined; HIST_gate PASS.  
 2. ~~P0 `g` activation-dtype / prefill–decode HIP type-pun~~ — `d218c7c`.  
-3. ~~Residual CoT loop brake (n-gram/phrase stop)~~ — `LoopBrake` + unit tests (`64387f8`).  
-4. ~~Fused2 RMSNorm/softplus parity patch~~ — `gdn_fused_decode` HIP (`64387f8`); still **opt-in** pending more cells.  
-5. Optional: default-on fused2 only after multi-cell + 35B confidence.  
-6. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
-7. **q-norm `1/D` vs `1/√D`** A/B only after residual product policy (consistent across paths today).  
-8. Optional server-path LoopBrake (chat path only today). 
+3. ~~Residual CoT loop brake (chat)~~ — `64387f8`.  
+4. ~~Server-path LoopBrake via `generate_text`~~ — `0564ffc`.  
+5. ~~Fused2 RMSNorm/softplus parity patch~~ — still **opt-in** pending more cells.  
+6. Optional: default-on fused2 only after multi-cell + 35B confidence.  
+7. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
+8. **q-norm `1/D` vs `1/√D`** A/B only after residual product policy.
 
 ## Supervisor consensus (quintuple)
 
@@ -149,7 +151,7 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 
 **H1 (default fused2 hard-loop): mitigated** — `gdn_fused_decode` opt-in + output dtype cast (`ab1b518`).  
 **P0 decode `g` type-pun: fixed** — cast decay `g` to activation dtype + model `a_log` on T=1 update (`d218c7c`).  
-**Residual CoT loops: braked in chat** — `LoopBrake` (`64387f8`); France/radar hard-loop rule largely clear post-brake.  
+**Residual CoT loops: braked** — ChatSession + `generate_text`/server (`64387f8`, `0564ffc`); France all-turns hard=N under tighter n-gram.  
 **Fused2 numerics: partial** — RMSNorm/softplus aligned (`64387f8`); remains **opt-in**; soft Wait under fused2 still possible.  
-**Do not wait on CI**; next: 35B confirmation; optional server LoopBrake; fused2 default only after more green cells.  
+**Do not wait on CI**; next: 35B confirmation; fused2 default only after more green cells.  
 **Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main` — **human merge only**.
