@@ -1,0 +1,16 @@
+Loading model: mlx-community/Qwen3.5-0.8B-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=889 MB, peak=911 MB, cache=24 MB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+The capital of France is **Paris**.
+
+It is the largest city in Europe, the second most populous city in the world, and the most important city in the country. Paris is the seat of the French government, the European Parliament, and the European Court of Auditors.
+Prompt:     19 tokens, 39.3028 tokens/s, 0.483426s
+Generation: 57 tokens, 105.262 tokens/s, 0.541505s
+
+
+> 

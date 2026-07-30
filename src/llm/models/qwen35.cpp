@@ -221,10 +221,10 @@ mx::array Qwen35GatedDeltaNet::operator()(
                 int Hv_ = v.shape(2), Dv_ = v.shape(3);
                 int rep_ = Hv_ / Hk_;
 
-                // beta + g fused
+                // beta + g fused (stable softplus via logaddexp)
                 auto beta = mx::sigmoid(b);
                 auto a_log_f32 = mx::astype(a_log, mx::float32);
-                auto sp = mx::log(mx::add(mx::exp(mx::add(a, dt_bias)), mx::array(1.0f)));
+                auto sp = mx::logaddexp(mx::add(a, dt_bias), mx::array(0.0f));
                 auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), sp)));
                 g = mx::astype(g, a.dtype());
 

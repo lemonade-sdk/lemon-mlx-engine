@@ -146,7 +146,7 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 4. ~~Fused2 RMSNorm/softplus + g/beta InT round-trip + Dk%32 guard~~ — still **opt-in**.  
 5. ~~Field-size short smoke~~ — 35B A3B PASS (`S35_*`).  
 6. Optional: default-on fused2 only after multi-cell fused2 green (soft Wait still weaker than default).  
-7. Optional: stable softplus on `compiled_beta_and_g` (affects default path; separate smoke).  
+7. ~~Stable softplus on default GDN path~~ — `logaddexp` in `compiled_beta_and_g` / `compute_gated_delta_g` + NO_FUSED compile paths (`qwen35_moe`/`qwen35`/`qwen3_next`); smoke `SP_default_*` hard=N.  
 8. **q-norm `1/D` vs `1/√D`** A/B only if product asks (paths already consistent).
 
 ## Supervisor consensus (quintuple)
@@ -165,5 +165,6 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 **P0 decode `g` type-pun: fixed** (`d218c7c`).  
 **Residual CoT: braked** (chat + `generate_text`/server).  
 **Fused2 numerics: improved, still opt-in** — RMSNorm/softplus + g/beta InT + Dk%32; soft Wait multi-turn still weaker than default.  
+**Default-path softplus: stable** — `logaddexp` (torch-like); `SP_default_*` France/radar hard=N.  
 **35B A3B short smoke: PASS** on default path (gfx1150).  
 **Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main` — **human merge only**.

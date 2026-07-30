@@ -615,7 +615,9 @@ mx::array compute_gated_delta_g(
     static auto compiled = mx::compile(
         [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
             auto a_log_f32 = mx::astype(inputs[0], mx::float32);
-            auto softplus_val = mx::log(mx::add(mx::exp(mx::add(inputs[1], inputs[2])), mx::array(1.0f)));
+            // Stable softplus: logaddexp(x, 0) == log(1+e^x) without exp overflow.
+            auto softplus_val =
+                mx::logaddexp(mx::add(inputs[1], inputs[2]), mx::array(0.0f));
             auto decay = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), softplus_val)));
             return {mx::astype(decay, inputs[1].dtype())};
         },
@@ -635,7 +637,9 @@ static auto compiled_beta_and_g = mx::compile(
         // prefill with bf16 g (JIT key ignores input dtypes → type-pun decay).
         auto beta = mx::sigmoid(inputs[0]);
         auto a_log_f32 = mx::astype(inputs[1], mx::float32);
-        auto softplus_val = mx::log(mx::add(mx::exp(mx::add(inputs[2], inputs[3])), mx::array(1.0f)));
+        // Stable softplus (matches fused2 HIP + torch F.softplus).
+        auto softplus_val =
+            mx::logaddexp(mx::add(inputs[2], inputs[3]), mx::array(0.0f));
         auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), softplus_val)));
         g = mx::astype(g, inputs[0].dtype());  // b / activation dtype, not a_log
         return {beta, g};
