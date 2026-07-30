@@ -179,8 +179,9 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 **Residual CoT: braked** (chat + `generate_text`/server).  
 **Fused2 numerics: improved, still opt-in** — RMSNorm/softplus + g/beta InT + Dk%32; soft Wait multi-turn still weaker than default.  
 **Default-path softplus: stable** — `logaddexp` (torch-like); `SP_default_*` France/radar hard=N.  
-**35B A3B short smoke: PASS** on default path (gfx1150).  
-**Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main` — **human merge only**.
+**35B A3B short + field multi-turn: PASS** on default path (gfx1150 LemonMLXE).  
+**PR:** https://github.com/lemonade-sdk/lemon-mlx-engine/pull/74 — **human merge only** (do not self-merge).  
+**Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main`.
 
 ## Standard models for local tests (locked)
 
@@ -212,7 +213,7 @@ HF cache: `~/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4
 | Cell | Result |
 |------|--------|
 | 0.8B multi-turn science (Maxwell→Fourier…) | HISTORY_OK; **hard=N** (max12≤5); soft self-reinforcement still present (`FIELD_SAR_0.8B_default.txt`) |
-| 35B LemonMLXE Maxwell open question | **PASS quality** — finishes `</think>` + structured Maxwell answer (`FIELD_SAR_35B_LemonMLXE.txt`); MTP skipped |
+| 35B LemonMLXE multi-turn (Maxwell→Fourier→Doppler→synthesis) | HISTORY_OK prompts 17→957→2280; gens 1938/2700/2258; each turn finishes `</think>` + structured answer; crude max-line hits on markdown `---` only (not content thrash) — **PASS quality** (`FIELD_SAR_35B_LemonMLXE.txt`); MTP skipped |
 
 **LoopBrake kill-switch:** `MLX_LOOP_BRAKE_OFF=1` disables product brake (ChatSession + `generate_text`).
 
