@@ -41,9 +41,7 @@ static const char* gdn_hip_source = R"(
     auto i_state = state_in + (n * Dv + dv_idx) * Dk;
     auto o_state = state_out + (n * Dv + dv_idx) * Dk;
 
-    // SSM state is float32 for the full sequence lifetime (prefill multi-T and
-    // decode T=1). Only activations y are quantized to InT each step — matches
-    // keeping state in f32 across tokens instead of InT RMW every decode step.
+    // SSM float32; y quantized to InT each step.
     float state[n_per_t];
     for (int i = 0; i < n_per_t; ++i) {
         auto s_idx = n_per_t * dk_idx + i;
@@ -642,19 +640,14 @@ mx::array compute_gated_delta_g(
 // ---------------------------------------------------------------------------
 static auto compiled_beta_and_g = mx::compile(
     [](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
-        // inputs: b, a_log, a, dt_bias. Softplus/exp use f32 a_log for range,
-        // but g must match activation dtype (b/a/q/k/v/state). Casting to
-        // a_log.dtype() is wrong when decode passes a_log_f32: g becomes f32
-        // while the ROCm gated_delta_step HIP module is often first JITed at
-        // prefill with bf16 g (JIT key ignores input dtypes → type-pun decay).
+        // softplus in f32; g cast to activation dtype (b), not a_log.
         auto beta = mx::sigmoid(inputs[0]);
         auto a_log_f32 = mx::astype(inputs[1], mx::float32);
-        // Softplus in f32 (torch: softplus(a.float()+dt_bias)); then g → act dtype.
         auto a_f = mx::astype(inputs[2], mx::float32);
         auto db_f = mx::astype(inputs[3], mx::float32);
         auto softplus_val = mx::logaddexp(mx::add(a_f, db_f), mx::array(0.0f));
         auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), softplus_val)));
-        g = mx::astype(g, inputs[0].dtype());  // b / activation dtype, not a_log
+        g = mx::astype(g, inputs[0].dtype());
         return {beta, g};
     },
     /*shapeless=*/true);

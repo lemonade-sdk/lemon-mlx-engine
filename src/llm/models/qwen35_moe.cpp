@@ -395,9 +395,7 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
 {}
 
 void Qwen35MoEGatedDeltaNet::materialize_decode_constants(mx::Dtype act_dtype) {
-    // q/k RMSNorm constants must use *activation* dtype (bf16) to match prefill
-    // (`mx::full(..., q_out.dtype())`). Using a_log_.dtype() (often f32) made
-    // every decode step normalize with a different specialization than prefill.
+    // q/k norm weights in activation dtype (match prefill).
     if (!q_norm_w_.has_value() || q_norm_w_->dtype() != act_dtype) {
         float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
         q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, act_dtype);
@@ -502,18 +500,11 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, 1, conv_dim_}),
                                   {B, 1, num_v_heads_, head_v_dim_});
 
-        // Prefer load-time materialize; re-materialize if act dtype mismatch.
         if (!q_norm_w_.has_value() || !a_log_f32_.has_value() ||
             q_norm_w_->dtype() != dtype) {
             materialize_decode_constants(dtype);
         }
-        // GDN decode step selection (T=1):
-        // - Default: external rms_norm + gated_delta_update (per-op fused path).
-        // - MLX_GDN_FUSED2=1: FlashQLA-style gdn_fused_decode (folds q/k RMSNorm +
-        //   beta/g + recurrence). Opt-in only — local gfx1150 multi-turn thinking
-        //   ladder hard-looped under default fused2; MLX_GDN_NO_FUSED2 cleared it.
-        // - MLX_GDN_NO_FUSED=1: mx::compile inline recurrence (slowest / portable).
-        // - MLX_GDN_NO_FUSED2=1: force fused2 off even if MLX_GDN_FUSED2=1.
+        // Default: rms_norm + gated_delta_update. Fused2: MLX_GDN_FUSED2=1.
         static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
         static const bool fused2_opt_in = [] {
             const char* v = std::getenv("MLX_GDN_FUSED2");
@@ -524,14 +515,12 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         const bool use_fused2 =
             use_fused_gdn && fused2_opt_in && !fused2_force_off;
 
-        // The fused kernel folds the q/k norm; only normalize here otherwise.
         if (!use_fused2) {
             q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
             k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
         }
 
-        // SSM state is float32 for the turn (prefill multi-T and decode T=1
-        // both keep f32 between tokens; only y is quantized to act dtype).
+        // SSM state: float32 between tokens; y stays act dtype.
         mx::array ssm_state(0.0f);
         if ((*cache)[1].has_value()) {
             ssm_state = (*cache)[1].value();
@@ -553,22 +542,17 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         if (use_fused_gdn) {
             mx::array o(0.0f), ns(0.0f);
             if (use_fused2) {
-                // Fused kernel wants f32 a_log/dt_bias for on-chip g math.
                 std::tie(o, ns) = gdn_fused_decode(
                     q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
                     *q_norm_w_, *k_norm_w_, ssm_state, /*inplace=*/gdn_inplace);
             } else {
-                // Match prefill: model-dtype a_log/dt_bias so compiled_beta_and_g
-                // and HIP gated_delta_step see the same g element type as prefill.
                 std::tie(o, ns) = gated_delta_update(
                     q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
                     ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
             }
-            // y must match gated_rms_norm / residual monomorphic InT path.
             if (o.dtype() != dtype) {
                 o = mx::astype(o, dtype);
             }
-            // Keep ns float32 — do not quantize SSM between tokens.
             if (ns.dtype() != mx::float32) {
                 ns = mx::astype(ns, mx::float32);
             }
@@ -663,7 +647,7 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, S, conv_dim_}),
                               {B, S, num_v_heads_, head_v_dim_});
 
-    // Share decode materialize so prefill and decode use identical norm weights.
+
     if (!q_norm_w_.has_value() || q_norm_w_->dtype() != q_out.dtype()) {
         materialize_decode_constants(q_out.dtype());
     }
@@ -695,10 +679,7 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         new_state = ns;
     }
 
-    // Match T=1 decode: monomorphize *activations* only. SSM stays float32 for
-    // the full prefill→decode lifetime (HIP multi-T already accumulates in f32;
-    // casting state to bf16 here undid that and forced a lossy promote on the
-    // first decode step of every turn).
+    // y → act dtype; SSM stays float32.
     if (out.dtype() != dtype) {
         out = mx::astype(out, dtype);
     }

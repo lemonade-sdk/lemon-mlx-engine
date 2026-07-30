@@ -40,9 +40,7 @@ namespace mlx_lm {
 
 namespace mx = mlx::core;
 
-// Opt-in H-KV diagnostic: prove attention KV offsets advance each decode step.
-// MLX_KV_OFFSET_LOG=1 → log every MLX_KV_OFFSET_EVERY tokens (default 64).
-// Emits "STALL" if max offset does not increase (would support H-KV thrash).
+// MLX_KV_OFFSET_LOG=1: stderr KV max offset every MLX_KV_OFFSET_EVERY (default 64).
 static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
     static const bool enabled = [] {
         const char* v = std::getenv("MLX_KV_OFFSET_LOG");
@@ -65,12 +63,6 @@ static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
         fprintf(stderr, "[kv] tok=%d max_offset=%d prev=%d layers=%zu%s\n",
                 token_count, max_off, prev_max_off, cache.size(),
                 stall ? " STALL" : "");
-        fflush(stderr);
-    }
-    if (stall) {
-        fprintf(stderr,
-                "[kv] STALL: attention KV max offset did not advance "
-                "(possible H-KV thrash mechanism)\n");
         fflush(stderr);
     }
     prev_max_off = max_off;
