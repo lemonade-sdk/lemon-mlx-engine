@@ -1,0 +1,5 @@
+START 2026-07-29T20:08:27-07:00 tip=52d64de chat=1785380863
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+EXIT:139 2026-07-29T20:08:43-07:00

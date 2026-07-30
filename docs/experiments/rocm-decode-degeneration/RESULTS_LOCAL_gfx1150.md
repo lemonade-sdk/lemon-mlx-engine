@@ -212,16 +212,23 @@ HF cache: `~/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4
 
 | Cell | Result |
 |------|--------|
-| 0.8B multi-turn science (Maxwell→Fourier…) | HISTORY_OK; **hard=N** (max12≤5); soft self-reinforcement still present (`FIELD_SAR_0.8B_default.txt`) |
-| 35B LemonMLXE multi-turn (Maxwell→Fourier→Doppler→synthesis) | HISTORY_OK prompts 17→957→2280; gens 1938/2700/2258; each turn finishes `</think>` + structured answer; crude max-line hits on markdown `---` only (not content thrash) — **PASS quality** (`FIELD_SAR_35B_LemonMLXE.txt`); MTP skipped |
-
-**LoopBrake kill-switch:** `MLX_LOOP_BRAKE_OFF=1` disables product brake (ChatSession + `generate_text`).
-
+| 0.8B multi-turn science (Maxwell→Fourier…) | HISTORY_OK; **hard=N** (max12≤5); soft self-reinforcement still present (`FIELD_SAR_0.8B_default.txt`) — **not** field oracle |
+| 35B LemonMLXE **partial** (3 turns only) | prompts 17→957→2280; gens 1938/2700/2258 — **not full field** (`FIELD_SAR_35B_LemonMLXE.txt`) |
+| 35B full field **no LoopBrake** | **PASS quality n=1**: prompts 17→1203→2680→3898→5080; gens 2545/2773/2748/2850/**5169**; turn5 closed usable Python (CW radar + FFT + Doppler); no synchronization thrash; EXIT:0 (`FIELD_SAR_35B_default_no_brake.txt`). Binary era: post-f32-decode-SSM (`c7685d8`); prefill still cast state→bf16 until `52d64de`. |
+| 35B f32ssm reconfirm | killed mid turn5 EXIT:143 (`FIELD_SAR_35B_f32ssm.txt`) — incomplete |
+| 35B **prefill+decode f32** stamped | **PASS** tip=`52d64de` temp=0 max=8192: prompts 17→1139→2352→3584→4692; gens 2718/2371/2890/2874/**5633**; turn5 real Python; EXIT:0 (`FIELD_SAR_35B_prefill_f32.txt`) |
 
 ## LoopBrake removed (not a real fix)
 
 Product decision: **LoopBrake was removed** from ChatSession and `generate_text`.
-Early-stop on phrase/line thrash masked field bugs (e.g. multi-turn SAR Python
-collapse) without fixing GDN/decode numerics. Real acceptance remains the
-Maxwell→Fourier→Doppler→together→Python field sequence on
-`LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit` with default decode path (no seatbelt).
+Early-stop on phrase/line thrash masked field bugs without fixing GDN/decode numerics.
+Do **not** reintroduce. Acceptance = Maxwell→…→Python on LemonMLXE 35B, default path.
+
+## f32 SSM lifetime (code)
+
+| Commit | Change |
+|--------|--------|
+| `c7685d8` | HIP/decode f32 SSM; act-dtype q/k norms; softplus f32 |
+| `52d64de` | **Prefill** keep SSM f32 (was casting to act dtype after multi-T); NO_FUSED softplus f32; seq zeros f32 |
+
+**Prefill≡decode residual closed for state dtype.** fused2 still opt-in.

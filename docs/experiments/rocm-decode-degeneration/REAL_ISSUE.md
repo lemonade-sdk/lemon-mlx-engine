@@ -83,21 +83,33 @@ Every cycle must:
 | Multi-turn session | `src/common/chat_session.cpp` (fresh cache, history append) |
 | Decode async | `src/common/generate.cpp` (`TokenIterator::next`) |
 
-## Implemented this cycle (f32 SSM + norm dtype)
+## Implemented (f32 SSM stack + prefill cache fix)
 
-Supervisors (explore + senior): primary residual was **decode T=1 InT state RMW** vs
-**prefill multi-T f32 accumulate**, plus **q/k norm weights in a_log dtype (f32)**
-vs prefill **activation dtype (bf16)**.
+Supervisors (explore + senior + quality): primary residual was **decode T=1 InT state RMW**
+vs **prefill multi-T f32 accumulate**, **q/k norm weights in a_log dtype**, then a **P0 hole**:
+prefill still cast `new_state` → act dtype after multi-T f32 HIP, so every turn’s decode
+started from a bf16-truncated SSM.
 
 ### Code
 1. **HIP `gated_delta_step` / seq / fused2**: SSM `state_in`/`state_out` are **float32**;
-   only `y` is quantized to InT each step.
-2. **Cache zeros / promote**: f32 SSM; do not cast `ns` back to bf16.
-3. **q/k RMSNorm materialize** in **activation dtype**; prefill uses same `q_norm_w_`.
-4. **softplus**: `a`/`dt_bias` cast to f32 before `logaddexp` (torch-aligned).
+   only `y` is quantized to InT each step. (`c7685d8`)
+2. **Decode cache**: keep `ns` float32; do not cast back to bf16. (`c7685d8`)
+3. **Prefill cache**: also keep `new_state` float32 (was still `astype(..., dtype)`). (`52d64de`)
+4. **q/k RMSNorm materialize** in **activation dtype**; prefill uses same `q_norm_w_`.
+5. **softplus**: `a`/`dt_bias` cast to f32 before `logaddexp` (default + `NO_FUSED` compile).
+6. **Spec seq zeros**: `gated_delta_ops_seq` zeros in f32. (`52d64de`)
+7. **fused2**: remains **opt-in** (`MLX_GDN_FUSED2=1`) until proven equal.
 
-### Smoke
-- 0.8B no-think who-are-you / 2+2: PASS (`F32SSM_0.8B_smoke.txt`)
+### Smoke / field evidence
+| Cell | Result |
+|------|--------|
+| 0.8B smoke (f32 SSM) | PASS (`logs/F32SSM_0.8B_smoke.txt`) |
+| 35B full field, default, **no LoopBrake** (pre-prefill-fix) | **PASS quality n=1** (`logs/FIELD_SAR_35B_default_no_brake.txt`): prompts 17→1203→2680→3898→5080; gens 2545/2773/2748/2850/**5169**; turn5 usable CW-radar Python; EXIT:0. Era: `c7685d8` (f32 decode; prefill still bf16-cast). |
+| 35B f32ssm reconfirm | Incomplete / killed mid turn5 (`FIELD_SAR_35B_f32ssm.txt` EXIT:143) — not a FAIL. |
+| 35B stamped **prefill+decode f32** | **PASS quality n=1** (`logs/FIELD_SAR_35B_prefill_f32.txt`): START tip=`52d64de` temp=0 max=8192 rep=1.0 ctx=32768 env=default. Prompts **17→1139→2352→3584→4692** HISTORY_OK; gens **2718/2371/2890/2874/5633** (all natural EOS, ≪8192); 5×`</think>`; turn5 usable Python (`import numpy`, FFT/Doppler mapping); no thrash; **EXIT:0**. |
 
-### Still required for "resolved"
-Field Maxwell→…→Python on **LemonMLXE 35B** without seatbelts.
+### Still required for "resolved" (product bar)
+1. ~~Stamped field on prefill+decode f32~~ — **PASS** (`FIELD_SAR_35B_prefill_f32.txt`). Prefer n≥2 for confidence.  
+2. Optional: charter `--max-tokens 20480` (8192 already enough for natural finish).  
+3. Optional: teacher-force / state checksum multi-T ≡ sequential T=1.  
+4. fused2 remains opt-in until kernel parity proven.
