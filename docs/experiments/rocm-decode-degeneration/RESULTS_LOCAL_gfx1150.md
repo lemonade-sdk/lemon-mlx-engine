@@ -217,3 +217,11 @@ HF cache: `~/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4
 
 **LoopBrake kill-switch:** `MLX_LOOP_BRAKE_OFF=1` disables product brake (ChatSession + `generate_text`).
 
+
+## LoopBrake removed (not a real fix)
+
+Product decision: **LoopBrake was removed** from ChatSession and `generate_text`.
+Early-stop on phrase/line thrash masked field bugs (e.g. multi-turn SAR Python
+collapse) without fixing GDN/decode numerics. Real acceptance remains the
+Maxwell→Fourier→Doppler→together→Python field sequence on
+`LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit` with default decode path (no seatbelt).

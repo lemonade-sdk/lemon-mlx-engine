@@ -52,13 +52,6 @@ target_include_directories(test_stop_sequences PRIVATE
     ${CMAKE_SOURCE_DIR}/include)
 add_test(NAME test_stop_sequences COMMAND test_stop_sequences)
 
-# Header-only generation loop brake (phrase / line / token n-gram)
-add_executable(test_loop_brake test_loop_brake.cpp)
-target_link_libraries(test_loop_brake PRIVATE Catch2::Catch2WithMain)
-target_include_directories(test_loop_brake PRIVATE
-    ${CMAKE_SOURCE_DIR}/include)
-add_test(NAME test_loop_brake COMMAND test_loop_brake)
-
 # User input and message generator tests
 add_executable(test_user_input test_user_input.cpp)
 target_link_libraries(test_user_input PRIVATE mlx-lm-common Catch2::Catch2WithMain)

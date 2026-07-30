@@ -1,7 +1,6 @@
 // Copyright (C) 2024-2025 Apple Inc. -- Ported to C++
 
 #include <mlx-lm/common/chat_session.h>
-#include <mlx-lm/common/loop_brake.h>
 #include <mlx/mlx.h>
 #include <algorithm>
 #include <stdexcept>
@@ -189,9 +188,6 @@ void ChatSession::generate_impl(
 
         std::string assistant_response;
         int generated_count = 0;
-        // Residual thinking CoT self-reinforcement (phrase / line / token n-gram).
-        // Stop early so incomplete loops are not fully re-seeded next turn.
-        LoopBrake loop_brake;
 
         while (auto maybe_token = iter.next()) {
             int token_id = *maybe_token;
@@ -218,12 +214,6 @@ void ChatSession::generate_impl(
                 if (on_detail && !on_detail(chunk)) {
                     break;
                 }
-
-                if (loop_brake.feed(token_id, text.value())) {
-                    break;
-                }
-            } else if (loop_brake.feed_token(token_id)) {
-                break;
             }
         }
 

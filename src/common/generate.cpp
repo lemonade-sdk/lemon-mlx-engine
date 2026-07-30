@@ -1,7 +1,6 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 
 #include <mlx-lm/common/generate.h>
-#include <mlx-lm/common/loop_brake.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx/mlx.h>
@@ -1147,30 +1146,16 @@ GenerateCompletionInfo generate_text(
     auto decode_fn = context.decode_fn;
 
     NaiveStreamingDetokenizer detokenizer;
-    // Residual CoT thrash brake (server chat/completions + any generate_text
-    // caller). ChatSession has its own LoopBrake on the TokenIterator path.
-    LoopBrake loop_brake;
 
     return generate(context, input, params, eos_token_ids,
         [&](int token) -> GenerateDisposition {
             detokenizer.append(token);
             if (auto text = detokenizer.next(decode_fn)) {
-                auto d = on_text(*text, token);
-                if (d == GenerateDisposition::stop) {
-                    return d;
-                }
-                if (loop_brake.feed(token, *text)) {
-                    return GenerateDisposition::stop;
-                }
-                return GenerateDisposition::more;
+                return on_text(*text, token);
             }
             // No text this token (incomplete UTF-8, or it did not extend the
-            // segment). on_text is skipped; still run token n-gram brake.
-            if (loop_brake.feed_token(token)) {
-                return GenerateDisposition::stop;
-            }
-            // Cancellation rests entirely on should_cancel, which generate()
-            // polls every iteration.
+            // segment). Cancellation rests entirely on should_cancel, which
+            // generate() polls every iteration.
             return GenerateDisposition::more;
         },
         should_cancel);
