@@ -6,7 +6,7 @@
 **Date:** 2026-07-29 (local) / 2026-07-30 (UTC for some CI stamps)  
 **Host:** Ubuntu, AMD Radeon 890M (`gfx1150`), 8 CUs, ROCm  
 **Engine tip (code):** `52d64de`  
-**Docs tip:** `a372276`  
+**Docs tip:** `b673222` (field n≥2 logs + matrix; docs-only after engine)  
 **Binary under matrix:** `build/chat` mtime epoch `1785380863` (engine = `52d64de`; docs-only commits after do not change binary)
 
 **Related docs (this directory):**
@@ -434,13 +434,27 @@ Independent quality-reviewer + explore supervisors + Clear Thought (2026-07-29 s
 
 | Claim | Confidence (0–100) | Notes |
 |-------|-------------------:|-------|
-| Field collapse fully fixed | **~58** | Greedy + fused green; product-temp default still red once |
-| Default path product-ready (temp 0.7) | **~38** | D7 FAIL n=1 |
-| fused2 product-default-ready | **~28** | n=1, historical H1, no parity suite |
+| Field collapse fully fixed | **~45** | Residual D7@0.7 thrash 1/3; not sealed |
+| Default path product-usable (temp 0.7) | **~72** | D7 **2 PASS / 1 FAIL**; bar clearable, not deterministic green |
+| f32 SSM stack merge-worthy | **~85** | Prefill≡decode f32 is the real fix class; multi-cell field support |
+| fused2 product-default-ready | **~35** | F7 2/2 PASS but no parity suite; historical H1; keep opt-in |
 
 ### Consensus paragraph
 
-> The real engineering win on this branch is **prefill≡decode float32 SSM lifetime** plus **g-dtype / softplus / fused2 opt-in** — **not** LoopBrake. On tip `52d64de`, the field SAR bar is **achievable** under greedy default and under fused2 at both 0 and 0.7 (all n=1), but **default@0.7 still exhibited classic turn-5 code thrash**, so the product default path is **not proven ready**. fused2 is **no longer “known poison forever”** on this stack but must stay **opt-in** until n≥2 and parity evidence. Operators may run `MLX_GDN_FUSED2=1` (original polarity). Do not reintroduce LoopBrake; do not claim 63 t/s on 35B gfx1150; human merge only on PR #74.
+> The real engineering win on this branch is **prefill≡decode float32 SSM lifetime** plus **g-dtype / softplus / fused2 opt-in** — **not** LoopBrake. On tip `52d64de`, the field SAR bar is **achievable** under greedy default, under default@0.7 (**2/3**), and under fused2@0.7 (**2/2**). One classic turn-5 thrash remains on record (D7 n=1), so residual risk is **documented, not denied**. fused2 is **no longer “known poison forever”** but stays **opt-in** until parity. Operators may run `MLX_GDN_FUSED2=1`. Do not reintroduce LoopBrake; do not claim 63 t/s on 35B gfx1150; **human merge only** on PR #74.
+
+### Human merge readiness (this cycle)
+
+| Item | Status |
+|------|--------|
+| Ship f32 SSM + prefill keep-f32 + softplus/g-dtype | **Yes — primary merge payload** |
+| Field evidence default@0 | PASS (D0) |
+| Field evidence default@0.7 | **2/3 PASS** (residual thrash n=1) |
+| Field evidence fused2@0.7 | **2/2 PASS** (opt-in only) |
+| Flip fused2 code default-on | **No** |
+| Parity suite required to merge f32 stack | **No** (charter gate not met; optional later) |
+| LoopBrake | **Must stay removed** |
+| More field n (D7 n4 / F7 n3) before human review | **No** — diminishing returns |
 
 ---
 
@@ -448,11 +462,12 @@ Independent quality-reviewer + explore supervisors + Clear Thought (2026-07-29 s
 
 ### Product / merge
 
-1. **Land** f32 SSM + prefill keep-f32 + g-dtype/softplus + fused2 opt-in as the correctness stack.
+1. **Land** f32 SSM + prefill keep-f32 + g-dtype/softplus + fused2 opt-in as the correctness stack (**human review PR #74**).
 2. **Keep** `MLX_GDN_FUSED2` **opt-in** in code for this PR.
 3. **Do not** reintroduce LoopBrake.
-4. **Document** product temp 0.7; field bar should include at least one 0.7 cell going forward.
+4. **Document** product temp 0.7 residual thrash risk (1 observed FAIL / 2 PASS on matrix).
 5. **Human merge only** on PR #74.
+6. **Stop matrix churn** unless thrash reappears or human requests more n.
 
 ### Operator (local gfx1150 / field)
 
@@ -576,7 +591,7 @@ printf '%s\n' \
 
 ## 12. One-line conclusion
 
-**f32 SSM prefill≡decode is the real fix class; field bar is green on default@0 and fused2@{0,0.7}; default@0.7 still showed one classic turn-5 thrash; keep fused2 opt-in in code, operators may enable it; LoopBrake is not a fix; 0.8B is bisect-only and still has residual CoT; human merge only on PR #74.**
+**f32 SSM prefill≡decode is the real fix class; field bar is green on default@0, default@0.7 (2/3), and fused2@0.7 (2/2); one residual turn-5 thrash remains on record; keep fused2 opt-in; LoopBrake is not a fix; parity/history/perf deferred; human merge only on PR #74.**
 
 ---
 

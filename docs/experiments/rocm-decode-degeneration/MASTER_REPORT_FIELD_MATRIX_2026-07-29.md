@@ -222,9 +222,9 @@ Older field notes emphasized `synchronization synchronization…`. This matrix�
 
 | Priority | Experiment |
 |----------|------------|
-| P0 | ~~D7 n=2~~ **PASS**; ~~F7 n=2~~ **PASS**; ~~D7 n=3~~ **PASS** (default@0.7 now 2 green / 1 thrash) |
-| P1 | 0.8B multi-turn thinking ladder default vs fused2 on this tip (TIP_* logs exist) |
-| P2 | Teacher-force / SSM checksum: prefill multi-T vs T=1 default vs T=1 fused2 — **if thrash reappears** or before fused2 code default-on |
+| P0 | ~~Matrix n≥2~~ **DONE** — D7 2/3, F7 2/2; **no more field n** unless thrash reappears or human asks |
+| P1 | **Human review PR #74** — land f32 SSM stack; residual D7 risk in disclaimer; fused2 opt-in |
+| P2 | Teacher-force / SSM checksum — **if thrash reappears** or before fused2 code default-on |
 | P3 | Only if default@0.7 stable green + parity: consider default-on fused2 with kill-switch env |
 
 ### Performance (separate track)
