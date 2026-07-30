@@ -483,8 +483,10 @@ This restores **original fused2 polarity** via env without flipping the repo def
 | Artifact | Role |
 |----------|------|
 | `logs/FIELD_SAR_35B_prefill_f32.txt` | D0 PASS |
-| `logs/FIELD_SAR_35B_temp07.txt` | D7 FAIL thrash |
-| `logs/FIELD_SAR_35B_temp07_FUSED2.txt` | F7 PASS |
+| `logs/FIELD_SAR_35B_temp07.txt` | D7 n=1 FAIL thrash |
+| `logs/FIELD_SAR_35B_temp07_n2.txt` | D7 n=2 PASS |
+| `logs/FIELD_SAR_35B_temp07_FUSED2.txt` | F7 n=1 PASS |
+| `logs/FIELD_SAR_35B_temp07_FUSED2_n2.txt` | F7 n=2 PASS |
 | `logs/FIELD_SAR_35B_temp00_FUSED2.txt` | F0 PASS |
 | `logs/CHAIN_temp07_then_fused2.txt` | D7→F7 automation chain |
 | `logs/CHAIN_fused07_then_fused00.txt` | F7→F0 automation chain |
