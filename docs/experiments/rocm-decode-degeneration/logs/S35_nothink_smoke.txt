@@ -1,0 +1,22 @@
+Loading model: unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=19.2 GB, peak=19.2 GB, cache=10.2 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+I am Qwen, a large language model independently developed by Alibaba Group's Tongyi Lab. 
+
+How can I help you today?
+Prompt:     16 tokens, 25.4918 tokens/s, 0.627652s
+Generation: 28 tokens, 19.9672 tokens/s, 1.4023s
+
+
+> 
+Assistant: 2 + 2 equals 4.
+Prompt:     60 tokens, 46.7718 tokens/s, 1.28282s
+Generation: 9 tokens, 20.5938 tokens/s, 0.437026s
+
+
+> 

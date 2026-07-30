@@ -124,34 +124,46 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 | France multi-turn (`64387f8`) | t2–4 **hard=N**; gen cut ~400→152/118/113 (`LB_france_mt.txt`) |
 | France multi-turn tighter (`0564ffc`) | **all turns hard=N** max12≤4; gens 312/138/104/100 (`LB2_france_mt.txt`) |
 | Radar multi-turn default | all turns **hard=N** max12≤4 (`LB_radar_mt.txt`) |
-| Radar + `MLX_GDN_FUSED2=1` | hard=N max12≤5 but fills 400 soft Wait (`LB_FUSED2_radar_mt.txt`) — **do not re-default fused2** |
+| Radar + `MLX_GDN_FUSED2=1` | hard=N max12≤5 but fills 400 soft Wait (`LB_FUSED2_radar_mt.txt`, `F3_FUSED2_radar_mt.txt`) — **do not re-default fused2** |
+| Fused2 France ST after g/beta InT cast | coherent; gen hits 200 cap; hard=N (`F4_FUSED2_france_st.txt`) |
+
+### Field-size (35B A3B) smoke — gfx1150
+
+**Model:** `unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit` (default GDN path; fused2 off; MTP off; ~19.2 GB active via GTT)
+
+| Cell | Result |
+|------|--------|
+| no-think multi-turn who/2+2 | **PASS** coherent (`S35_nothink_smoke.txt`) |
+| thinking capital of France max=128 | **PASS** finishes `</think>` + answer Paris (`S35_think_smoke.txt`) |
+
+0.8B residual CoT severity does **not** reproduce on this short 35B smoke. Full radar multi-turn 35B not required to keep fused2 opt-in.
 
 ## Remaining work (not closed)
 
 1. ~~History confound on FIX logs~~ — gate defined; HIST_gate PASS.  
 2. ~~P0 `g` activation-dtype / prefill–decode HIP type-pun~~ — `d218c7c`.  
-3. ~~Residual CoT loop brake (chat)~~ — `64387f8`.  
-4. ~~Server-path LoopBrake via `generate_text`~~ — `0564ffc`.  
-5. ~~Fused2 RMSNorm/softplus parity patch~~ — still **opt-in** pending more cells.  
-6. Optional: default-on fused2 only after multi-cell + 35B confidence.  
-7. **Field-size model** (35B hybrid) re-run — 0.8B must not over-claim.  
-8. **q-norm `1/D` vs `1/√D`** A/B only after residual product policy.
+3. ~~Residual CoT loop brake (chat + server)~~ — `64387f8` / `0564ffc`.  
+4. ~~Fused2 RMSNorm/softplus + g/beta InT round-trip + Dk%32 guard~~ — still **opt-in**.  
+5. ~~Field-size short smoke~~ — 35B A3B PASS (`S35_*`).  
+6. Optional: default-on fused2 only after multi-cell fused2 green (soft Wait still weaker than default).  
+7. Optional: stable softplus on `compiled_beta_and_g` (affects default path; separate smoke).  
+8. **q-norm `1/D` vs `1/√D`** A/B only if product asks (paths already consistent).
 
 ## Supervisor consensus (quintuple)
 
 | Lens | Verdict |
 |------|---------|
-| Code audit (explore) | Env names real; MoE-only fused2; ChatSession fresh cache |
-| QA protocol | HISTORY gate mandatory; early FIX residual ranks invalid |
-| Senior ROCm | H1 fused2 still primary for catastrophic class |
-| Planning | Ubuntu-first; S1 locked for fused2; residual = new workstream |
-| Local science | H1 mitigated by default path; residual = thinking self-loop |
+| Code audit (explore) | Fused2 hold opt-in; gaps softplus vs compile + residual soft Wait |
+| QA protocol | HISTORY gate + hard-loop defs; 35B short PASS |
+| Senior ROCm | g/beta InT + Dk%32 smallest next fused deltas; no default flip |
+| Planning | Product residual closed via LoopBrake; fused2 perf path opt-in |
+| Local science | H1 mitigated; 0.8B CoT ≠ 35B short smoke |
 
 ## Bottom line
 
-**H1 (default fused2 hard-loop): mitigated** — `gdn_fused_decode` opt-in + output dtype cast (`ab1b518`).  
-**P0 decode `g` type-pun: fixed** — cast decay `g` to activation dtype + model `a_log` on T=1 update (`d218c7c`).  
-**Residual CoT loops: braked** — ChatSession + `generate_text`/server (`64387f8`, `0564ffc`); France all-turns hard=N under tighter n-gram.  
-**Fused2 numerics: partial** — RMSNorm/softplus aligned (`64387f8`); remains **opt-in**; soft Wait under fused2 still possible.  
-**Do not wait on CI**; next: 35B confirmation; fused2 default only after more green cells.  
+**H1 (default fused2 hard-loop): mitigated** — opt-in + dtype cast (`ab1b518`).  
+**P0 decode `g` type-pun: fixed** (`d218c7c`).  
+**Residual CoT: braked** (chat + `generate_text`/server).  
+**Fused2 numerics: improved, still opt-in** — RMSNorm/softplus + g/beta InT + Dk%32; soft Wait multi-turn still weaker than default.  
+**35B A3B short smoke: PASS** on default path (gfx1150).  
 **Branch:** `fix/rocm-gdn-fused2-optin` off `origin/main` — **human merge only**.

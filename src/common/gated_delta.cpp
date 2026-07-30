@@ -453,6 +453,10 @@ static const char* gdn_fused_decode_hip_source = R"(
               static_cast<float>(dt_bias[hv_idx]);
     float sp = (ax > 0.0f) ? (ax + log1pf(expf(-ax))) : log1pf(expf(ax));
     float g = expf(-expf(static_cast<float>(a_log[hv_idx])) * sp);
+    // Match gated_delta_step HIP: quantize g/beta to InT then back to f32 so
+    // decay matches the non-fused path's bf16 (or model-dtype) round-trip.
+    beta = static_cast<float>(static_cast<InT>(beta));
+    g = static_cast<float>(static_cast<InT>(g));
 
     // load q/k, RMSNorm over Dk (warp reduce across the 32 dk-lanes).
     // Column layout (s = dk_idx + 32*i): consecutive lanes hit consecutive Dk
@@ -869,7 +873,8 @@ std::pair<mx::array, mx::array> gdn_fused_decode(
     int Hv = v.shape(2), Dv = v.shape(3);
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     static const bool force_fallback = std::getenv("MLX_GDN_FUSED2_MXOPS") != nullptr;
-    if (!force_fallback) {
+    // Warp-lane tiling assumes Dk is a multiple of 32 (same as gated_delta_ops).
+    if (!force_fallback && (Dk % 32 == 0)) {
         auto t = q.dtype();
         mx::array al = a_log;
         mx::array db = dt_bias;
