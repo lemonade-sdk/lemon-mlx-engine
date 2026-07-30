@@ -159,7 +159,8 @@ Prompt-token growth must prove multi-turn re-prefill (ChatSession history).
 6. ~~Multi-cell fused2 hard-loop re-check~~ — F5 France/radar hard=N, gens ~parity default; **opt-in held for this PR**.  
 7. ~~Stable softplus on default GDN path~~ — `logaddexp`; smoke `SP_default_*` hard=N.  
 8. Optional follow-up: re-default fused2 ON after human review of F5 + field load.  
-9. **q-norm `1/D` vs `1/√D`** A/B only if product asks (paths already consistent).
+9. ~~LoopBrake kill-switch~~ — `MLX_LOOP_BRAKE_OFF=1`.  
+10. **q-norm `1/D` vs `1/√D`** A/B only if product asks (paths already consistent).
 
 ## Supervisor consensus (quintuple)
 
@@ -205,4 +206,13 @@ HF cache: `~/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4
 |------|--------|
 | 0.8B load + who are you --no-think | PASS (`SMOKE_0.8B_load.txt`) active~889MB |
 | 35B LemonMLXE + user flags --no-think who are you / 2+2 | PASS (`SMOKE_35B_LemonMLXE_nothink.txt`) active~18.2GB, MTP head skipped, answers coherent |
+
+### Field SAR multi-turn (default path, MTP off)
+
+| Cell | Result |
+|------|--------|
+| 0.8B multi-turn science (Maxwell→Fourier…) | HISTORY_OK; **hard=N** (max12≤5); soft self-reinforcement still present (`FIELD_SAR_0.8B_default.txt`) |
+| 35B LemonMLXE Maxwell open question | **PASS quality** — finishes `</think>` + structured Maxwell answer (`FIELD_SAR_35B_LemonMLXE.txt`); MTP skipped |
+
+**LoopBrake kill-switch:** `MLX_LOOP_BRAKE_OFF=1` disables product brake (ChatSession + `generate_text`).
 

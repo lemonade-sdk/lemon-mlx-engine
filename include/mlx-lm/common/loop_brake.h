@@ -3,11 +3,19 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace mlx_lm {
+
+/// Product safety net is on by default. Set `MLX_LOOP_BRAKE_OFF=1` (any value)
+/// to disable for A/B or intentional repetitive output.
+inline bool loop_brake_enabled() {
+    static const bool off = std::getenv("MLX_LOOP_BRAKE_OFF") != nullptr;
+    return !off;
+}
 
 /// Thresholds for detecting runaway decode loops (thinking / CoT thrash).
 /// Defaults (tightened for 0.8B CoT): ~32–120 char phrase or 8–16 token n-gram
@@ -254,6 +262,9 @@ public:
 
     /// Feed a decoded text chunk. Returns true if the brake trips.
     bool feed_text(std::string_view chunk) {
+        if (!loop_brake_enabled()) {
+            return false;
+        }
         if (tripped() || chunk.empty()) {
             return tripped();
         }
@@ -280,6 +291,9 @@ public:
 
     /// Feed a generated token id. Returns true if the brake trips.
     bool feed_token(int token_id) {
+        if (!loop_brake_enabled()) {
+            return false;
+        }
         if (tripped()) {
             return true;
         }
@@ -301,6 +315,9 @@ public:
 
     /// Feed both token and optional text from the same decode step.
     bool feed(int token_id, std::string_view text_chunk) {
+        if (!loop_brake_enabled()) {
+            return false;
+        }
         if (feed_token(token_id)) {
             return true;
         }
