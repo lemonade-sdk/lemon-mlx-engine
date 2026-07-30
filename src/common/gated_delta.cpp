@@ -447,15 +447,18 @@ static const char* gdn_fused_decode_hip_source = R"(
     const InT* i_state = state_in + ((long)n * Dv + dv_idx) * Dk;
     InT* o_state = state_out + ((long)n * Dv + dv_idx) * Dk;
 
-    // beta, g (per head)
+    // beta, g (per head). Stable softplus: max(x,0)+log1p(exp(-|x|)).
     float beta = 1.0f / (1.0f + expf(-static_cast<float>(b[(long)b_idx * Hv + hv_idx])));
-    float sp = logf(expf(static_cast<float>(a[(long)b_idx * Hv + hv_idx]) +
-                         static_cast<float>(dt_bias[hv_idx])) + 1.0f);
+    float ax = static_cast<float>(a[(long)b_idx * Hv + hv_idx]) +
+              static_cast<float>(dt_bias[hv_idx]);
+    float sp = (ax > 0.0f) ? (ax + log1pf(expf(-ax))) : log1pf(expf(ax));
     float g = expf(-expf(static_cast<float>(a_log[hv_idx])) * sp);
 
     // load q/k, RMSNorm over Dk (warp reduce across the 32 dk-lanes).
     // Column layout (s = dk_idx + 32*i): consecutive lanes hit consecutive Dk
     // -> coalesced loads + independent per-i ops for dual-issue.
+    // Match MLX ROCm rms_norm: 1/sqrt (not rsqrtf) and weight after InT
+    // truncation of the scaled value (Metal/MLX order: w * T(x * scale)).
     float ql[n_per_t], kl[n_per_t];
     float sq = 0.0f, sk = 0.0f;
     #pragma unroll
@@ -465,13 +468,15 @@ static const char* gdn_fused_decode_hip_source = R"(
         sq += ql[i] * ql[i]; sk += kl[i] * kl[i];
     }
     for (int o = 16; o > 0; o >>= 1) { sq += __shfl_xor(sq, o); sk += __shfl_xor(sk, o); }
-    float scq = rsqrtf(sq / (float)Dk + 1e-6f);
-    float sck = rsqrtf(sk / (float)Dk + 1e-6f);
+    float scq = 1.0f / sqrtf(sq / (float)Dk + 1e-6f);
+    float sck = 1.0f / sqrtf(sk / (float)Dk + 1e-6f);
     #pragma unroll
     for (int i = 0; i < n_per_t; ++i) {
         int s = dk_idx + 32 * i;
-        ql[i] = ql[i] * scq * static_cast<float>(q_norm_w[s]);
-        kl[i] = kl[i] * sck * static_cast<float>(k_norm_w[s]);
+        InT qn = static_cast<InT>(ql[i] * scq);
+        InT kn = static_cast<InT>(kl[i] * sck);
+        ql[i] = static_cast<float>(qn) * static_cast<float>(q_norm_w[s]);
+        kl[i] = static_cast<float>(kn) * static_cast<float>(k_norm_w[s]);
     }
 
     // state load (column layout, coalesced)
