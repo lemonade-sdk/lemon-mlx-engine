@@ -143,7 +143,7 @@ Acceptance: many steps `accepted=0` or `1` of 1 draft slot; longer n_draft frequ
 | ID | Fix | Done? |
 |----|-----|-------|
 | **P1-1** | Wire **`current_draft_count()`** from `accept_history_` (raise after full accept, lower on reject) **only after** P0 proves step cost can beat eager at γ=1 | **no** |
-| **P1-2** | **Keep MTP quantized** (match backbone) instead of full dequant at load if accept rate holds; or BF16-only `mtp.fc` like mlx-lm quant_predicate | **no** |
+| **P1-2** | **Keep MTP quantized** (match backbone) instead of full dequant at load if accept rate holds; or BF16-only `mtp.fc` like mlx-lm quant_predicate | **yes (C1)** — LemonMLXE ships BF16 `mtp.*`; runtime `mx::quantize`+registry (default); `MLX_MTP_KEEP_BF16` / `MLX_MTP_DEQUANT` escapes; warm draft 157→24 ms; 256-tok ~6→15.9 t/s |
 | **P1-3** | Collapse host barriers: fewer `eval`/`item` per step; align residual-sampling / accept with mlx-lm for temp>0 later | **no** |
 | **P1-4** | Align server default `--n-draft-tokens` with chat γ≈1 policy | **no** |
 
@@ -178,9 +178,8 @@ Stop criterion for B: VERIFY_COST row present with numbers.
 
 1. **[met this fire]** `MTP_OPTIMALITY_PLAN.md` exists with online MLX MTP findings + ranked fixes.
 2. **[met 2026-08-01]** `MICROBENCH.md` has **VERIFY_COST** verify-vs-eager numbers (β_K≈1.5–1.7; draft δ≈4.1 at K=2).  
-3. **[unmet]** ≥1 code **or** measured improvement that either  
-   (a) improves gen t/s on 256-token probe vs prior ~6–7 MTP baseline, **or**  
-   (b) **auto-disables / falls back to eager** when MTP is slower, with passing smoke (`MLX_LOAD_MTP_HEAD=1`, short `--use-mtp --n-draft 2`, max-tokens 32, no Stream(cpu)).
+3. **[met C1 2026-08-01]** Real cost cut (not auto-disable): runtime quant MTP head + quant matmul path.  
+   (a) 256-token MTP gen **15.87 t/s** vs prior ~6–7 (**≥2.3×**); warm draft_ms **23.7** vs **156.8** (**−85%**). Smoke green (`auto_quantized=13`, no Stream(cpu)).  
 
 When 1–3 all met: report DONE + human next step; `scheduler_delete` this scheduled task.
 

@@ -1,0 +1,333 @@
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp] step=1 n_draft=2 accepted=1 drafts=[2,25816]
+[mtp-t] step=1 n_draft=2 accepted=1 draft=51341us verify=154923us commit=146us total=206412us
+# Technical[mtp] step=2 n_draft=2 accepted=1 drafts=[33655,25]
+[mtp-t] step=2 n_draft=2 accepted=1 draft=27853us verify=72700us commit=140us total=100694us
+ Overview:[mtp] step=3 n_draft=2 accepted=1 drafts=[56430,725]
+[mtp-t] step=3 n_draft=2 accepted=1 draft=20953us verify=75132us commit=183us total=96269us
+ Maxwell’s[mtp] step=4 n_draft=2 accepted=1 drafts=[11365,778]
+[mtp-t] step=4 n_draft=2 accepted=1 draft=29005us verify=75821us commit=137us total=104964us
+ Equations[mtp] step=5 n_draft=2 accepted=1 drafts=[321,9591]
+[mtp-t] step=5 n_draft=2 accepted=1 draft=25389us verify=74241us commit=145us total=99776us
+ and Elect[mtp] step=6 n_draft=2 accepted=1 drafts=[433,36744]
+[mtp-t] step=6 n_draft=2 accepted=1 draft=27758us verify=77595us commit=163us total=105517us
+romagnetic[mtp] step=7 n_draft=2 accepted=1 drafts=[30287,3780]
+[mtp-t] step=7 n_draft=2 accepted=1 draft=32487us verify=76610us commit=140us total=109238us
+ Wave Prop[mtp] step=8 n_draft=2 accepted=1 drafts=[26264,271]
+[mtp-t] step=8 n_draft=2 accepted=1 draft=31235us verify=76858us commit=258us total=108352us
+agation
+
+[mtp] step=9 n_draft=2 accepted=1 drafts=[550,220]
+[mtp-t] step=9 n_draft=2 accepted=1 draft=28682us verify=76221us commit=241us total=105145us
+## [mtp] step=10 n_draft=2 accepted=1 drafts=[16,13]
+[mtp-t] step=10 n_draft=2 accepted=1 draft=33045us verify=76276us commit=125us total=109446us
+1.[mtp] step=11 n_draft=2 accepted=1 drafts=[27416,271]
+[mtp-t] step=11 n_draft=2 accepted=1 draft=24899us verify=77019us commit=195us total=102114us
+ Introduction
+
+[mtp] step=12 n_draft=2 accepted=1 drafts=[5786,8884]
+[mtp-t] step=12 n_draft=2 accepted=1 draft=20054us verify=74621us commit=169us total=94845us
+Maxwell[mtp] step=13 n_draft=2 accepted=1 drafts=[725,36655]
+[mtp-t] step=13 n_draft=2 accepted=1 draft=21961us verify=77755us commit=135us total=99853us
+’s equations[mtp] step=14 n_draft=2 accepted=1 drafts=[1304,279]
+[mtp-t] step=14 n_draft=2 accepted=1 draft=23605us verify=74574us commit=236us total=98416us
+ form the[mtp] step=15 n_draft=2 accepted=1 drafts=[15787,314]
+[mtp-t] step=15 n_draft=2 accepted=1 draft=27427us verify=76537us commit=138us total=104103us
+ foundation of[mtp] step=16 n_draft=2 accepted=1 drafts=[27882,51807]
+[mtp-t] step=16 n_draft=2 accepted=1 draft=27751us verify=74499us commit=146us total=102398us
+ classical electrom[mtp] step=17 n_draft=2 accepted=1 drafts=[61098,2074]
+[mtp-t] step=17 n_draft=2 accepted=1 draft=25629us verify=74685us commit=207us total=100522us
+agnetism[mtp] step=18 n_draft=2 accepted=1 drafts=[11,67519]
+[mtp-t] step=18 n_draft=2 accepted=1 draft=26975us verify=74957us commit=126us total=102060us
+, optics[mtp] step=19 n_draft=2 accepted=1 drafts=[11,321]
+[mtp-t] step=19 n_draft=2 accepted=1 draft=28687us verify=77758us commit=170us total=106616us
+, and[mtp] step=20 n_draft=2 accepted=0 drafts=[8799,43517]
+[mtp-t] step=20 n_draft=2 accepted=0 draft=23807us verify=76420us commit=176us total=100404us
+ electric[mtp] step=21 n_draft=2 accepted=1 drafts=[43517,13]
+[mtp-t] step=21 n_draft=2 accepted=1 draft=22121us verify=89990us commit=103us total=112215us
+ circuits.[mtp] step=22 n_draft=2 accepted=0 drafts=[1690,23438]
+[mtp-t] step=22 n_draft=2 accepted=0 draft=19132us verify=76675us commit=235us total=96042us
+ For[mtp] step=23 n_draft=2 accepted=1 drafts=[23438,11]
+[mtp-t] step=23 n_draft=2 accepted=1 draft=20893us verify=86145us commit=77us total=107116us
+ engineers,[mtp] step=24 n_draft=2 accepted=0 drafts=[1439,36655]
+[mtp-t] step=24 n_draft=2 accepted=0 draft=20689us verify=76875us commit=180us total=97746us
+ these[mtp] step=25 n_draft=2 accepted=0 drafts=[36655,7276]
+[mtp-t] step=25 n_draft=2 accepted=0 draft=20826us verify=86594us commit=143us total=107564us
+ equations[mtp] step=26 n_draft=2 accepted=0 drafts=[7276,1204]
+[mtp-t] step=26 n_draft=2 accepted=0 draft=20612us verify=87767us commit=207us total=108588us
+ describe[mtp] step=27 n_draft=2 accepted=1 drafts=[1204,8799]
+[mtp-t] step=27 n_draft=2 accepted=1 draft=20544us verify=87157us commit=89us total=107791us
+ how electric[mtp] step=28 n_draft=2 accepted=1 drafts=[321,23222]
+[mtp-t] step=28 n_draft=2 accepted=1 draft=19943us verify=73766us commit=76us total=93785us
+ and magnetic[mtp] step=29 n_draft=2 accepted=1 drafts=[4881,513]
+[mtp-t] step=29 n_draft=2 accepted=1 draft=23212us verify=76286us commit=99us total=99597us
+ fields are[mtp] step=30 n_draft=2 accepted=0 drafts=[7658,539]
+[mtp-t] step=30 n_draft=2 accepted=0 draft=28479us verify=76077us commit=201us total=104757us
+ generated[mtp] step=31 n_draft=2 accepted=0 drafts=[539,9892]
+[mtp-t] step=31 n_draft=2 accepted=0 draft=27330us verify=87684us commit=275us total=115290us
+ by[mtp] step=32 n_draft=2 accepted=1 drafts=[9892,11]
+[mtp-t] step=32 n_draft=2 accepted=1 draft=22851us verify=89861us commit=105us total=112817us
+ charges,[mtp] step=33 n_draft=2 accepted=1 drafts=[57587,11]
+[mtp-t] step=33 n_draft=2 accepted=1 draft=20011us verify=75771us commit=70us total=95853us
+ currents,[mtp] step=34 n_draft=2 accepted=1 drafts=[321,4203]
+[mtp-t] step=34 n_draft=2 accepted=1 draft=26955us verify=78054us commit=78us total=105087us
+ and changes[mtp] step=35 n_draft=2 accepted=1 drafts=[303,279]
+[mtp-t] step=35 n_draft=2 accepted=1 draft=22005us verify=75427us commit=89us total=97522us
+ in the[mtp] step=36 n_draft=2 accepted=1 drafts=[4881,5402]
+[mtp-t] step=36 n_draft=2 accepted=1 draft=30828us verify=76317us commit=82us total=107228us
+ fields themselves[mtp] step=37 n_draft=2 accepted=0 drafts=[13,733]
+[mtp-t] step=37 n_draft=2 accepted=0 draft=20693us verify=73863us commit=110us total=94667us
+.[mtp] step=38 n_draft=2 accepted=0 drafts=[733,220]
+[mtp-t] step=38 n_draft=2 accepted=0 draft=20410us verify=86349us commit=214us total=106974us
+ In[mtp] step=39 n_draft=2 accepted=1 drafts=[220,16]
+[mtp-t] step=39 n_draft=2 accepted=1 draft=22385us verify=86081us commit=139us total=108606us
+ 1[mtp] step=40 n_draft=2 accepted=1 drafts=[23,21]
+[mtp-t] step=40 n_draft=2 accepted=1 draft=20903us verify=75175us commit=90us total=96169us
+86[mtp] step=41 n_draft=2 accepted=1 drafts=[20,11]
+[mtp-t] step=41 n_draft=2 accepted=1 draft=26317us verify=76085us commit=137us total=102541us
+5,[mtp] step=42 n_draft=2 accepted=1 drafts=[7555,60045]
+[mtp-t] step=42 n_draft=2 accepted=1 draft=27776us verify=76223us commit=210us total=104209us
+ James Clerk[mtp] step=43 n_draft=2 accepted=1 drafts=[56430,41275]
+[mtp-t] step=43 n_draft=2 accepted=1 draft=28342us verify=76881us commit=140us total=105364us
+ Maxwell unified[mtp] step=44 n_draft=2 accepted=0 drafts=[17200,11]
+[mtp-t] step=44 n_draft=2 accepted=0 draft=23323us verify=80161us commit=175us total=103660us
+ electricity[mtp] step=45 n_draft=2 accepted=1 drafts=[11,31135]
+[mtp-t] step=45 n_draft=2 accepted=1 draft=28797us verify=96621us commit=134us total=125554us
+, magnet[mtp] step=46 n_draft=2 accepted=1 drafts=[2074,11]
+[mtp-t] step=46 n_draft=2 accepted=1 draft=20254us verify=76662us commit=148us total=97066us
+ism,[mtp] step=47 n_draft=2 accepted=1 drafts=[321,3000]
+[mtp-t] step=47 n_draft=2 accepted=1 draft=28201us verify=77791us commit=160us total=106153us
+ and light[mtp] step=48 n_draft=2 accepted=1 drafts=[1083,264]
+[mtp-t] step=48 n_draft=2 accepted=1 draft=24043us verify=75666us commit=139us total=99848us
+ into a[mtp] step=49 n_draft=2 accepted=0 drafts=[3074,30744]
+[mtp-t] step=49 n_draft=2 accepted=0 draft=24842us verify=78461us commit=184us total=103489us
+ single[mtp] step=50 n_draft=2 accepted=1 drafts=[30744,12263]
+[mtp-t] step=50 n_draft=2 accepted=1 draft=22722us verify=88679us commit=132us total=111534us
+ theoretical framework[mtp] step=51 n_draft=2 accepted=0 drafts=[11,50151]
+[mtp-t] step=51 n_draft=2 accepted=0 draft=20947us verify=75934us commit=246us total=97128us
+,[mtp] step=52 n_draft=2 accepted=0 drafts=[50151,279]
+[mtp-t] step=52 n_draft=2 accepted=0 draft=28913us verify=93822us commit=221us total=122957us
+ predicting[mtp] step=53 n_draft=2 accepted=1 drafts=[279,13486]
+[mtp-t] step=53 n_draft=2 accepted=1 draft=19789us verify=87699us commit=92us total=107581us
+ the existence[mtp] step=54 n_draft=2 accepted=1 drafts=[314,63358]
+[mtp-t] step=54 n_draft=2 accepted=1 draft=24726us verify=75426us commit=86us total=100240us
+ of electromagnetic[mtp] step=55 n_draft=2 accepted=0 drafts=[318,2629]
+[mtp-t] step=55 n_draft=2 accepted=0 draft=30777us verify=74688us commit=332us total=105798us
+ ([mtp] step=56 n_draft=2 accepted=1 drafts=[2629,8]
+[mtp-t] step=56 n_draft=2 accepted=1 draft=25267us verify=87905us commit=245us total=113418us
+EM)[mtp] step=57 n_draft=2 accepted=1 drafts=[16382,13]
+[mtp-t] step=57 n_draft=2 accepted=1 draft=20649us verify=77287us commit=134us total=98071us
+ waves.[mtp] step=58 n_draft=2 accepted=1 drafts=[271,1919]
+[mtp-t] step=58 n_draft=2 accepted=1 draft=21774us verify=74704us commit=120us total=96599us
+
+
+This[mtp] step=59 n_draft=2 accepted=0 drafts=[2128,5529]
+[mtp-t] step=59 n_draft=2 accepted=0 draft=29728us verify=80784us commit=310us total=110823us
+ document[mtp] step=60 n_draft=2 accepted=1 drafts=[5529,264]
+[mtp-t] step=60 n_draft=2 accepted=1 draft=21387us verify=87885us commit=88us total=109361us
+ provides a[mtp] step=61 n_draft=2 accepted=0 drafts=[45332,3482]
+[mtp-t] step=61 n_draft=2 accepted=0 draft=21429us verify=77071us commit=115us total=98616us
+ rigorous[mtp] step=62 n_draft=2 accepted=1 drafts=[3482,15156]
+[mtp-t] step=62 n_draft=2 accepted=1 draft=25047us verify=88365us commit=85us total=113497us
+ yet accessible[mtp] step=63 n_draft=2 accepted=1 drafts=[10597,22527]
+[mtp-t] step=63 n_draft=2 accepted=1 draft=22111us verify=78304us commit=279us total=100695us
+ technical overview[mtp] step=64 n_draft=2 accepted=0 drafts=[364,23438]
+[mtp-t] step=64 n_draft=2 accepted=0 draft=21503us verify=77426us commit=166us total=99095us
+ for[mtp] step=65 n_draft=2 accepted=1 drafts=[23438,11]
+[mtp-t] step=65 n_draft=2 accepted=1 draft=20610us verify=87736us commit=128us total=108475us
+ engineers,[mtp] step=66 n_draft=2 accepted=1 drafts=[17661,279]
+[mtp-t] step=66 n_draft=2 accepted=1 draft=20018us verify=75407us commit=165us total=95590us
+ covering the[mtp] step=67 n_draft=2 accepted=0 drafts=[2943,15346]
+[mtp-t] step=67 n_draft=2 accepted=0 draft=23517us verify=76335us commit=347us total=100200us
+ four[mtp] step=68 n_draft=2 accepted=0 drafts=[15346,6657]
+[mtp-t] step=68 n_draft=2 accepted=0 draft=23857us verify=86908us commit=213us total=110979us
+ fundamental[mtp] step=69 n_draft=2 accepted=1 drafts=[6657,11]
+[mtp-t] step=69 n_draft=2 accepted=1 draft=20218us verify=89350us commit=101us total=109670us
+ laws,[mtp] step=70 n_draft=2 accepted=0 drafts=[836,24302]
+[mtp-t] step=70 n_draft=2 accepted=0 draft=20786us verify=76738us commit=219us total=97744us
+ their[mtp] step=71 n_draft=2 accepted=0 drafts=[24302,321]
+[mtp-t] step=71 n_draft=2 accepted=0 draft=20837us verify=86905us commit=143us total=107886us
+ integral[mtp] step=72 n_draft=2 accepted=1 drafts=[321,38832]
+[mtp-t] step=72 n_draft=2 accepted=1 draft=20515us verify=87910us commit=108us total=108534us
+ and differential[mtp] step=73 n_draft=2 accepted=1 drafts=[7346,11]
+[mtp-t] step=73 n_draft=2 accepted=1 draft=23714us verify=76696us commit=99us total=100510us
+ forms,[mtp] step=74 n_draft=2 accepted=1 drafts=[321,279]
+[mtp-t] step=74 n_draft=2 accepted=1 draft=21237us verify=77687us commit=97us total=99023us
+ and the[mtp] step=75 n_draft=2 accepted=1 drafts=[91967,314]
+[mtp-t] step=75 n_draft=2 accepted=1 draft=24473us verify=79330us commit=205us total=104009us
+ derivation of[mtp] step=76 n_draft=2 accepted=0 drafts=[279,63358]
+[mtp-t] step=76 n_draft=2 accepted=0 draft=20450us verify=78831us commit=194us total=99476us
+ the[mtp] step=77 n_draft=2 accepted=1 drafts=[63358,11717]
+[mtp-t] step=77 n_draft=2 accepted=1 draft=23630us verify=88246us commit=87us total=111963us
+ electromagnetic wave[mtp] step=78 n_draft=2 accepted=1 drafts=[22868,13]
+[mtp-t] step=78 n_draft=2 accepted=1 draft=21161us verify=75466us commit=123us total=96751us
+ equation.[mtp] step=79 n_draft=2 accepted=1 drafts=[271,4277]
+[mtp-t] step=79 n_draft=2 accepted=1 draft=25308us verify=75919us commit=91us total=101319us
+
+
+---[mtp] step=80 n_draft=2 accepted=1 drafts=[271,550]
+[mtp-t] step=80 n_draft=2 accepted=1 draft=29314us verify=76704us commit=232us total=106251us
+
+
+##[mtp] step=81 n_draft=2 accepted=1 drafts=[220,17]
+[mtp-t] step=81 n_draft=2 accepted=1 draft=21547us verify=74928us commit=114us total=96591us
+ 2[mtp] step=82 n_draft=2 accepted=0 drafts=[13,56430]
+[mtp-t] step=82 n_draft=2 accepted=0 draft=23931us verify=79096us commit=320us total=103348us
+.[mtp] step=83 n_draft=2 accepted=1 drafts=[56430,725]
+[mtp-t] step=83 n_draft=2 accepted=1 draft=25126us verify=87930us commit=162us total=113219us
+ Maxwell’s[mtp] step=84 n_draft=2 accepted=1 drafts=[11365,778]
+[mtp-t] step=84 n_draft=2 accepted=1 draft=22663us verify=78014us commit=155us total=100833us
+ Equations[mtp] step=85 n_draft=2 accepted=1 drafts=[25,561]
+[mtp-t] step=85 n_draft=2 accepted=1 draft=20315us verify=75761us commit=84us total=96161us
+: The[mtp] step=86 n_draft=2 accepted=0 drafts=[12937,33007]
+[mtp-t] step=86 n_draft=2 accepted=0 draft=26702us verify=75331us commit=222us total=102257us
+ Four[mtp] step=87 n_draft=2 accepted=0 drafts=[33007,1506]
+[mtp-t] step=87 n_draft=2 accepted=0 draft=23668us verify=88471us commit=158us total=112297us
+ Pill[mtp] step=88 n_draft=2 accepted=1 drafts=[1506,271]
+[mtp-t] step=88 n_draft=2 accepted=1 draft=21006us verify=90646us commit=138us total=111791us
+ars
+
+[mtp] step=89 n_draft=2 accepted=1 drafts=[5786,8884]
+[mtp-t] step=89 n_draft=2 accepted=1 draft=23857us verify=78180us commit=93us total=102131us
+Maxwell[mtp] step=90 n_draft=2 accepted=1 drafts=[725,36655]
+[mtp-t] step=90 n_draft=2 accepted=1 draft=23689us verify=76234us commit=184us total=100108us
+’s equations[mtp] step=91 n_draft=2 accepted=1 drafts=[6475,314]
+[mtp-t] step=91 n_draft=2 accepted=1 draft=19930us verify=78649us commit=100us total=98680us
+ consist of[mtp] step=92 n_draft=2 accepted=0 drafts=[2943,6907]
+[mtp-t] step=92 n_draft=2 accepted=0 draft=23759us verify=74670us commit=172us total=98603us
+ four[mtp] step=93 n_draft=2 accepted=1 drafts=[6907,38832]
+[mtp-t] step=93 n_draft=2 accepted=1 draft=24636us verify=87371us commit=202us total=112210us
+ partial differential[mtp] step=94 n_draft=2 accepted=0 drafts=[36655,421]
+[mtp-t] step=94 n_draft=2 accepted=0 draft=22579us verify=76876us commit=183us total=99640us
+ equations[mtp] step=95 n_draft=2 accepted=0 drafts=[421,27230]
+[mtp-t] step=95 n_draft=2 accepted=0 draft=20598us verify=90101us commit=283us total=110984us
+ that[mtp] step=96 n_draft=2 accepted=1 drafts=[27230,279]
+[mtp-t] step=96 n_draft=2 accepted=1 draft=20371us verify=89444us commit=91us total=109907us
+ relate the[mtp] step=97 n_draft=2 accepted=0 drafts=[8799,2002]
+[mtp-t] step=97 n_draft=2 accepted=0 draft=21878us verify=75736us commit=201us total=97816us
+ electric[mtp] step=98 n_draft=2 accepted=0 drafts=[2002,56014]
+[mtp-t] step=98 n_draft=2 accepted=0 draft=21359us verify=86267us commit=156us total=107782us
+ field[mtp] step=99 n_draft=2 accepted=1 drafts=[56014,10065]
+[mtp-t] step=99 n_draft=2 accepted=1 draft=20913us verify=88487us commit=125us total=109526us
+ $\math[mtp] step=100 n_draft=2 accepted=1 drafts=[12849,90]
+[mtp-t] step=100 n_draft=2 accepted=1 draft=20111us verify=78004us commit=123us total=98240us
+bf{[mtp] step=101 n_draft=2 accepted=1 drafts=[36,30675]
+[mtp-t] step=101 n_draft=2 accepted=1 draft=21189us verify=77445us commit=89us total=98724us
+E}$[mtp] step=102 n_draft=2 accepted=1 drafts=[11,279]
+[mtp-t] step=102 n_draft=2 accepted=1 draft=25764us verify=78561us commit=157us total=104483us
+, the[mtp] step=103 n_draft=2 accepted=1 drafts=[23222,29317]
+[mtp-t] step=103 n_draft=2 accepted=1 draft=23972us verify=77960us commit=124us total=102056us
+ magnetic flux[mtp] step=104 n_draft=2 accepted=1 drafts=[16940,56014]
+[mtp-t] step=104 n_draft=2 accepted=1 draft=21574us verify=77653us commit=95us total=99324us
+ density $\[mtp] step=105 n_draft=2 accepted=1 drafts=[10065,12849]
+[mtp-t] step=105 n_draft=2 accepted=1 draft=24348us verify=237039us commit=101us total=261489us
+mathbf[mtp] step=106 n_draft=2 accepted=1 drafts=[90,33]
+[mtp-t] step=106 n_draft=2 accepted=1 draft=21514us verify=80051us commit=177us total=101743us
+{B[mtp] step=107 n_draft=2 accepted=1 drafts=[30675,11]
+[mtp-t] step=107 n_draft=2 accepted=1 draft=28374us verify=78660us commit=185us total=107220us
+}$,[mtp] step=108 n_draft=2 accepted=1 drafts=[279,8799]
+[mtp-t] step=108 n_draft=2 accepted=1 draft=19922us verify=79747us commit=76us total=99745us
+ the electric[mtp] step=109 n_draft=2 accepted=1 drafts=[41633,2002]
+[mtp-t] step=109 n_draft=2 accepted=1 draft=20001us verify=78233us commit=175us total=98409us
+ displacement field[mtp] step=110 n_draft=2 accepted=1 drafts=[56014,10065]
+[mtp-t] step=110 n_draft=2 accepted=1 draft=21857us verify=77412us commit=95us total=99366us
+ $\math[mtp] step=111 n_draft=2 accepted=1 drafts=[12849,90]
+[mtp-t] step=111 n_draft=2 accepted=1 draft=19855us verify=74873us commit=96us total=94826us
+bf{[mtp] step=112 n_draft=2 accepted=1 drafts=[35,30675]
+[mtp-t] step=112 n_draft=2 accepted=1 draft=23912us verify=79776us commit=149us total=103838us
+D}$[mtp] step=113 n_draft=2 accepted=1 drafts=[11,321]
+[mtp-t] step=113 n_draft=2 accepted=1 draft=22955us verify=78239us commit=146us total=101341us
+, and[mtp] step=114 n_draft=2 accepted=1 drafts=[279,23222]
+[mtp-t] step=114 n_draft=2 accepted=1 draft=22459us verify=77086us commit=155us total=99701us
+ the magnetic[mtp] step=115 n_draft=2 accepted=1 drafts=[2002,19987]
+[mtp-t] step=115 n_draft=2 accepted=1 draft=27937us verify=78424us commit=94us total=106456us
+ field intensity[mtp] step=116 n_draft=2 accepted=1 drafts=[56014,10065]
+[mtp-t] step=116 n_draft=2 accepted=1 draft=24180us verify=76662us commit=135us total=100977us
+ $\math[mtp] step=117 n_draft=2 accepted=1 drafts=[12849,90]
+[mtp-t] step=117 n_draft=2 accepted=1 draft=21496us verify=77044us commit=90us total=98632us
+bf{[mtp] step=118 n_draft=2 accepted=1 drafts=[39,92]
+[mtp-t] step=118 n_draft=2 accepted=1 draft=23689us verify=77598us commit=88us total=101376us
+H}[mtp] step=119 n_draft=2 accepted=1 drafts=[12576,271]
+[mtp-t] step=119 n_draft=2 accepted=1 draft=19718us verify=80651us commit=116us total=100485us
+$.
+
+[mtp] step=120 n_draft=2 accepted=0 drafts=[13962,220]
+[mtp-t] step=120 n_draft=2 accepted=0 draft=21641us verify=78127us commit=145us total=99914us
+###[mtp] step=121 n_draft=2 accepted=1 drafts=[220,17]
+[mtp-t] step=121 n_draft=2 accepted=1 draft=19428us verify=226709us commit=63us total=246200us
+ 2[mtp] step=122 n_draft=2 accepted=1 drafts=[13,16]
+[mtp-t] step=122 n_draft=2 accepted=1 draft=21203us verify=80124us commit=94us total=101422us
+.1[mtp] step=123 n_draft=2 accepted=0 drafts=[13,90005]
+[mtp-t] step=123 n_draft=2 accepted=0 draft=26450us verify=78369us commit=303us total=105124us
+.[mtp] step=124 n_draft=2 accepted=1 drafts=[90005,725]
+[mtp-t] step=124 n_draft=2 accepted=1 draft=21057us verify=229055us commit=95us total=250208us
+ Gauss’s[mtp] step=125 n_draft=2 accepted=1 drafts=[7271,364]
+[mtp-t] step=125 n_draft=2 accepted=1 draft=19311us verify=80285us commit=78us total=99676us
+ Law for[mtp] step=126 n_draft=2 accepted=0 drafts=[70859,198]
+[mtp-t] step=126 n_draft=2 accepted=0 draft=23369us verify=78975us commit=160us total=102505us
+ Electricity[mtp] step=127 n_draft=2 accepted=1 drafts=[198,332]
+[mtp-t] step=127 n_draft=2 accepted=1 draft=24621us verify=255562us commit=143us total=280328us
+
+**[mtp] step=128 n_draft=2 accepted=0 drafts=[37955,46499]
+[mtp-t] step=128 n_draft=2 accepted=0 draft=28789us verify=81229us commit=352us total=110370us
+Physical[mtp] step=129 n_draft=2 accepted=1 drafts=[46499,64700]
+[mtp-t] step=129 n_draft=2 accepted=1 draft=28712us verify=257891us commit=146us total=286750us
+ Meaning:**[mtp] step=130 n_draft=2 accepted=1 drafts=[19973,9892]
+[mtp-t] step=130 n_draft=2 accepted=1 draft=21544us verify=79498us commit=119us total=101162us
+ Electric charges[mtp] step=131 n_draft=2 accepted=1 drafts=[7936,8799]
+[mtp-t] step=131 n_draft=2 accepted=1 draft=32033us verify=81998us commit=168us total=114200us
+ produce electric[mtp] step=132 n_draft=2 accepted=1 drafts=[4881,13]
+[mtp-t] step=132 n_draft=2 accepted=1 draft=28644us verify=75640us commit=139us total=104423us
+ fields.[mtp] step=133 n_draft=2 accepted=0 drafts=[561,8799]
+[mtp-t] step=133 n_draft=2 accepted=0 draft=20685us verify=76026us commit=232us total=96944us
+ The[mtp] step=134 n_draft=2 accepted=1 drafts=[8799,29317]
+[mtp-t] step=134 n_draft=2 accepted=1 draft=23193us verify=229247us commit=253us total=252695us
+ electric flux[mtp] step=135 n_draft=2 accepted=1 drafts=[1472,264]
+[mtp-t] step=135 n_draft=2 accepted=1 draft=21107us verify=77513us commit=138us total=98759us
+ through a[mtp] step=136 n_draft=2 accepted=1 drafts=[7629,7099]
+[mtp-t] step=136 n_draft=2 accepted=1 draft=23932us verify=78019us commit=79us total=102031us
+ closed surface[mtp] step=137 n_draft=2 accepted=1 drafts=[369,52351]
+[mtp-t] step=137 n_draft=2 accepted=1 draft=26260us verify=78004us commit=105us total=104370us
+ is proportional[mtp] step=138 n_draft=2 accepted=1 drafts=[310,279]
+[mtp-t] step=138 n_draft=2 accepted=1 draft=21567us verify=76310us commit=70us total=97947us
+ to the[mtp] step=139 n_draft=2 accepted=1 drafts=[42360,6545]
+[mtp-t] step=139 n_draft=2 accepted=1 draft=22412us verify=75451us commit=65us total=97929us
+ enclosed charge[mtp] step=140 n_draft=2 accepted=1 drafts=[13,271]
+[mtp-t] step=140 n_draft=2 accepted=1 draft=24427us verify=76435us commit=72us total=100935us
+.
+
+[mtp] step=141 n_draft=2 accepted=1 drafts=[332,35]
+[mtp-t] step=141 n_draft=2 accepted=1 draft=22415us verify=78189us commit=84us total=100689us
+**D[mtp] step=142 n_draft=2 accepted=1 drafts=[66335,3268]
+[mtp-t] step=142 n_draft=2 accepted=1 draft=24976us verify=77675us commit=134us total=102786us
+ifferential Form[mtp] step=143 n_draft=2 accepted=1 drafts=[64700,198]
+[mtp-t] step=143 n_draft=2 accepted=1 draft=21872us verify=77379us commit=83us total=99335us
+:**
+[mtp] step=144 n_draft=2 accepted=1 drafts=[13682,198]
+[mtp-t] step=144 n_draft=2 accepted=1 draft=22381us verify=77145us commit=88us total=99615us
+$$
+[mtp] step=145 n_draft=2 accepted=0 drafts=[1639,365]
+[mtp-t] step=145 n_draft=2 accepted=0 draft=25645us verify=75145us commit=143us total=100933us
+\n[mtp] step=146 n_draft=2 accepted=1 drafts=[365,4120]
+[mtp-t] step=146 n_draft=2 accepted=1 draft=29101us verify=89468us commit=130us total=118700us
+abla
+Prompt:     50 tokens, 42.7211 tokens/s, 1.17038s
+Generation: 256 tokens, 15.8665 tokens/s, 16.1346s
+
+
+> EXIT:0

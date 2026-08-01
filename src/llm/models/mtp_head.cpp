@@ -320,15 +320,26 @@ void MTPHead::load_mtp_weights(
         auto it = wmap.find(key);
         if (it == wmap.end()) continue;
 
+        // SwitchGLU/SwitchLinear store [E, out, in]. Official MTP shared_expert
+        // tensors are 2D [out, in]; expand to E=1 so gather_qmm matches trunk.
+        mx::array w = value;
+        const bool is_switch_w =
+            (key.find("switch_mlp.") != std::string::npos ||
+             key.find("shared_expert.") != std::string::npos) &&
+            key.find("shared_expert_gate") == std::string::npos;
+        if (is_switch_w && w.ndim() == 2) {
+            w = mx::reshape(w, {1, w.shape(0), w.shape(1)});
+        }
+
         const bool try_auto_q =
             !force_dequant && !keep_bf16 && !is_norm_or_bias(key) &&
-            can_quantize(value);
+            can_quantize(w);
 
         if (try_auto_q) {
             // Runtime quant of LemonMLXE-style BF16 mtp.* (convert historically
             // left the head dense for acceptance; draft bandwidth suffers).
             auto qr = mx::quantize(
-                mx::contiguous(value), args_.quant_group_size, args_.quant_bits);
+                mx::contiguous(w), args_.quant_group_size, args_.quant_bits);
             *it->second = qr[0];
             std::optional<mx::array> biases = qr[2];
             reg.register_weight(
@@ -339,7 +350,7 @@ void MTPHead::load_mtp_weights(
                 args_.quant_bits);
             ++auto_quantized;
         } else {
-            *it->second = value;
+            *it->second = std::move(w);
             ++dense_kept;
         }
     }

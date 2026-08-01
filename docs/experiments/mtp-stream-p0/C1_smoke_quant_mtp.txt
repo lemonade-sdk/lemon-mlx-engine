@@ -14,5 +14,11 @@ Type your message (or 'quit' to exit):
 
 > 
 Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
-Error: [gather_qmm] Last dimension of first input with shape (..., 2048) does not match the expanded quantized matrix (4096, 512) computed from shape (512,512) with group_size=64, bits=4 and transpose=true
-EXIT:1
+[mtp] step=1 n_draft=2 accepted=1 drafts=[19,248046]
+[mtp-t] step=1 n_draft=2 accepted=1 draft=67614us verify=175507us commit=107us total=243229us
+4
+Prompt:     25 tokens, 24.0678 tokens/s, 1.03873s
+Generation: 2 tokens, 12961 tokens/s, 0.000154309s
+
+
+> EXIT:0
