@@ -223,20 +223,22 @@ ALL of: **MTP gen ≥ 100 t/s** (real log) + smoke green + docs updated + superv
 
 ### 5.2 Engineering plateau (local, not scheduler DONE)
 
-1. Plan includes path-to-100 + hardware ceiling (**this fire D1**).  
-2. MICROBENCH VERIFY_COST + C ladder present.  
-3. Real cost cuts C1–C4 landed; residual C5+ queued.  
-4. Best MTP still &lt; eager; gap ~21% — continue C5, do not declare product win.
+1. Plan includes path-to-100 + hardware ceiling.  
+2. MICROBENCH + C1–C9 ladder present.  
+3. Best MTP **27.34** (C7) **beats** eager 26.13 (~1.05×).  
+4. C8 flat; C9 n_draft=3 **22.71** regresses — **γ=1 optimal**.  
+5. Single-seq **≥100 on this stack is not achievable** by further MTP micro-opts (free-draft ideal still ≪100).
 
-When 5.1 impossible: keep iterating real cuts; main agent / human must choose H1/H2 or bar change — field agent **does not** `scheduler_delete` on fake PASS.
+When 5.1 impossible: main agent / human must choose **H1/H2/H3** or bar change — field agent **does not** `scheduler_delete` on fake PASS.
 
 ---
 
 ## 6. Next fire recommendation
 
-1. Software plateau **~27 t/s** (C7 best); C8 flat — prefer quality Maxwell or accept H1/H2 for ≥100.  
-2. Optional: measure without MTP_DEBUG host spam; unlikely to unlock 100.  
-3. **Do not** implement auto-fallback.
+1. **Stop t/s micro-opt thrash** on gfx1150 35B — plateau **~27 t/s**.  
+2. Escalate **H1** (faster GPU) / **H2** (smaller model) / **H3** (multi-seq aggregate) for any ≥100 bar.  
+3. Optional product: Maxwell quality SAR under C7, not more n_draft.  
+4. **Do not** implement auto-fallback as a “win”.
 
 ---
 
