@@ -48,7 +48,7 @@ generate:            async one-behind sample
 | **f32 SSM lifetime** | **ON** (this PR) | Correctness; small GPU tax, big CPU tax |
 | **fused2** `gdn_fused_decode` | **Auto-on** at tip (opt-out: `MLX_GDN_FUSED2=0` or `MLX_GDN_NO_FUSED2=1`) | 1 launch vs many for GDN T=1 — modest TPS |
 | **Quant fuse** attn QKV + MLP gate\|up | **OFF** unless `MLX_ENABLE_QUANT_FUSE=1` | Opt-in TPS; GDN `in_proj` **not** in this set (see below) |
-| **GDN in_proj quant fuse** | **OFF** unless `MLX_ENABLE_QUANT_FUSE` **and** `MLX_ENABLE_QUANT_FUSE_GDN=1` | Debug-only; full `qkv\|z\|b\|a` pack thrash @ temp=0.7 |
+| **GDN in_proj quant fuse** | **OFF** unless `MLX_ENABLE_QUANT_FUSE` **and** `MLX_ENABLE_QUANT_FUSE_GDN=1` | Optional full pack; conservative default OFF (see isolation) |
 | **Pure-graph** | **OFF** (`MLX_DECODE_GRAPH_PURE=1`) | Capture-once; note: **eager often faster on gfx1151 APU (~68 vs ~64)** |
 | **MTP** | **OFF** (head skip) | Speculative multi-token — biggest theoretical TPS if acceptance is good |
 | **KV quant** (`--kv-bits`) | Off | Memory; sometimes latency tradeoff |
@@ -100,22 +100,24 @@ Do **not** optimize blind.
 
 **Readout:** fixed-token raw path ~**+3 t/s (~+11%)**; short chat path ~flat (noise). The **19.8 GB** arm is **full fuse era** (included GDN `in_proj`). Selective product fuse (attn/MLP only) field load ~**18.4 GB** active. No thrash on short/temp=0 runs.
 
-#### Field isolation — multi-turn thinking @ temp 0.7 (Maxwell SAR)
+#### Field isolation — multi-turn thinking (Maxwell SAR)
 
-Same model `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit`, fused2-auto, thinking-on; fuse env differs:
+Same model `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit`, fused2-auto, thinking-on.
 
 | Cell | Fuse | temp | Result |
 |------|------|------|--------|
-| `FIELD_SAR_35B_FUSE_temp0_think` | ON (full, pre-selective) | 0 | **PASS** (full SAR + Python) |
-| `FIELD_SAR_35B_FUSE_temp07_think` | ON (full GDN in_proj) | 0.7 | **FAIL** mid-T5 thrash (`maxwell`×~6k) |
-| `FIELD_SAR_35B_NOFUSE_temp07_think` | OFF | 0.7 | **PASS** (full SAR + Python) |
-| `FIELD_SAR_35B_FUSE_SAFE_temp07_think` | ON selective (attn/MLP; **GDN in_proj off**) | 0.7 | **PASS** (5 turns + Python; ~26–27 t/s; exit 0) |
+| `FIELD_SAR_35B_FUSE_temp0_think` | ON (tip `710135e`, pre-contiguous) | 0 | **PASS** |
+| `FIELD_SAR_35B_FUSE_temp07_think` | ON (tip `710135e`, **non-contiguous** packs) | 0.7 | **FAIL** mid-T5 thrash (`maxwell`×~6k, EXIT 143) |
+| `FIELD_SAR_35B_NOFUSE_temp07_think` | OFF | 0.7 | **PASS** |
+| `FIELD_SAR_35B_FUSE_SAFE_temp07_think` | ON selective + **contiguous** packs | 0.7 | **PASS** (~26–27 t/s) |
+| `FIELD_SAR_35B_FUSE_FULL_temp0_think` | ON full GDN + **contiguous** | 0 | **PASS** (~27–29 t/s, 19.8 GB) |
+| `FIELD_SAR_35B_FUSE_FULL_temp07_think` | ON full GDN + **contiguous** | 0.7 | **PASS** (~27–29 t/s, 19.8 GB) |
 
-**SAFE log:** `docs/experiments/rocm-decode-degeneration/logs/FIELD_SAR_35B_FUSE_SAFE_temp07_think.txt`  
-(Gens: 2293 / 2634 / 2616 / 2618 / 5880 tok; no thrash; usable `numpy` Python.)
+**Revised causality (critical):**  
+The **real product issue** is multi-turn **GDN numeric collapse** (prefill≡decode, f32 SSM, softplus, g-dtype) — addressed on PR #74 path, not by skipping GDN fuse.  
+The **one** FUSE@0.7 FAIL at `710135e` is **not** well-explained by “GDN a/b are special.” Same full GDN pack **PASSes** after `mx::contiguous` on fused quant weights (`66ac400`). Likely mechanism: **non-contiguous packed uint32 quant concat → bad dequant → thrash under sampling**. Selective `QUANT_FUSE_GDN` skip remains a **conservative default**, not a proven root-cause fix.
 
-**Product decision:** quant fuse remains **opt-in** (`MLX_ENABLE_QUANT_FUSE=1`).  
-**Engine fix (post-isolation):** with fuse on, **GDN in_proj is not fused** (attn QKV + MLP gate|up still fuse). GDN a/b feed softplus decay; field thrash was isolated to full qkv|z|b|a fuse under temp=0.7. Force old GDN fuse with **both** `MLX_ENABLE_QUANT_FUSE=1` and `MLX_ENABLE_QUANT_FUSE_GDN=1` (debug only).
+**Product decision:** quant fuse remains **opt-in** (`MLX_ENABLE_QUANT_FUSE=1`). Always use **contiguous** fuse packs. GDN in_proj fuse stays behind `MLX_ENABLE_QUANT_FUSE_GDN=1` until multi-seed rate is measured.
 
 ---
 

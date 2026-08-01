@@ -165,6 +165,9 @@ static mx::array linear_fwd(const mx::array& x, const mx::array& w,
 // Fuse quantized projections by concat on out-axis + one quantized_matmul.
 // Exact when each row is independently quantized (affine per group_size).
 // Opt-in: MLX_ENABLE_QUANT_FUSE=1. GDN in_proj uses a separate gate (below).
+// CRITICAL: packs must be contiguous — non-contiguous concat of packed uint32
+// quant weights can dequant wrong and was the likely fuse thrash mechanism
+// (historical FUSE@0.7 FAIL at tip without contiguous; FULL fuse PASS after).
 static bool fuse_quant_projections(
     const std::vector<const mx::array*>& srcs,
     std::optional<mx::array>& dst)
@@ -423,8 +426,10 @@ void Qwen35MoEGatedDeltaNet::materialize_decode_constants(mx::Dtype act_dtype) {
 }
 
 // GDN in_proj fuse is optional and OFF by default even when QUANT_FUSE=1.
-// Field: fuse of qkv|z|b|a + temp=0.7 multi-turn thrash; a/b feed softplus
-// decay and are sensitive. Use MLX_ENABLE_QUANT_FUSE_GDN=1 to force.
+// Historical note: one FUSE@0.7 thrash cell was mis-attributed to a/b sensitivity;
+// retest with contiguous packs + QUANT_FUSE_GDN=1 PASSed Maxwell @0.0 and @0.7.
+// Gate kept as conservative product default (smaller memory; belt-and-suspenders).
+// Force full GDN pack: MLX_ENABLE_QUANT_FUSE=1 and MLX_ENABLE_QUANT_FUSE_GDN=1.
 void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
     if (in_proj_fused_ready_) return;
     in_proj_fused_ready_ = true;
