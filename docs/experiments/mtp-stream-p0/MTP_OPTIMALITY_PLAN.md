@@ -177,7 +177,7 @@ Stop criterion for B: VERIFY_COST row present with numbers.
 ## 5. Stop criteria (loop complete when all hold)
 
 1. **[met this fire]** `MTP_OPTIMALITY_PLAN.md` exists with online MLX MTP findings + ranked fixes.
-2. **[unmet]** `MICROBENCH.md` (or plan section) has **VERIFY_COST** verify-vs-eager numbers.
+2. **[met 2026-08-01]** `MICROBENCH.md` has **VERIFY_COST** verify-vs-eager numbers (β_K≈1.5–1.7; draft δ≈4.1 at K=2).  
 3. **[unmet]** ≥1 code **or** measured improvement that either  
    (a) improves gen t/s on 256-token probe vs prior ~6–7 MTP baseline, **or**  
    (b) **auto-disables / falls back to eager** when MTP is slower, with passing smoke (`MLX_LOAD_MTP_HEAD=1`, short `--use-mtp --n-draft 2`, max-tokens 32, no Stream(cpu)).
@@ -188,8 +188,8 @@ When 1–3 all met: report DONE + human next step; `scheduler_delete` this sched
 
 ## 6. Next fire recommendation
 
-1. **Step B:** build `MICROBENCH.md` VERIFY_COST from existing `TPS_probe_ndraft{2,4,6}.txt` (+ optional one short eager T=1 timing), no multi-hour SAR.  
-2. **Step C:** implement **P0-1** (auto-fallback) as smallest product-safe code change if B confirms verify+draft dominate, **or** P0-3 if a one-line capture_spec skip is clearly safe.
+1. ~~**Step B:** build `MICROBENCH.md`~~ **done** — see `MICROBENCH.md`.  
+2. **Step C:** implement **P0-1** (auto-fallback to eager when MTP slower) as smallest product-safe code change; microbench shows 0.23–0.26× with no plausible win until draft≪T₁.
 
 ---
 
