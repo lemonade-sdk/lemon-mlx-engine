@@ -97,9 +97,19 @@ Do **not** optimize blind.
 | baseline | `--raw --ignore-eos` | 256 | **27.33** | 18.2 GB | no | OK |
 | `MLX_ENABLE_QUANT_FUSE=1` | `--raw --ignore-eos` | 256 | **30.31** | 19.8 GB | no | OK |
 
-**Readout:** fixed-token raw path ~**+3 t/s (~+11%)**; short chat path ~flat (noise). Fuse holds extra concat weights (~**+1.6 GB** active). No thrash observed.
+**Readout:** fixed-token raw path ~**+3 t/s (~+11%)**; short chat path ~flat (noise). Fuse holds extra concat weights (~**+1.6 GB** active). No thrash on short/temp=0 runs.
 
-**Product decision:** keep quant fuse **opt-in** (`MLX_ENABLE_QUANT_FUSE=1`). Gain is real on the fixed-256 arm but not strong enough (memory + numeric risk + one-shot sample) to flip the default.
+#### Field isolation — multi-turn thinking @ temp 0.7 (Maxwell SAR)
+
+Same binary/model/fused2-auto/thinking-on; only fuse env differs:
+
+| Cell | Fuse | temp | Result |
+|------|------|------|--------|
+| `FIELD_SAR_35B_FUSE_temp0_think` | ON | 0 | **PASS** (full SAR + Python) |
+| `FIELD_SAR_35B_FUSE_temp07_think` | ON | 0.7 | **FAIL** mid-T5 thrash (`maxwell`×~6k) |
+| `FIELD_SAR_35B_NOFUSE_temp07_think` | OFF | 0.7 | **PASS** (full SAR + Python) |
+
+**Product decision:** keep quant fuse **opt-in only** (unset = off). Do **not** set `MLX_ENABLE_QUANT_FUSE=1` for product multi-turn sampling until a numeric fuse fix lands. Enabling fuse logs a one-time stderr warning.
 
 ---
 

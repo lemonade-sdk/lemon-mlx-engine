@@ -167,9 +167,17 @@ static bool fuse_quant_projections(
     std::optional<mx::array>& dst)
 {
     if (dst.has_value()) return true;
-    // Default: separate matmuls. Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
+    // Opt-in only (MLX_ENABLE_QUANT_FUSE=1). Default off: field isolation on
+    // LemonMLXE 35B gfx1150 — fuse+temp=0.7 multi-turn thrash; nofuse PASS.
     if (std::getenv("MLX_ENABLE_QUANT_FUSE") == nullptr) {
         return false;
+    }
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        std::cerr << "[quant-fuse] MLX_ENABLE_QUANT_FUSE=1: opt-in TPS path; "
+                     "multi-turn sampling (temp>0) has thrash risk on ROCm — "
+                     "prefer unset for product chat\n";
     }
     auto& reg = QuantizedWeightRegistry::instance();
     std::vector<const QuantizationInfo*> qis;
