@@ -570,23 +570,40 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
 void TokenIterator::prepare(const LMInput& input, int window_size) {
     StreamGuard sg(generation_stream());
 #if defined(MLX_BUILD_ROCM)
-    // Prefill: large multi-token intermediates — keep the per-graph caps active
-    // (decode-mode off) so peak graph memory stays bounded.
-    mlx::core::gpu_set_graph_decode_mode(false);
-    // One-shot banner for prefill HIP-graph experiments (mlx use_hip_graphs
-    // opt-in via MLX_HIP_GRAPH_PREFILL; ExecUpdate via MLX_GRAPH_PREFILL_REPLAY).
+    // Prefill graph mode (opt-in experiment — default OFF / product-safe):
+    //
+    // Default: graph_decode_mode=false so mid-forward commit caps bound peak
+    // graph memory on multi-token chunks (see mlx CommandEncoder::needs_commit).
+    //
+    // MLX_PREFILL_ONE_GRAPH=1: force graph_decode_mode=true for prepare chunk
+    // evals only — whole multi-token forward becomes ONE HIP graph (no split).
+    // Requires mlx use_hip_graphs on for decode-mode, i.e. MLX_HIP_GRAPH_DECODE=1
+    // or MLX_USE_HIP_GRAPHS=1 (use_hip_graphs picks decode vs prefill flag by mode).
+    // Pair with MLX_GRAPH_PREFILL_REPLAY=1 for ExecUpdate on stable topologies.
     // See docs/experiments/prefill-hip-graph/.
+    static const bool prefill_one_graph = [] {
+        const char* e = std::getenv("MLX_PREFILL_ONE_GRAPH");
+        return e && e[0] == '1' && e[1] == '\0';
+    }();
+    mlx::core::gpu_set_graph_decode_mode(prefill_one_graph);
     if (std::getenv("MLX_PROFILE_PREFILL") || std::getenv("MLX_HIP_GRAPH_PREFILL")
-        || std::getenv("MLX_GRAPH_PREFILL_REPLAY")) {
+        || std::getenv("MLX_GRAPH_PREFILL_REPLAY")
+        || std::getenv("MLX_PREFILL_ONE_GRAPH")
+        || std::getenv("MLX_USE_HIP_GRAPHS")) {
         static bool logged = false;
         if (!logged) {
             const char* hp = std::getenv("MLX_HIP_GRAPH_PREFILL");
+            const char* hd = std::getenv("MLX_HIP_GRAPH_DECODE");
+            const char* ug = std::getenv("MLX_USE_HIP_GRAPHS");
             const char* pr = std::getenv("MLX_GRAPH_PREFILL_REPLAY");
+            const char* og = std::getenv("MLX_PREFILL_ONE_GRAPH");
             const char* ps = std::getenv("MLX_PREFILL_STEP");
-            std::cerr << "[prefill-graph] MLX_HIP_GRAPH_PREFILL="
-                      << (hp ? hp : "<unset>")
-                      << " MLX_GRAPH_PREFILL_REPLAY=" << (pr ? pr : "<unset>")
-                      << " MLX_PREFILL_STEP=" << (ps ? ps : "<default>")
+            std::cerr << "[prefill-graph] ONE_GRAPH=" << (og ? og : "<unset>")
+                      << " HIP_GRAPH_PREFILL=" << (hp ? hp : "<unset>")
+                      << " HIP_GRAPH_DECODE=" << (hd ? hd : "<unset>")
+                      << " USE_HIP_GRAPHS=" << (ug ? ug : "<unset>")
+                      << " PREFILL_REPLAY=" << (pr ? pr : "<unset>")
+                      << " PREFILL_STEP=" << (ps ? ps : "<default>")
                       << " prompt_tokens=" << input.text.tokens.size()
                       << " window=" << window_size << "\n";
             logged = true;
@@ -599,6 +616,12 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
     }
 
     auto prep_result = context_.prepare_fn(input, cache_, window_size);
+
+#if defined(MLX_BUILD_ROCM)
+    // Restore split caps before remainder step / decode so product path stays
+    // memory-bounded after experimental whole-chunk prefill graphs.
+    mlx::core::gpu_set_graph_decode_mode(false);
+#endif
 
     if (prep_result.is_tokens()) {
         // Model returned remaining tokens — prime the cache.

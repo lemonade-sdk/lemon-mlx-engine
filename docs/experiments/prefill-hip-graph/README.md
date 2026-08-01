@@ -101,12 +101,26 @@ F1 patch restores env opt-in only for measurement: `mlx-use_hip_graphs-optin.pat
 
 ---
 
+## F2: whole-chunk one graph (`MLX_PREFILL_ONE_GRAPH`)
+
+Engine opt-in: during `prepare()` only, set `gpu_set_graph_decode_mode(true)` so mlx does **not** mid-forward commit multi-token chunks. Requires `MLX_USE_HIP_GRAPHS=1` (decode-mode uses the decode graph gate). Default remains eager/safe.
+
+| | mean prefill_s | mean pp/s |
+|--|----------------|-----------|
+| eager | ~14.82 | **~111.5** |
+| ONE_GRAPH+USE_HIP_GRAPHS+REPLAY | ~14.31 | **~115.5** (**~+3.6%**) |
+
+**FAIL** bar ≥10%. DECODE-flag-only config regressed. Details: `F2_RESULTS.md`.
+
+---
+
 ## Next fires (prefill-only; no pure-decode thrash)
 
-1. **Pad-to-step prefill** in `llm_default_prepare` (opt-in) so every chunk is topology-identical; remeasure with graph.  
-2. **PrefillArena sketch** in mlx (deterministic temps for fixed `T=step`) + stream capture slot keyed by step — only if F2 pad shows topology is the limiter.  
+1. **Pad-to-step prefill** in `llm_default_prepare` (opt-in) so every chunk is topology-identical; remeasure with graph — only if remainder fraction is large.  
+2. **PrefillArena sketch** in mlx (deterministic temps for fixed `T=step`) + stream capture slot keyed by step — true build-once.  
 3. **Server multi-request same-step** A/B once build-once exists.  
-4. After **3 consecutive honest negatives** without a path to ≥10%, stop schedule per fire contract.
+4. After **3 consecutive honest negatives** (F1, F2, …) without a path to ≥10%, stop schedule per fire contract.  
+
 
 ---
 
