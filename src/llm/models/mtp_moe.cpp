@@ -2,6 +2,7 @@
 // MTP Decoder Layer with MoE (SwitchGLU) MLP implementation.
 
 #include <mlx-lm/llm/models/mtp_moe.h>
+#include <mlx-lm/common/quantized_linear.h>
 
 #include <cassert>
 #include <cmath>
@@ -12,8 +13,9 @@ namespace mlx_lm {
 
 namespace {
 
-mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
-    return mx::matmul(x, mx::transpose(w));
+// Quant-aware: registry hit → quantized_matmul; else dense matmul (trunk parity).
+inline mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
+    return linear_forward(x, w, nullptr);
 }
 
 }  // namespace

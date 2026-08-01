@@ -1,0 +1,18 @@
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+Error: [gather_qmm] Last dimension of first input with shape (..., 2048) does not match the expanded quantized matrix (4096, 512) computed from shape (512,512) with group_size=64, bits=4 and transpose=true
+EXIT:1

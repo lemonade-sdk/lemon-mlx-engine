@@ -1,8 +1,12 @@
 
 #include <mlx-lm/llm/models/mtp_head.h>
 #include <mlx-lm/llm/models/mtp_moe.h>
+#include <mlx-lm/common/quantized_linear.h>
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <vector>
 
 namespace mx = mlx::core;
 
@@ -10,16 +14,17 @@ namespace mlx_lm {
 
 namespace {
 
-mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
-    return mx::matmul(x, mx::transpose(w));
-}
-
 mx::array silu(const mx::array& x) {
     return mx::multiply(x, mx::sigmoid(x));
 }
 
 mx::array swiglu(const mx::array& gate, const mx::array& up) {
     return mx::multiply(silu(gate), up);
+}
+
+// Prefer quantized_matmul when weight is registered (trunk path); dense fallback.
+inline mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
+    return linear_forward(x, w, nullptr);
 }
 
 }  // namespace
@@ -204,6 +209,17 @@ void MTPHead::load_mtp_weights(
     const std::string biases_suffix = ".biases";
     const std::string weight_suffix = ".weight";
 
+    // Escape hatches:
+    //   MLX_MTP_DEQUANT=1  — dequant packed → dense (legacy); also skip auto-quant.
+    //   MLX_MTP_KEEP_BF16=1 — leave source BF16 linears dense (no runtime quant).
+    // Default (C1): packed checkpoint → register; dense BF16 linears → quantize
+    // at load (LemonMLXE ships BF16 mtp.* while trunk is 4-bit) so draft uses
+    // quantized_matmul / gather_qmm like the trunk.
+    static const bool force_dequant =
+        std::getenv("MLX_MTP_DEQUANT") != nullptr;
+    static const bool keep_bf16 =
+        std::getenv("MLX_MTP_KEEP_BF16") != nullptr;
+
     std::vector<std::string> quant_prefixes;
     for (const auto& [raw_key, value] : mtp_weights) {
         if (raw_key.size() > scales_suffix.size() &&
@@ -216,7 +232,38 @@ void MTPHead::load_mtp_weights(
         }
     }
 
-    // Dequantize and load quantized weights first.
+    auto strip_mtp = [](std::string key) {
+        auto pos = key.find("mtp.");
+        if (pos != std::string::npos) {
+            key = key.substr(pos + 4);
+        }
+        return key;
+    };
+
+    // Norm / bias tensors stay full precision (not matmul weights).
+    auto is_norm_or_bias = [](const std::string& key) {
+        if (key.find("norm") != std::string::npos) return true;
+        if (key.size() >= 5 &&
+            key.compare(key.size() - 5, 5, ".bias") == 0) return true;
+        return false;
+    };
+
+    // Affine quant needs last dim group-aligned (same rule as convert.cpp).
+    auto can_quantize = [&](const mx::array& w) {
+        if (args_.quant_bits <= 0 || args_.quant_group_size <= 0) return false;
+        if (w.ndim() < 2) return false;
+        int last = w.shape(-1);
+        return last >= args_.quant_group_size &&
+               (last % args_.quant_group_size) == 0;
+    };
+
+    auto& reg = QuantizedWeightRegistry::instance();
+    int registered = 0;
+    int dequantized = 0;
+    int auto_quantized = 0;
+    int dense_kept = 0;
+
+    // Path A: checkpoint already has packed + scales.
     for (const auto& prefix : quant_prefixes) {
         std::string weight_key = prefix + ".weight";
         std::string scales_key = prefix + ".scales";
@@ -230,52 +277,99 @@ void MTPHead::load_mtp_weights(
             biases = bit->second;
         }
 
-        auto deq = mx::dequantize(packed, scales, biases, args_.quant_group_size, args_.quant_bits);
-
-        // Map to weight_map key (strip mtp. prefix if present)
-        std::string lookup_key = weight_key;
-        auto pos = lookup_key.find("mtp.");
-        if (pos != std::string::npos) {
-            lookup_key = lookup_key.substr(pos + 4);
+        std::string lookup_key = strip_mtp(weight_key);
+        auto it = wmap.find(lookup_key);
+        if (it == wmap.end()) {
+            continue;
         }
 
-        auto it = wmap.find(lookup_key);
-        if (it != wmap.end()) {
-            *it->second = std::move(deq);
+        if (force_dequant) {
+            *it->second = mx::dequantize(
+                packed, scales, biases, args_.quant_group_size, args_.quant_bits);
+            ++dequantized;
+        } else {
+            *it->second = packed;
+            reg.register_weight(
+                it->second,
+                scales,
+                biases,
+                args_.quant_group_size,
+                args_.quant_bits);
+            ++registered;
         }
     }
 
-    // Load non-quantized weights (skip scales/biases entries).
+    // Path B: dense (BF16/FP16/F32) weights — load as-is or auto-quantize linears.
     for (const auto& [raw_key, value] : mtp_weights) {
-        // Skip scales and biases — already processed
         if (raw_key.size() > scales_suffix.size() &&
             (raw_key.compare(raw_key.size() - scales_suffix.size(), scales_suffix.size(), scales_suffix) == 0 ||
              raw_key.compare(raw_key.size() - biases_suffix.size(), biases_suffix.size(), biases_suffix) == 0)) {
             continue;
         }
-        // Skip quantized weights — already dequantized above
         bool is_quantized_weight = false;
         if (raw_key.size() > weight_suffix.size() &&
             raw_key.compare(raw_key.size() - weight_suffix.size(), weight_suffix.size(), weight_suffix) == 0) {
             std::string prefix = raw_key.substr(0, raw_key.size() - weight_suffix.size());
-            std::string sk = prefix + ".scales";
-            if (mtp_weights.count(sk)) {
+            if (mtp_weights.count(prefix + ".scales")) {
                 is_quantized_weight = true;
             }
         }
         if (is_quantized_weight) continue;
 
-        std::string key = raw_key;
-        auto pos = key.find("mtp.");
-        if (pos != std::string::npos) {
-            key = key.substr(pos + 4);
-        }
+        std::string key = strip_mtp(raw_key);
         auto it = wmap.find(key);
-        if (it != wmap.end()) {
+        if (it == wmap.end()) continue;
+
+        const bool try_auto_q =
+            !force_dequant && !keep_bf16 && !is_norm_or_bias(key) &&
+            can_quantize(value);
+
+        if (try_auto_q) {
+            // Runtime quant of LemonMLXE-style BF16 mtp.* (convert historically
+            // left the head dense for acceptance; draft bandwidth suffers).
+            auto qr = mx::quantize(
+                mx::contiguous(value), args_.quant_group_size, args_.quant_bits);
+            *it->second = qr[0];
+            std::optional<mx::array> biases = qr[2];
+            reg.register_weight(
+                it->second,
+                qr[1],
+                biases,
+                args_.quant_group_size,
+                args_.quant_bits);
+            ++auto_quantized;
+        } else {
             *it->second = value;
+            ++dense_kept;
         }
     }
 
+    if (auto_quantized > 0) {
+        // Materialize packed weights + scales so load does not leave lazy graphs.
+        std::vector<mx::array> eval_list;
+        eval_list.reserve(static_cast<size_t>(auto_quantized) * 2);
+        for (auto& [k, ptr] : wmap) {
+            (void)k;
+            if (reg.find(ptr)) {
+                eval_list.push_back(*ptr);
+                eval_list.push_back(reg.find(ptr)->scales);
+                if (reg.find(ptr)->biases) {
+                    eval_list.push_back(reg.find(ptr)->biases.value());
+                }
+            }
+        }
+        if (!eval_list.empty()) mx::eval(eval_list);
+    }
+
+    std::cerr << "[MTP] load_mtp_weights: registered_ckpt=" << registered
+              << " auto_quantized=" << auto_quantized
+              << " dense_kept=" << dense_kept
+              << " dequantized=" << dequantized
+              << " bits=" << args_.quant_bits
+              << " gs=" << args_.quant_group_size
+              << (force_dequant ? " (MLX_MTP_DEQUANT)" : "")
+              << (keep_bf16 ? " (MLX_MTP_KEEP_BF16)" : "")
+              << "\n";
 }
 
 }  // namespace mlx_lm

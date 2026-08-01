@@ -1,0 +1,192 @@
+START 2026-08-01T09:42:53-07:00 tip=975e2de cell=MAXWELL_FULLFUSE_MTP ndraft=4 temp=0.7
+ENV QUANT_FUSE=1 QUANT_FUSE_GDN=1 LOAD_MTP_HEAD=1 --use-mtp --n-draft 4 thinking=ON
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] load_mtp_weights: registered 0 quantized groups (packed; set MLX_MTP_DEQUANT=1 for dense)
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=19.8 GB, peak=19.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=4
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp] step=1 n_draft=4 accepted=3 drafts=[8160,579,264,7047]
+Here's a thinking[mtp] step=2 n_draft=4 accepted=3 drafts=[1817,25,271,16]
+ process:
+
+1[mtp] step=3 n_draft=4 accepted=3 drafts=[13,220,2972,15771]
+.  **Under[mtp] step=4 n_draft=4 accepted=0 drafts=[2598,2570,2570,579]
+stand[mtp] step=5 n_draft=4 accepted=3 drafts=[2570,5952,92217,561]
+ User Request**: The[mtp] step=6 n_draft=4 accepted=2 drafts=[1156,4439,328,69900]
+ user asked "[mtp] step=7 n_draft=4 accepted=0 drafts=[69900,728,728,883]
+tell[mtp] step=8 n_draft=4 accepted=1 drafts=[728,883,1866,1379]
+ me about[mtp] step=9 n_draft=4 accepted=2 drafts=[1866,8884,579,36655]
+ maxwell's[mtp] step=10 n_draft=4 accepted=3 drafts=[36655,3158,1061,369]
+ equations". This is[mtp] step=11 n_draft=4 accepted=1 drafts=[264,6979,1622,1724]
+ a broad[mtp] step=12 n_draft=4 accepted=1 drafts=[1622,11,748,279]
+ request,[mtp] step=13 n_draft=4 accepted=1 drafts=[748,353,1220,310]
+ so I[mtp] step=14 n_draft=4 accepted=2 drafts=[1220,3300,264,2708]
+ should provide a[mtp] step=15 n_draft=4 accepted=2 drafts=[2708,11,31838,22527]
+ clear, structured[mtp] step=16 n_draft=4 accepted=0 drafts=[22527,17661,14330,279]
+ overview[mtp] step=17 n_draft=4 accepted=0 drafts=[17661,279,198,12]
+ covering[mtp] step=18 n_draft=4 accepted=2 drafts=[279,30731,11,279]
+ the basics,[mtp] step=19 n_draft=4 accepted=3 drafts=[279,2943,36655,11]
+ the four equations,[mtp] step=20 n_draft=4 accepted=0 drafts=[836,7063,7063,11]
+ their[mtp] step=21 n_draft=4 accepted=1 drafts=[7063,11,24556,14542]
+ meaning,[mtp] step=22 n_draft=4 accepted=2 drafts=[24556,11,321,8098]
+ significance, and[mtp] step=23 n_draft=4 accepted=0 drafts=[8098,11,271,40]
+ applications[mtp] step=24 n_draft=4 accepted=0 drafts=[11,1345,2019,2166]
+,[mtp] step=25 n_draft=4 accepted=3 drafts=[1345,9976,424,15156]
+ while keeping it accessible[mtp] step=26 n_draft=4 accepted=3 drafts=[694,12995,13,271]
+ but accurate.
+
+[mtp] step=27 n_draft=4 accepted=3 drafts=[17,13,220,2972]
+2.  **[mtp] step=28 n_draft=4 accepted=2 drafts=[27382,1386,5141,32956]
+Identify Key[mtp] step=29 n_draft=4 accepted=0 drafts=[32956,92217,17227,92217]
+ Components[mtp] step=30 n_draft=4 accepted=1 drafts=[92217,198,256,3437]
+**:
+[mtp] step=31 n_draft=4 accepted=3 drafts=[256,471,3437,513]
+   - What are[mtp] step=32 n_draft=4 accepted=3 drafts=[56430,579,36655,30]
+ Maxwell's equations?[mtp] step=33 n_draft=4 accepted=0 drafts=[318,10088,15346,36655]
+ ([mtp] step=34 n_draft=4 accepted=1 drafts=[10088,11,13263,11]
+Definition,[mtp] step=35 n_draft=4 accepted=3 drafts=[13263,2193,8,198]
+ historical context)
+[mtp] step=36 n_draft=4 accepted=2 drafts=[256,471,561,2943]
+   - The[mtp] step=37 n_draft=4 accepted=2 drafts=[2943,36655,318,11072]
+ four equations ([mtp] step=38 n_draft=4 accepted=0 drafts=[11072,11,4346,11]
+names[mtp] step=39 n_draft=4 accepted=0 drafts=[11,34780,11,321]
+,[mtp] step=40 n_draft=4 accepted=2 drafts=[34780,7346,11,6745]
+ mathematical forms,[mtp] step=41 n_draft=4 accepted=3 drafts=[6745,7063,8,198]
+ physical meaning)
+[mtp] step=42 n_draft=4 accepted=2 drafts=[256,471,3437,635]
+   - What[mtp] step=43 n_draft=4 accepted=1 drafts=[635,781,82391,30]
+ do they[mtp] step=44 n_draft=4 accepted=1 drafts=[82391,30,318,12]
+ unify?[mtp] step=45 n_draft=4 accepted=0 drafts=[318,62671,433,36744]
+ ([mtp] step=46 n_draft=4 accepted=1 drafts=[62671,477,11,17200]
+Electricity[mtp] step=47 n_draft=4 accepted=3 drafts=[11,31135,2074,11]
+, magnetism,[mtp] step=48 n_draft=4 accepted=2 drafts=[3000,8,198,256]
+ light)
+[mtp] step=49 n_draft=4 accepted=1 drafts=[256,471,89799,18369]
+   -[mtp] step=50 n_draft=4 accepted=0 drafts=[89799,41331,17722,26432]
+ Importance[mtp] step=51 n_draft=4 accepted=1 drafts=[41331,10393,198,10393]
+/Applications[mtp] step=52 n_draft=4 accepted=0 drafts=[198,256,198,760]
+
+[mtp] step=53 n_draft=4 accepted=3 drafts=[256,471,17722,2193]
+   - Modern context[mtp] step=54 n_draft=4 accepted=0 drafts=[318,3621,318,269]
+ ([mtp] step=55 n_draft=4 accepted=2 drafts=[3621,41979,11,29144]
+relativity,[mtp] step=56 n_draft=4 accepted=0 drafts=[29144,28079,22771,48462]
+ quantum[mtp] step=57 n_draft=4 accepted=2 drafts=[28079,11,4831,5946]
+ mechanics, etc[mtp] step=58 n_draft=4 accepted=1 drafts=[5946,198,256,1144]
+.)
+[mtp] step=59 n_draft=4 accepted=3 drafts=[256,471,13262,424]
+   - Keep it[mtp] step=60 n_draft=4 accepted=1 drafts=[61446,694,15352,11]
+ concise but[mtp] step=61 n_draft=4 accepted=1 drafts=[15352,271,18,328]
+ comprehensive
+
+[mtp] step=62 n_draft=4 accepted=3 drafts=[18,13,220,2972]
+3.  **[mtp] step=63 n_draft=4 accepted=3 drafts=[22238,279,5764,64700]
+Structure the Response:**[mtp] step=64 n_draft=4 accepted=3 drafts=[198,256,471,27416]
+
+   - Introduction[mtp] step=65 n_draft=4 accepted=0 drafts=[14,39688,198,3710]
+/[mtp] step=66 n_draft=4 accepted=1 drafts=[39688,198,256,369]
+Overview
+[mtp] step=67 n_draft=4 accepted=2 drafts=[256,471,561,12937]
+   - The[mtp] step=68 n_draft=4 accepted=3 drafts=[12937,11365,778,318]
+ Four Equations ([mtp] step=69 n_draft=4 accepted=2 drafts=[4058,4874,11,7346]
+with names,[mtp] step=70 n_draft=4 accepted=1 drafts=[7346,11,39492,36655]
+ forms,[mtp] step=71 n_draft=4 accepted=2 drafts=[39492,8,198,256]
+ explanations)
+[mtp] step=72 n_draft=4 accepted=1 drafts=[256,471,5141,369]
+   -[mtp] step=73 n_draft=4 accepted=0 drafts=[5141,13977,14,3417]
+ Key[mtp] step=74 n_draft=4 accepted=2 drafts=[13977,10393,14,1743]
+ Implications/[mtp] step=75 n_draft=4 accepted=2 drafts=[1743,2325,198,256]
+Unification
+[mtp] step=76 n_draft=4 accepted=1 drafts=[256,471,8535,30488]
+   -[mtp] step=77 n_draft=4 accepted=3 drafts=[8535,12,9833,30488]
+ Real-World Applications[mtp] step=78 n_draft=4 accepted=0 drafts=[198,256,198,1]
+
+[mtp] step=79 n_draft=4 accepted=1 drafts=[256,471,27102,9321]
+   -[mtp] step=80 n_draft=4 accepted=1 drafts=[27102,778,14,17722]
+ Limitations[mtp] step=81 n_draft=4 accepted=3 drafts=[14,46838,9321,198]
+/Modern Context
+[mtp] step=82 n_draft=4 accepted=3 drafts=[256,471,20858,271]
+   - Summary
+
+[mtp] step=83 n_draft=4 accepted=3 drafts=[19,13,220,2972]
+4.  **[mtp] step=84 n_draft=4 accepted=1 drafts=[48401,471,10790,471]
+Draft -[mtp] step=85 n_draft=4 accepted=2 drafts=[10790,539,10790,64700]
+ Section by Section[mtp] step=86 n_draft=4 accepted=1 drafts=[64700,271,256,256]
+:**
+
+[mtp] step=87 n_draft=4 accepted=3 drafts=[256,2972,35924,64700]
+   **Introduction:**[mtp] step=88 n_draft=4 accepted=0 drafts=[198,256,56430,579]
+
+[mtp] step=89 n_draft=4 accepted=3 drafts=[256,471,56430,579]
+   - Maxwell's[mtp] step=90 n_draft=4 accepted=3 drafts=[36655,513,264,716]
+ equations are a set[mtp] step=91 n_draft=4 accepted=1 drafts=[314,2943,6907,36655]
+ of four[mtp] step=92 n_draft=4 accepted=3 drafts=[6907,38832,36655,421]
+ partial differential equations that[mtp] step=93 n_draft=4 accepted=3 drafts=[1304,279,15787,314]
+ form the foundation of[mtp] step=94 n_draft=4 accepted=3 drafts=[27882,51807,61098,2074]
+ classical electromagnetism[mtp] step=95 n_draft=4 accepted=3 drafts=[11,67519,11,321]
+, optics, and[mtp] step=96 n_draft=4 accepted=3 drafts=[8799,43517,13,198]
+ electric circuits.
+[mtp] step=97 n_draft=4 accepted=2 drafts=[256,471,3268,7511]
+   - Form[mtp] step=98 n_draft=4 accepted=3 drafts=[7511,539,7555,60045]
+ulated by James Clerk[mtp] step=99 n_draft=4 accepted=3 drafts=[56430,303,279,220]
+ Maxwell in the [mtp] step=100 n_draft=4 accepted=3 drafts=[16,23,21,15]
+1860[mtp] step=101 n_draft=4 accepted=0 drafts=[82,11,198,9]
+s[mtp] step=102 n_draft=4 accepted=2 drafts=[11,781,41275,8334]
+, they unified[mtp] step=103 n_draft=4 accepted=0 drafts=[8334,8387,17200,321]
+ previously[mtp] step=104 n_draft=4 accepted=0 drafts=[8387,24180,314,17200]
+ separate[mtp] step=105 n_draft=4 accepted=3 drafts=[24180,314,17200,321]
+ theories of electricity and[mtp] step=106 n_draft=4 accepted=3 drafts=[31135,2074,13,198]
+ magnetism.
+[mtp] step=107 n_draft=4 accepted=2 drafts=[256,471,2302,6805]
+   - They[mtp] step=108 n_draft=4 accepted=0 drafts=[6805,421,279,4478]
+ predict[mtp] step=109 n_draft=4 accepted=0 drafts=[421,3000,16382,318]
+ that[mtp] step=110 n_draft=4 accepted=0 drafts=[3000,369,8799,722]
+ light[mtp] step=111 n_draft=4 accepted=3 drafts=[369,449,63358,11717]
+ is an electromagnetic wave[mtp] step=112 n_draft=4 accepted=0 drafts=[321,16610,537,279]
+ and[mtp] step=113 n_draft=4 accepted=1 drafts=[16610,279,91472,364]
+ laid the[mtp] step=114 n_draft=4 accepted=1 drafts=[91472,364,6278,3909]
+ groundwork for[mtp] step=115 n_draft=4 accepted=3 drafts=[6278,20665,13,271]
+ modern physics.
+
+[mtp] step=116 n_draft=4 accepted=2 drafts=[256,2972,760,12937]
+   **The[mtp] step=117 n_draft=4 accepted=2 drafts=[12937,11365,778,64700]
+ Four Equations[mtp] step=118 n_draft=4 accepted=1 drafts=[64700,198,256,2972]
+:**
+[mtp] step=119 n_draft=4 accepted=1 drafts=[256,353,3172,310]
+   I[mtp] step=120 n_draft=4 accepted=2 drafts=[3172,2945,1070,303]
+'ll present them[mtp] step=121 n_draft=4 accepted=0 drafts=[303,2107,4047,7346]
+ in[mtp] step=122 n_draft=4 accepted=0 drafts=[2107,24302,321,24302]
+ both[mtp] step=123 n_draft=4 accepted=3 drafts=[24302,321,38832,7346]
+ integral and differential forms[mtp] step=124 n_draft=4 accepted=0 drafts=[318,16900,364,37685]
+ ([mtp] step=125 n_draft=4 accepted=1 drafts=[16900,383,38832,1379]
+focus on[mtp] step=126 n_draft=4 accepted=0 drafts=[38832,364,11,694]
+ differential[mtp] step=127 n_draft=4 accepted=0 drafts=[364,30246,11,694]
+ for[mtp] step=128 n_draft=4 accepted=2 drafts=[30246,11,694,6088]
+ clarity, but[mtp] step=129 n_draft=4 accepted=0 drafts=[6088,2107,279,4874]
+ mention[mtp] step=130 n_draft=4 accepted=0 drafts=[2107,413,553,198]
+ both[mtp] step=131 n_draft=4 accepted=0 drafts=[413,4221,553,271]
+ if[mtp] step=132 n_draft=4 accepted=0 drafts=[4221,553,561,1156]
+ needed[mtp] step=133 n_draft=4 accepted=2 drafts=[553,353,3172,958]
+). I'll[mtp] step=134 n_draft=4 accepted=2 drafts=[958,5129,42727,321]
+ use standard notation[mtp] step=135 n_draft=4 accepted=2 drafts=[321,10033,1754,21219]
+ and explain each[mtp] step=136 n_draft=4 accepted=2 drafts=[21219,13,271,256]
+ physically.
+
+[mtp] step=137 n_draft=4 accepted=3 drafts=[256,220,16,13]
+   1.[mtp] step=138 n_draft=4 accepted=3 drafts=[2972,38,60925,579]
+ **Gauss's[mtp] step=139 n_draft=4 accepted=1 drafts=[7271,364,70859,7271]
+ Law for[mtp] step=140 n_draft=4 accepted=2 drafts=[70859,92217,198,406]
+ Electricity**:
+[mtp] step=141 n_draft=4 accepted=1 drafts=[406,471,11654,35]
+      -Terminated                 env -u MLX_GDN_NO_FUSED2 -u MLX_GDN_FUSED2 MLX_ENABLE_QUANT_FUSE=1 MLX_ENABLE_QUANT_FUSE_GDN=1 MLX_LOAD_MTP_HEAD=1 MTP_DEBUG=0 stdbuf -oL -eL ./build/chat "$MODEL" --use-mtp --n-draft "$ND" --temperature "$TEMP" --top-p 0.9 --max-tokens 20480 --repetition-penalty 1.0 --ctx-size 32768 < "$PROMPTS"
+EXIT:143 2026-08-01T09:43:39-07:00
