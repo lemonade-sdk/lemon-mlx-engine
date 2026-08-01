@@ -263,4 +263,22 @@ Log: `C9_TPS_probe_ndraft3_fixed.txt`.
 
 ## Path to 100 t/s (see plan §0)
 
-Stop bar is MTP Generation ≥ **100** t/s. Eager T₁ ≈ 38.3 ms (26.13 t/s); free-draft p=1 β=1 caps ~**2×** (~52 t/s) ≪ 100. Best measured MTP **27.34**. Paths to 100: H1 faster GPU, H2 smaller model, H3 multi-seq aggregate — see plan §0. **Do not claim ≥100 without a probe log.**
+Stop bar is MTP Generation ≥ **100** t/s. Eager T₁ ≈ 38.3 ms (26.13 t/s); free-draft p=1 β=1 caps ~**2×** (~52 t/s) ≪ 100. Best measured MTP **27.34** (35B). Paths to 100: H1 faster GPU, H2 smaller model, H3 multi-seq aggregate — see plan §0. **Do not claim ≥100 without a probe log.**
+
+## H2 smaller-model A/B on same gfx1150 (D3, 2026-08-01)
+
+Same Fourier-style 256-tok prompt family, full quant fuse, device gfx1150.
+
+| Model | Path | gen t/s | mem | log |
+|-------|------|---------|-----|-----|
+| LemonMLXE 35B-A3B MTP | MTP n_draft=2 (C7) | **27.34** | ~22 GB | `C7_TPS_probe_ndraft2.txt` |
+| mlx-community Qwen3.5-4B MTP | MTP n_draft=2 | **24.65** | 4.8 GB | `H2_TPS_probe_4B_MTP_ndraft2.txt` |
+| mlx-community Qwen3.5-4B | eager no MTP | **26.50** | 4.8 GB | `H2_TPS_probe_4B_eager_no_mtp.txt` |
+| mlx-community Qwen3.5-0.8B | eager no MTP | **113.4** | 1.0 GB | `H2_TPS_probe_0p8B_eager.txt` |
+
+**Findings:**
+
+1. **4B dense MTP does not beat 35B MoE** on this iGPU (~25 vs 27 t/s) — decode is not “params → t/s” linear; MoE 35B activates few experts while dense 4B touches full matmuls; GDN hybrid cost remains.
+2. **0.8B eager ≥ 100 t/s** (113.4) on gfx1150 — proves device can clear the numeric bar for a small model.
+3. **No cached sub-1B MTP head** in hub cache this fire; stop wording requires `--use-mtp` + head loaded. H2 for a real MTP ≥100 needs a **small dense MTP-packaged model** (or ship MTP head for 0.8B-class), not “just 4B”.
+4. **35B bar stays UNMET**; do not claim stop on 0.8B eager alone (no MTP path).

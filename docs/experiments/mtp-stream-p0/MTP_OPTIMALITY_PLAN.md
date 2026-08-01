@@ -73,7 +73,7 @@ Ranked **required** changes (any one class may suffice; micro-opts alone will no
 | Path | What changes | Fits stop bar wording? |
 |------|----------------|------------------------|
 | **H1 — Faster T=1 device** | Discrete GPU / higher-bandwidth ROCm target so eager alone is ≥100 (then MTP optional) | Yes if same model measured on documented device |
-| **H2 — Smaller model** | e.g. dense 4B–9B or much smaller MoE where eager already 50–150 t/s on this iGPU | Yes if plan documents measured target model |
+| **H2 — Smaller model** | **Measured:** 4B dense MTP only **24.65** t/s (not enough); **0.8B eager 113.4** t/s (≥100) but **no MTP head** in cache. Need ~0.8B-class **with** MTP package for stop wording | Yes if measured target is documented + MTP path |
 | **H3 — Aggregate / continuous batch** | Server multi-request token throughput (sum gen tokens / wall) ≥100 while single-seq still ~20–40 | **Only if** stop bar is redefined; current bar is single-process Generation: line |
 | **H4 — Speculative miracle (not expected)** | Draft free + multi-token verify free (dense-like) + p≈K−1 with large K | Contradicted by MoE β≈1.5–1.7 and δ history; do not plan on this |
 
@@ -236,9 +236,9 @@ When 5.1 impossible: main agent / human must choose **H1/H2/H3** or bar change �
 ## 6. Next fire recommendation
 
 1. **Stop t/s micro-opt thrash** on gfx1150 35B — plateau **~27 t/s**.  
-2. Escalate **H1** (faster GPU) / **H2** (smaller model) / **H3** (multi-seq aggregate) for any ≥100 bar.  
-3. Optional product: Maxwell quality SAR under C7, not more n_draft.  
-4. **Do not** implement auto-fallback as a “win”.
+2. For ≥100 bar: **H1** faster GPU with 35B MTP, or **H2** acquire/measure **small MTP model** (0.8B-class with head; 4B MTP insufficient at 24.65), or **H3** multi-seq.  
+3. Do **not** claim stop on 0.8B eager-only (no `--use-mtp` head).  
+4. Optional product: Maxwell quality under C7. No auto-fallback “win”.
 
 ---
 

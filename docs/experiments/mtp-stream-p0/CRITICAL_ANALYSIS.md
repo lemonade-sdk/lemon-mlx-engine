@@ -179,3 +179,14 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 | C9 n_draft=3 fixed | **22.71** | `C9_TPS_probe_ndraft3_fixed.txt` |
 
 **Verdict:** Deeper draft **regresses**. Keep default γ≈1 (`--n-draft 2`). **Software plateau confirmed** at ~27 t/s on this device/model; **100 t/s single-seq is not a realistic target** (needs H1 discrete GPU / H2 smaller model / H3 multi-seq aggregate).
+
+## H2 smaller models on gfx1150 (D3 measure)
+
+| Model | MTP? | gen t/s | log |
+|-------|------|---------|-----|
+| 35B MoE MTP C7 | yes | **27.34** | `C7_TPS_probe_ndraft2.txt` |
+| 4B dense MTP | yes | **24.65** | `H2_TPS_probe_4B_MTP_ndraft2.txt` |
+| 4B dense eager | no | 26.50 | `H2_TPS_probe_4B_eager_no_mtp.txt` |
+| 0.8B eager | no | **113.4** | `H2_TPS_probe_0p8B_eager.txt` |
+
+**Verdict:** H2 is real for **numeric** ≥100 only at **~0.8B eager** on this iGPU. **4B MTP is not enough** (~25 t/s). Stop bar still requires **MTP path** (`--use-mtp` + head) — need small MTP-packaged model, not 0.8B eager alone. **35B MTP stop UNMET.**
