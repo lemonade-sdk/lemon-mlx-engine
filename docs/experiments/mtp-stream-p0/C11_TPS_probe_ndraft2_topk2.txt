@@ -1,0 +1,350 @@
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[MTP] C11 draft MoE top_k override: trained=8 effective=2 (MLX_MTP_DRAFT_TOPK)
+[mtp] step=1 n_draft=2 accepted=1 drafts=[2,25816]
+[mtp-t] step=1 n_draft=2 accepted=1 draft=474143us verify=5146us commit=13us total=479304us
+# Technical[mtp] step=2 n_draft=2 accepted=1 drafts=[33655,25]
+[mtp-t] step=2 n_draft=2 accepted=1 draft=70992us verify=4042us commit=27us total=75061us
+ Overview:[mtp] step=3 n_draft=2 accepted=1 drafts=[561,85894]
+[mtp-t] step=3 n_draft=2 accepted=1 draft=71848us verify=5600us commit=13us total=77462us
+ The Fourier[mtp] step=4 n_draft=2 accepted=0 drafts=[14782,271]
+[mtp-t] step=4 n_draft=2 accepted=0 draft=71993us verify=55us commit=14us total=72063us
+ Transform[mtp] step=5 n_draft=2 accepted=1 drafts=[364,47070]
+[mtp-t] step=5 n_draft=2 accepted=1 draft=39239us verify=4708us commit=17us total=43965us
+ for Engineers[mtp] step=6 n_draft=2 accepted=1 drafts=[271,550]
+[mtp-t] step=6 n_draft=2 accepted=1 draft=72739us verify=4886us commit=43us total=77669us
+
+
+##[mtp] step=7 n_draft=2 accepted=1 drafts=[220,16]
+[mtp-t] step=7 n_draft=2 accepted=1 draft=73568us verify=5813us commit=15us total=79397us
+ 1[mtp] step=8 n_draft=2 accepted=1 drafts=[13,27416]
+[mtp-t] step=8 n_draft=2 accepted=1 draft=73423us verify=5360us commit=19us total=78803us
+. Introduction[mtp] step=9 n_draft=2 accepted=1 drafts=[271,760]
+[mtp-t] step=9 n_draft=2 accepted=1 draft=72073us verify=6652us commit=18us total=78744us
+
+
+The[mtp] step=10 n_draft=2 accepted=1 drafts=[2972,26108]
+[mtp-t] step=10 n_draft=2 accepted=1 draft=71466us verify=3632us commit=33us total=75132us
+ **Four[mtp] step=11 n_draft=2 accepted=1 drafts=[1223,14782]
+[mtp-t] step=11 n_draft=2 accepted=1 draft=70431us verify=3259us commit=13us total=73705us
+ier Transform[mtp] step=12 n_draft=2 accepted=1 drafts=[318,3860]
+[mtp-t] step=12 n_draft=2 accepted=1 draft=70830us verify=3173us commit=10us total=74014us
+ (FT[mtp] step=13 n_draft=2 accepted=1 drafts=[31230,369]
+[mtp-t] step=13 n_draft=2 accepted=1 draft=70509us verify=3011us commit=9us total=73530us
+)** is[mtp] step=14 n_draft=2 accepted=1 drafts=[264,15346]
+[mtp-t] step=14 n_draft=2 accepted=1 draft=70951us verify=3968us commit=10us total=74931us
+ a fundamental[mtp] step=15 n_draft=2 accepted=1 drafts=[34780,5224]
+[mtp-t] step=15 n_draft=2 accepted=1 draft=73814us verify=4351us commit=14us total=78181us
+ mathematical tool[mtp] step=16 n_draft=2 accepted=0 drafts=[303,14246]
+[mtp-t] step=16 n_draft=2 accepted=0 draft=73343us verify=35us commit=14us total=73393us
+ in[mtp] step=17 n_draft=2 accepted=1 drafts=[8028,8427]
+[mtp-t] step=17 n_draft=2 accepted=1 draft=40130us verify=4307us commit=26us total=44464us
+ signal processing[mtp] step=18 n_draft=2 accepted=0 drafts=[11,2444]
+[mtp-t] step=18 n_draft=2 accepted=0 draft=70436us verify=35us commit=12us total=70484us
+,[mtp] step=19 n_draft=2 accepted=1 drafts=[16399,11]
+[mtp-t] step=19 n_draft=2 accepted=1 draft=39830us verify=4726us commit=13us total=44570us
+ communications,[mtp] step=20 n_draft=2 accepted=1 drafts=[2444,5757]
+[mtp-t] step=20 n_draft=2 accepted=1 draft=69175us verify=3636us commit=29us total=72841us
+ control systems[mtp] step=21 n_draft=2 accepted=1 drafts=[11,321]
+[mtp-t] step=21 n_draft=2 accepted=1 draft=73230us verify=4308us commit=14us total=77553us
+, and[mtp] step=22 n_draft=2 accepted=0 drafts=[20665,79213]
+[mtp-t] step=22 n_draft=2 accepted=0 draft=72153us verify=19us commit=13us total=72185us
+ physics[mtp] step=23 n_draft=2 accepted=1 drafts=[13,1049]
+[mtp-t] step=23 n_draft=2 accepted=1 draft=38725us verify=4155us commit=19us total=42900us
+. It[mtp] step=24 n_draft=2 accepted=0 drafts=[27572,2806]
+[mtp-t] step=24 n_draft=2 accepted=0 draft=71055us verify=18us commit=10us total=71084us
+ decom[mtp] step=25 n_draft=2 accepted=1 drafts=[8027,264]
+[mtp-t] step=25 n_draft=2 accepted=1 draft=37792us verify=3830us commit=25us total=41649us
+poses a[mtp] step=26 n_draft=2 accepted=1 drafts=[709,314]
+[mtp-t] step=26 n_draft=2 accepted=1 draft=70155us verify=4348us commit=34us total=74539us
+ function of[mtp] step=27 n_draft=2 accepted=1 drafts=[854,318]
+[mtp-t] step=27 n_draft=2 accepted=1 draft=68925us verify=3951us commit=21us total=72898us
+ time ([mtp] step=28 n_draft=2 accepted=1 drafts=[64,8028]
+[mtp-t] step=28 n_draft=2 accepted=1 draft=68264us verify=3204us commit=28us total=71497us
+a signal[mtp] step=29 n_draft=2 accepted=1 drafts=[8,1083]
+[mtp-t] step=29 n_draft=2 accepted=1 draft=68884us verify=3266us commit=10us total=72161us
+) into[mtp] step=30 n_draft=2 accepted=1 drafts=[1141,71545]
+[mtp-t] step=30 n_draft=2 accepted=1 draft=69082us verify=3045us commit=11us total=72138us
+ its constituent[mtp] step=31 n_draft=2 accepted=1 drafts=[32655,13]
+[mtp-t] step=31 n_draft=2 accepted=1 draft=69733us verify=4609us commit=16us total=74358us
+ frequencies.[mtp] step=32 n_draft=2 accepted=0 drafts=[271,623]
+[mtp-t] step=32 n_draft=2 accepted=0 draft=70182us verify=23us commit=11us total=70217us
+
+
+[mtp] step=33 n_draft=2 accepted=0 drafts=[2381,449]
+[mtp-t] step=33 n_draft=2 accepted=0 draft=39068us verify=36us commit=12us total=39117us
+For[mtp] step=34 n_draft=2 accepted=1 drafts=[23438,11]
+[mtp-t] step=34 n_draft=2 accepted=1 draft=38459us verify=4228us commit=16us total=42704us
+ engineers,[mtp] step=35 n_draft=2 accepted=1 drafts=[279,22577]
+[mtp-t] step=35 n_draft=2 accepted=1 draft=69178us verify=3269us commit=13us total=72461us
+ the FT[mtp] step=36 n_draft=2 accepted=1 drafts=[369,524]
+[mtp-t] step=36 n_draft=2 accepted=1 draft=69255us verify=3603us commit=15us total=72875us
+ is not[mtp] step=37 n_draft=2 accepted=1 drafts=[1066,264]
+[mtp-t] step=37 n_draft=2 accepted=1 draft=69292us verify=3800us commit=11us total=73103us
+ just a[mtp] step=38 n_draft=2 accepted=0 drafts=[30744,22868]
+[mtp-t] step=38 n_draft=2 accepted=0 draft=70038us verify=24us commit=11us total=70075us
+ theoretical[mtp] step=39 n_draft=2 accepted=0 drafts=[7059,26]
+[mtp-t] step=39 n_draft=2 accepted=0 draft=37793us verify=25us commit=10us total=37830us
+ concept[mtp] step=40 n_draft=2 accepted=1 drafts=[694,264]
+[mtp-t] step=40 n_draft=2 accepted=1 draft=38251us verify=4167us commit=25us total=42444us
+ but a[mtp] step=41 n_draft=2 accepted=0 drafts=[14542,5224]
+[mtp-t] step=41 n_draft=2 accepted=0 draft=69384us verify=18us commit=11us total=69414us
+ practical[mtp] step=42 n_draft=2 accepted=0 drafts=[13736,2790]
+[mtp-t] step=42 n_draft=2 accepted=0 draft=38124us verify=17us commit=10us total=38152us
+ instrument[mtp] step=43 n_draft=2 accepted=1 drafts=[364,25]
+[mtp-t] step=43 n_draft=2 accepted=1 draft=38351us verify=4597us commit=19us total=42968us
+ for:[mtp] step=44 n_draft=2 accepted=1 drafts=[198,12]
+[mtp-t] step=44 n_draft=2 accepted=1 draft=72224us verify=4375us commit=13us total=76612us
+
+-[mtp] step=45 n_draft=2 accepted=0 drafts=[36189,54100]
+[mtp-t] step=45 n_draft=2 accepted=0 draft=70483us verify=33us commit=12us total=70529us
+ Analy[mtp] step=46 n_draft=2 accepted=0 drafts=[19752,1785]
+[mtp-t] step=46 n_draft=2 accepted=0 draft=39113us verify=43us commit=13us total=39171us
+zing[mtp] step=47 n_draft=2 accepted=0 drafts=[8028,321]
+[mtp-t] step=47 n_draft=2 accepted=0 draft=37871us verify=16us commit=11us total=37899us
+ signal[mtp] step=48 n_draft=2 accepted=1 drafts=[60487,198]
+[mtp-t] step=48 n_draft=2 accepted=1 draft=37746us verify=3779us commit=11us total=41537us
+ spectra
+[mtp] step=49 n_draft=2 accepted=1 drafts=[12,6765]
+[mtp-t] step=49 n_draft=2 accepted=1 draft=68974us verify=4275us commit=17us total=73267us
+- Design[mtp] step=50 n_draft=2 accepted=1 drafts=[286,13019]
+[mtp-t] step=50 n_draft=2 accepted=1 draft=68323us verify=4100us commit=15us total=72439us
+ing filters[mtp] step=51 n_draft=2 accepted=0 drafts=[198,332]
+[mtp-t] step=51 n_draft=2 accepted=0 draft=69261us verify=17us commit=14us total=69293us
+
+[mtp] step=52 n_draft=2 accepted=1 drafts=[12,11144]
+[mtp-t] step=52 n_draft=2 accepted=1 draft=38353us verify=4369us commit=12us total=42734us
+- Sol[mtp] step=53 n_draft=2 accepted=1 drafts=[4261,38832]
+[mtp-t] step=53 n_draft=2 accepted=1 draft=68804us verify=3953us commit=38us total=72796us
+ving differential[mtp] step=54 n_draft=2 accepted=1 drafts=[36655,198]
+[mtp-t] step=54 n_draft=2 accepted=1 draft=69790us verify=3789us commit=11us total=73591us
+ equations
+[mtp] step=55 n_draft=2 accepted=1 drafts=[12,1158]
+[mtp-t] step=55 n_draft=2 accepted=1 draft=71064us verify=4261us commit=21us total=75348us
+- Com[mtp] step=56 n_draft=2 accepted=1 drafts=[1808,286]
+[mtp-t] step=56 n_draft=2 accepted=1 draft=69944us verify=5060us commit=10us total=75015us
+pressing[mtp] step=57 n_draft=2 accepted=1 drafts=[795,198]
+[mtp-t] step=57 n_draft=2 accepted=1 draft=68140us verify=3877us commit=11us total=72029us
+ data
+[mtp] step=58 n_draft=2 accepted=1 drafts=[12,43934]
+[mtp-t] step=58 n_draft=2 accepted=1 draft=69546us verify=3585us commit=15us total=73147us
+- Understanding[mtp] step=59 n_draft=2 accepted=0 drafts=[1785,28240]
+[mtp-t] step=59 n_draft=2 accepted=0 draft=69354us verify=25us commit=12us total=69391us
+ system[mtp] step=60 n_draft=2 accepted=0 drafts=[7465,271]
+[mtp-t] step=60 n_draft=2 accepted=0 draft=37662us verify=14us commit=10us total=37687us
+ behavior[mtp] step=61 n_draft=2 accepted=1 drafts=[303,279]
+[mtp-t] step=61 n_draft=2 accepted=1 draft=37771us verify=4396us commit=23us total=42191us
+ in the[mtp] step=62 n_draft=2 accepted=1 drafts=[11304,7697]
+[mtp-t] step=62 n_draft=2 accepted=1 draft=69083us verify=3661us commit=25us total=72770us
+ frequency domain[mtp] step=63 n_draft=2 accepted=0 drafts=[271,550]
+[mtp-t] step=63 n_draft=2 accepted=0 draft=68947us verify=17us commit=11us total=68975us
+
+
+[mtp] step=64 n_draft=2 accepted=1 drafts=[4277,271]
+[mtp-t] step=64 n_draft=2 accepted=1 draft=37198us verify=3762us commit=11us total=40972us
+---
+
+[mtp] step=65 n_draft=2 accepted=1 drafts=[550,220]
+[mtp-t] step=65 n_draft=2 accepted=1 draft=69027us verify=3875us commit=14us total=72917us
+## [mtp] step=66 n_draft=2 accepted=0 drafts=[17,68]
+[mtp-t] step=66 n_draft=2 accepted=0 draft=70399us verify=34us commit=11us total=70445us
+2[mtp] step=67 n_draft=2 accepted=0 drafts=[13,87867]
+[mtp-t] step=67 n_draft=2 accepted=0 draft=37919us verify=25us commit=11us total=37956us
+.[mtp] step=68 n_draft=2 accepted=0 drafts=[9237,87867]
+[mtp-t] step=68 n_draft=2 accepted=0 draft=37292us verify=16us commit=9us total=37318us
+ Core[mtp] step=69 n_draft=2 accepted=0 drafts=[33214,899]
+[mtp-t] step=69 n_draft=2 accepted=0 draft=37556us verify=11us commit=9us total=37577us
+ Concept[mtp] step=70 n_draft=2 accepted=0 drafts=[271,760]
+[mtp-t] step=70 n_draft=2 accepted=0 draft=37204us verify=10us commit=9us total=37223us
+
+
+[mtp] step=71 n_draft=2 accepted=0 drafts=[13962,561]
+[mtp-t] step=71 n_draft=2 accepted=0 draft=37516us verify=18us commit=10us total=37545us
+###[mtp] step=72 n_draft=2 accepted=0 drafts=[3984,70320]
+[mtp-t] step=72 n_draft=2 accepted=0 draft=37154us verify=10us commit=7us total=37172us
+ Time[mtp] step=73 n_draft=2 accepted=1 drafts=[20424,5972]
+[mtp-t] step=73 n_draft=2 accepted=1 draft=37319us verify=3347us commit=17us total=40684us
+ Domain vs[mtp] step=74 n_draft=2 accepted=1 drafts=[13,40973]
+[mtp-t] step=74 n_draft=2 accepted=1 draft=68583us verify=3103us commit=12us total=71699us
+. Frequency[mtp] step=75 n_draft=2 accepted=1 drafts=[20424,198]
+[mtp-t] step=75 n_draft=2 accepted=1 draft=68759us verify=3349us commit=24us total=72134us
+ Domain
+[mtp] step=76 n_draft=2 accepted=1 drafts=[12,2972]
+[mtp-t] step=76 n_draft=2 accepted=1 draft=68985us verify=3501us commit=12us total=72499us
+- **[mtp] step=77 n_draft=2 accepted=1 drafts=[1409,20424]
+[mtp-t] step=77 n_draft=2 accepted=1 draft=69210us verify=3370us commit=9us total=72590us
+Time Domain[mtp] step=78 n_draft=2 accepted=1 drafts=[92217,357]
+[mtp-t] step=78 n_draft=2 accepted=1 draft=70599us verify=4254us commit=10us total=74863us
+**: A[mtp] step=79 n_draft=2 accepted=1 drafts=[8028,393]
+[mtp-t] step=79 n_draft=2 accepted=1 draft=68460us verify=4293us commit=10us total=72764us
+ signal $[mtp] step=80 n_draft=2 accepted=1 drafts=[87,1117]
+[mtp-t] step=80 n_draft=2 accepted=1 draft=67337us verify=3520us commit=11us total=70869us
+x(t[mtp] step=81 n_draft=2 accepted=1 drafts=[14646,369]
+[mtp-t] step=81 n_draft=2 accepted=1 draft=68702us verify=3627us commit=13us total=72344us
+)$ is[mtp] step=82 n_draft=2 accepted=1 drafts=[14807,430]
+[mtp-t] step=82 n_draft=2 accepted=1 draft=68719us verify=3931us commit=17us total=72668us
+ represented as[mtp] step=83 n_draft=2 accepted=1 drafts=[42644,5972]
+[mtp-t] step=83 n_draft=2 accepted=1 draft=68833us verify=4382us commit=17us total=73233us
+ amplitude vs[mtp] step=84 n_draft=2 accepted=1 drafts=[13,854]
+[mtp-t] step=84 n_draft=2 accepted=1 draft=68929us verify=4106us commit=25us total=73061us
+. time[mtp] step=85 n_draft=2 accepted=1 drafts=[13,198]
+[mtp-t] step=85 n_draft=2 accepted=1 draft=69126us verify=3862us commit=10us total=72999us
+.
+[mtp] step=86 n_draft=2 accepted=1 drafts=[12,2972]
+[mtp-t] step=86 n_draft=2 accepted=1 draft=68519us verify=3924us commit=23us total=72467us
+- **[mtp] step=87 n_draft=2 accepted=1 drafts=[37332,20424]
+[mtp-t] step=87 n_draft=2 accepted=1 draft=69868us verify=4420us commit=11us total=74301us
+Frequency Domain[mtp] step=88 n_draft=2 accepted=0 drafts=[92217,357]
+[mtp-t] step=88 n_draft=2 accepted=0 draft=69513us verify=18us commit=10us total=69542us
+**:[mtp] step=89 n_draft=2 accepted=0 drafts=[561,357]
+[mtp-t] step=89 n_draft=2 accepted=0 draft=37700us verify=16us commit=9us total=37725us
+ The[mtp] step=90 n_draft=2 accepted=1 drafts=[1788,8028]
+[mtp-t] step=90 n_draft=2 accepted=1 draft=37206us verify=3562us commit=9us total=40778us
+ same signal[mtp] step=91 n_draft=2 accepted=1 drafts=[369,14807]
+[mtp-t] step=91 n_draft=2 accepted=1 draft=68784us verify=3672us commit=16us total=72473us
+ is represented[mtp] step=92 n_draft=2 accepted=0 drafts=[430,1141]
+[mtp-t] step=92 n_draft=2 accepted=0 draft=68859us verify=23us commit=13us total=68896us
+ as[mtp] step=93 n_draft=2 accepted=0 drafts=[42644,318]
+[mtp-t] step=93 n_draft=2 accepted=0 draft=37315us verify=7us commit=8us total=37332us
+ amplitude[mtp] step=94 n_draft=2 accepted=1 drafts=[14,24344]
+[mtp-t] step=94 n_draft=2 accepted=1 draft=37629us verify=3412us commit=16us total=41057us
+/phase[mtp] step=95 n_draft=2 accepted=1 drafts=[5972,13]
+[mtp-t] step=95 n_draft=2 accepted=1 draft=68322us verify=3519us commit=25us total=71867us
+ vs.[mtp] step=96 n_draft=2 accepted=1 drafts=[11304,13]
+[mtp-t] step=96 n_draft=2 accepted=1 draft=68925us verify=4361us commit=10us total=73296us
+ frequency.[mtp] step=97 n_draft=2 accepted=1 drafts=[271,760]
+[mtp-t] step=97 n_draft=2 accepted=1 draft=68504us verify=4273us commit=13us total=72792us
+
+
+The[mtp] step=98 n_draft=2 accepted=1 drafts=[85894,14782]
+[mtp-t] step=98 n_draft=2 accepted=1 draft=69770us verify=3310us commit=45us total=73126us
+ Fourier Transform[mtp] step=99 n_draft=2 accepted=0 drafts=[13640,279]
+[mtp-t] step=99 n_draft=2 accepted=0 draft=70472us verify=35us commit=13us total=70521us
+ maps[mtp] step=100 n_draft=2 accepted=0 drafts=[264,854]
+[mtp-t] step=100 n_draft=2 accepted=0 draft=37510us verify=12us commit=9us total=37532us
+ a[mtp] step=101 n_draft=2 accepted=1 drafts=[8028,494]
+[mtp-t] step=101 n_draft=2 accepted=1 draft=37658us verify=4608us commit=12us total=42279us
+ signal from[mtp] step=102 n_draft=2 accepted=1 drafts=[279,854]
+[mtp-t] step=102 n_draft=2 accepted=1 draft=67769us verify=3643us commit=31us total=71444us
+ the time[mtp] step=103 n_draft=2 accepted=1 drafts=[7697,310]
+[mtp-t] step=103 n_draft=2 accepted=1 draft=69419us verify=3704us commit=13us total=73137us
+ domain to[mtp] step=104 n_draft=2 accepted=1 drafts=[279,11304]
+[mtp-t] step=104 n_draft=2 accepted=1 draft=68627us verify=3642us commit=14us total=72283us
+ the frequency[mtp] step=105 n_draft=2 accepted=1 drafts=[7697,25]
+[mtp-t] step=105 n_draft=2 accepted=1 draft=69572us verify=4394us commit=10us total=73977us
+ domain:[mtp] step=106 n_draft=2 accepted=1 drafts=[198,13682]
+[mtp-t] step=106 n_draft=2 accepted=1 draft=69102us verify=3983us commit=19us total=73105us
+
+$$[mtp] step=107 n_draft=2 accepted=1 drafts=[198,55]
+[mtp-t] step=107 n_draft=2 accepted=1 draft=68910us verify=3955us commit=18us total=72884us
+
+X[mtp] step=108 n_draft=2 accepted=1 drafts=[925,8]
+[mtp-t] step=108 n_draft=2 accepted=1 draft=68952us verify=4804us commit=15us total=73773us
+(f)[mtp] step=109 n_draft=2 accepted=1 drafts=[283,1088]
+[mtp-t] step=109 n_draft=2 accepted=1 draft=68329us verify=5453us commit=29us total=73811us
+ = \[mtp] step=110 n_draft=2 accepted=1 drafts=[10065,5248]
+[mtp-t] step=110 n_draft=2 accepted=1 draft=67527us verify=3881us commit=35us total=71443us
+mathcal[mtp] step=111 n_draft=2 accepted=1 drafts=[90,37]
+[mtp-t] step=111 n_draft=2 accepted=1 draft=68785us verify=3782us commit=15us total=72583us
+{F[mtp] step=112 n_draft=2 accepted=1 drafts=[10713,90]
+[mtp-t] step=112 n_draft=2 accepted=1 draft=68314us verify=4277us commit=17us total=72610us
+}\{[mtp] step=113 n_draft=2 accepted=0 drafts=[87,59]
+[mtp-t] step=113 n_draft=2 accepted=0 draft=68262us verify=11us commit=11us total=68285us
+x[mtp] step=114 n_draft=2 accepted=0 drafts=[1117,59]
+[mtp-t] step=114 n_draft=2 accepted=0 draft=38007us verify=15us commit=10us total=38033us
+(t[mtp] step=115 n_draft=2 accepted=1 drafts=[10383,92]
+[mtp-t] step=115 n_draft=2 accepted=1 draft=37577us verify=4014us commit=10us total=41602us
+)\}[mtp] step=116 n_draft=2 accepted=1 drafts=[283,1088]
+[mtp-t] step=116 n_draft=2 accepted=1 draft=68456us verify=3952us commit=18us total=72427us
+ = \[mtp] step=117 n_draft=2 accepted=1 drafts=[390,14717]
+[mtp-t] step=117 n_draft=2 accepted=1 draft=68673us verify=4968us commit=15us total=73657us
+int_{[mtp] step=118 n_draft=2 accepted=1 drafts=[29533,258]
+[mtp-t] step=118 n_draft=2 accepted=1 draft=68434us verify=4088us commit=28us total=72550us
+-\in[mtp] step=119 n_draft=2 accepted=0 drafts=[35733,35733]
+[mtp-t] step=119 n_draft=2 accepted=0 draft=69521us verify=40us commit=12us total=69574us
+fty[mtp] step=120 n_draft=2 accepted=1 drafts=[92,61]
+[mtp-t] step=120 n_draft=2 accepted=1 draft=38589us verify=4774us commit=16us total=43380us
+}^[mtp] step=121 n_draft=2 accepted=1 drafts=[34521,258]
+[mtp-t] step=121 n_draft=2 accepted=1 draft=68093us verify=3254us commit=15us total=71362us
+{\in[mtp] step=122 n_draft=2 accepted=1 drafts=[35733,92]
+[mtp-t] step=122 n_draft=2 accepted=1 draft=68841us verify=3337us commit=31us total=72211us
+fty}[mtp] step=123 n_draft=2 accepted=1 drafts=[830,1117]
+[mtp-t] step=123 n_draft=2 accepted=1 draft=68402us verify=4481us commit=10us total=72894us
+ x(t[mtp] step=124 n_draft=2 accepted=1 drafts=[8,378]
+[mtp-t] step=124 n_draft=2 accepted=1 draft=67873us verify=3227us commit=22us total=71123us
+) e[mtp] step=125 n_draft=2 accepted=1 drafts=[84203,73]
+[mtp-t] step=125 n_draft=2 accepted=1 draft=69178us verify=3873us commit=11us total=73063us
+^{-j[mtp] step=126 n_draft=2 accepted=1 drafts=[220,17]
+[mtp-t] step=126 n_draft=2 accepted=1 draft=68187us verify=4142us commit=32us total=72362us
+ 2[mtp] step=127 n_draft=2 accepted=1 drafts=[59,2413]
+[mtp-t] step=127 n_draft=2 accepted=1 draft=67597us verify=4591us commit=36us total=72225us
+\pi[mtp] step=128 n_draft=2 accepted=0 drafts=[281,281]
+[mtp-t] step=128 n_draft=2 accepted=0 draft=68630us verify=48us commit=14us total=68693us
+ f[mtp] step=129 n_draft=2 accepted=1 drafts=[259,92]
+[mtp-t] step=129 n_draft=2 accepted=1 draft=38124us verify=8245us commit=34us total=46405us
+ t}[mtp] step=130 n_draft=2 accepted=1 drafts=[1088,11]
+[mtp-t] step=130 n_draft=2 accepted=1 draft=66442us verify=3810us commit=19us total=70272us
+ \,[mtp] step=131 n_draft=2 accepted=1 drafts=[7353,198]
+[mtp-t] step=131 n_draft=2 accepted=1 draft=67847us verify=3687us commit=9us total=71545us
+ dt
+[mtp] step=132 n_draft=2 accepted=1 drafts=[13682,198]
+[mtp-t] step=132 n_draft=2 accepted=1 draft=68163us verify=3746us commit=14us total=71925us
+$$
+[mtp] step=133 n_draft=2 accepted=1 drafts=[8791,25]
+[mtp-t] step=133 n_draft=2 accepted=1 draft=68330us verify=4392us commit=18us total=72741us
+Where:[mtp] step=134 n_draft=2 accepted=1 drafts=[198,12]
+[mtp-t] step=134 n_draft=2 accepted=1 draft=68008us verify=3755us commit=33us total=71797us
+
+-[mtp] step=135 n_draft=2 accepted=1 drafts=[393,87]
+[mtp-t] step=135 n_draft=2 accepted=1 draft=69800us verify=19473us commit=15us total=89290us
+ $x[mtp] step=136 n_draft=2 accepted=0 drafts=[1117,1117]
+[mtp-t] step=136 n_draft=2 accepted=0 draft=66663us verify=24us commit=12us total=66701us
+(t[mtp] step=137 n_draft=2 accepted=1 drafts=[14646,25]
+[mtp-t] step=137 n_draft=2 accepted=1 draft=37531us verify=3059us commit=8us total=40599us
+)$:[mtp] step=138 n_draft=2 accepted=0 drafts=[66633,854]
+[mtp-t] step=138 n_draft=2 accepted=0 draft=70214us verify=11us commit=12us total=70238us
+ Continuous[mtp] step=139 n_draft=2 accepted=1 drafts=[7019,8028]
+[mtp-t] step=139 n_draft=2 accepted=1 draft=37865us verify=3234us commit=15us total=41114us
+-time signal[mtp] step=140 n_draft=2 accepted=0 drafts=[198,64]
+[mtp-t] step=140 n_draft=2 accepted=0 draft=68752us verify=10us commit=9us total=68772us
+
+[mtp] step=141 n_draft=2 accepted=1 drafts=[12,393]
+[mtp-t] step=141 n_draft=2 accepted=1 draft=37306us verify=3801us commit=12us total=41120us
+- $[mtp] step=142 n_draft=2 accepted=0 drafts=[55,3]
+[mtp-t] step=142 n_draft=2 accepted=0 draft=68965us verify=13us commit=9us total=68989us
+X[mtp] step=143 n_draft=2 accepted=1 drafts=[925,14646]
+[mtp-t] step=143 n_draft=2 accepted=1 draft=37699us verify=4524us commit=11us total=42235us
+(f)$[mtp] step=144 n_draft=2 accepted=1 drafts=[25,21412]
+[mtp-t] step=144 n_draft=2 accepted=1 draft=67975us verify=4009us commit=31us total=72016us
+: Complex[mtp] step=145 n_draft=2 accepted=1 drafts=[43647,3155]
+[mtp-t] step=145 n_draft=2 accepted=1 draft=69343us verify=3930us commit=16us total=73290us
+-valued[mtp] step=146 n_draft=2 accepted=0 drafts=[11304,70320]
+[mtp-t] step=146 n_draft=2 accepted=0 draft=68584us verify=37us commit=14us total=68636us
+ frequency[mtp] step=147 n_draft=2 accepted=0 drafts=[19142,709]
+[mtp-t] step=147 n_draft=2 accepted=0 draft=37464us verify=10us commit=11us total=37486us
+ spectrum[mtp] step=148 n_draft=2 accepted=0 drafts=[198,3]
+[mtp-t] step=148 n_draft=2 accepted=0 draft=37280us verify=35us commit=14us total=37329us
+
+[mtp] step=149 n_draft=2 accepted=1 drafts=[12,393]
+[mtp-t] step=149 n_draft=2 accepted=1 draft=37812us verify=3979us commit=12us total=41803us
+- $
+Prompt:     23 tokens, 26.7174 tokens/s, 0.860863s
+Generation: 256 tokens, 26.9392 tokens/s, 9.50288s
+
+
+> 

@@ -211,3 +211,21 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 **Result:** accept 0 → **~0.31** (γ=1); gen **100.045** t/s on n_draft=2 (`H2_TPS_probe_0p8B_MTP_ndraft2_normshift_PASS100.txt`). Smoke green. **Documented measured target for stop bar:** 0.8B MTP on gfx1150 (35B ceiling remains ~27 t/s).
 
 Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.8B-4bit base).
+
+## C11 draft MoE top_k shortcut (2026-08-01 fire)
+
+**Hypothesis:** LemonMLXE 35B MTP head is full MoE with **num_experts=256, num_experts_per_tok=8**. Each γ=1 draft step pays 8× SwitchGLU gathers + shared expert. Speculative draft may keep usable accept with fewer experts → less draft bandwidth / CU contention vs C7 joint≈T₁.
+
+**Code** (`src/llm/models/mtp_moe.cpp`): `MLX_MTP_DRAFT_TOPK=N` overrides routing top-k at draft time (clamped to `[1, num_experts]`; unset keeps trained k). One-shot log when active.
+
+### D3 256-tok measure (Fourier-style, n_draft=2, full quant fuse, gfx1150)
+
+| Config | gen t/s | warm mean accept | warm mean total ms | warm joint draft= ms | log |
+|--------|---------|------------------|--------------------|----------------------|-----|
+| **C7** (top_k=8 trained) | **27.34** | **0.854** | 67.8 | **37.8** | `C7_TPS_probe_ndraft2.txt` |
+| **C11** `MLX_MTP_DRAFT_TOPK=2` | **26.94** | **0.716** | 63.6 | **60.5** | `C11_TPS_probe_ndraft2_topk2.txt` |
+| eager | 26.13 | — | — | — | `TPS_probe_no_mtp.txt` |
+
+**Verdict:** **FAIL / slight REGRESS** vs C7 (−0.40 gen t/s). Accept dropped (0.85→0.72) so tokens/step fell enough to erase any step-wall savings. Joint timer slot **inflated** (38→60 ms) — fewer experts did **not** shrink the draft‖first-verify window on this stack (argpartition/gather shape change + accept pattern; not a free δ cut). Flag remains **opt-in default-off** for future top_k A/B; do **not** ship top_k=2 as default.
+
+**Implication:** Confirms post-C7 plateau — draft MoE expert count is not the remaining lever to beat ~27.3 on gfx1150 35B. Next real cuts: C5 fused/cheaper lm_head only if joint still draft-bound under a new measurement; otherwise H1/H2/H3 for ≥100.

@@ -6,6 +6,8 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 
 namespace mx = mlx::core;
 
@@ -16,6 +18,32 @@ namespace {
 // Quant-aware: registry hit → quantized_matmul; else dense matmul (trunk parity).
 inline mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
     return linear_forward(x, w, nullptr);
+}
+
+// C11: optional draft MoE top-k override (MLX_MTP_DRAFT_TOPK=N).
+// Qwen3.6-35B MTP head ships num_experts_per_tok=8 over 256 experts — each
+// draft step pays 8× SwitchGLU gathers + shared expert. Speculative draft can
+// often keep high accept with fewer experts (routing shortcut). Clamped to
+// [1, num_experts]. Unset → trained top_k_. Logged once when active.
+inline int effective_draft_top_k(int trained_top_k, int num_experts) {
+    const char* env = std::getenv("MLX_MTP_DRAFT_TOPK");
+    int k = trained_top_k;
+    if (env && env[0] != '\0') {
+        int v = std::atoi(env);
+        if (v > 0) k = v;
+    }
+    if (k < 1) k = 1;
+    if (num_experts > 0 && k > num_experts) k = num_experts;
+    if (k != trained_top_k) {
+        static bool logged = false;
+        if (!logged) {
+            std::cerr << "[MTP] C11 draft MoE top_k override: trained="
+                      << trained_top_k << " effective=" << k
+                      << " (MLX_MTP_DRAFT_TOPK)\n";
+            logged = true;
+        }
+    }
+    return k;
 }
 
 }  // namespace
@@ -103,8 +131,10 @@ mx::array MTPDecoderLayerMoE::operator()(
     auto post = mx::fast::rms_norm(h, post_attention_layernorm_weight_, args_.rms_norm_eps);
 
     // Routing: compute expert gates and select top-k experts.
+    // C11: MLX_MTP_DRAFT_TOPK can shrink k for cheaper draft (see effective_draft_top_k).
+    const int use_top_k = effective_draft_top_k(top_k_, num_experts_);
     auto gates = mx::softmax(linear_no_bias(post, gate_weight_), -1);
-    int kth = gates.shape(-1) - top_k_;
+    int kth = gates.shape(-1) - use_top_k;
     auto inds = mx::argpartition(gates, kth, -1);
     inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
     auto scores = mx::take_along_axis(gates, inds, -1);
