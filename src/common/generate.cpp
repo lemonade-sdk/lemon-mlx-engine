@@ -790,7 +790,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     }
     if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
 
-    // Trunk verification: run trunk model on draft tokens.
+    // Trunk verification.
     if (draft_tokens.empty()) {
         auto token = step(y_);
         y_ = LMInput::Text(token);
@@ -798,138 +798,201 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         return {token.item<int32_t>()};
     }
 
-    // Build draft token sequence for trunk verification.
-    std::vector<int32_t> draft_seq;
-    draft_seq.reserve(draft_tokens.size());
-    for (int t : draft_tokens) draft_seq.push_back(static_cast<int32_t>(t));
-    auto draft_arr = mx::array(draft_seq.data(), {1, static_cast<int>(draft_seq.size())}, mx::int32);
-    LMInput::Text draft_text(draft_arr);
-
-    // Enable per-token recurrent-state capture on the linear (Mamba) layers for
-    // prefix rollback; snapshot is a safety fallback.
-    struct SavedMambaState {
-        MambaCache::Snapshot snapshot;
-        bool has_mamba = false;
-    };
-    // MTP_NO_INTERMEDIATES=1 forces the legacy restore+re-run rollback.
-    static const bool kUseIntermediates = (std::getenv("MTP_NO_INTERMEDIATES") == nullptr);
-    std::vector<SavedMambaState> saved_mamba;
-    saved_mamba.reserve(cache_.size());
-    bool any_mamba = false;
-    for (auto& c : cache_) {
-        if (auto* m = c.as_mamba()) {
-            SavedMambaState s;
-            s.snapshot = m->snapshot();
-            s.has_mamba = true;
-            saved_mamba.push_back(s);
-            if (kUseIntermediates) m->set_capture_spec(true);
-            any_mamba = true;
-        } else {
-            saved_mamba.push_back({});
-        }
-    }
-
-    // Run trunk model forward on all draft tokens, requesting hidden intermediates.
-    auto state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
-    auto result = context_.call_fn(draft_text, cache_.empty() ? nullptr : &cache_, &state);
-    state_ = result.state;
-    maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
-
-    // Compare trunk argmax vs draft tokens: logit[i] predicts draft[i+1].
-    // Take argmax over [1, n_draft, vocab] in one op, then scan on host ints.
-    auto logits = result.logits;
-    auto trunk_argmax = mx::astype(mx::argmax(logits, -1), mx::int32);  // [1, n_draft]
-    mx::eval(trunk_argmax);
-    const int32_t* trunk_pred = trunk_argmax.data<int32_t>();
+    // Default (C2): sequential T=1 verify — uses ROCm graph-decode mode and
+    // fused GDN T=1 path; early-exit on mismatch (no capture_spec tax, no
+    // multi-token gated_delta_update_seq). Field: multi-token verify was the
+    // residual after C1 quant draft (~86ms verify vs ~38ms eager T=1).
+    // Opt into old batch verify: MLX_MTP_BATCH_VERIFY=1.
+    static const bool kBatchVerify =
+        std::getenv("MLX_MTP_BATCH_VERIFY") != nullptr;
 
     int accepted = 0;
-    for (int i = 0; i < n_draft - 1; ++i) {
-        int32_t trunk_token = trunk_pred[i];
-        if (trunk_token == draft_tokens[i + 1]) {
-            accepted++;
-        } else {
-            // Mismatch — replace with trunk token and stop accepting.
-            draft_tokens[i + 1] = trunk_token;
-            break;
-        }
-    }
 
-    // Set y_ to the following token (bonus on full accept, else trunk correction).
-    if (accepted == n_draft - 1) {
-        int32_t bonus_token = trunk_pred[n_draft - 1];
-        y_ = LMInput::Text(mx::array({bonus_token}, {1}, mx::int32));
-    } else {
-        y_ = LMInput::Text(mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
-    }
-    if (kMtpTiming) { mx::eval(y_.tokens); t_verify = std::chrono::steady_clock::now(); }
-
-    // Commit the accepted prefix without re-running the trunk: trim the caches.
-
-    // Capture the next-step trunk hidden at the position that predicts y_.
-    auto capture_hidden_at = [&](int pos) {
-        if (result.state.has_value() && result.state->hidden_intermediates.has_value()) {
-            auto trunk_h = result.state->hidden_intermediates.value();
-            int p = std::min(pos, static_cast<int>(trunk_h.shape(1)) - 1);
-            if (p < 0) p = 0;
-            auto h_slice = mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
-            mx::eval(h_slice);
-            mtp_trunk_hidden_ = h_slice;
-        }
+    auto stash_hidden_from = [&](const LMOutput::State& st) {
+        if (!st.hidden_intermediates.has_value()) return;
+        auto trunk_h = st.hidden_intermediates.value();
+        int tlen = trunk_h.shape(1);
+        int p = std::max(0, tlen - 1);
+        auto h_slice = mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+        mx::eval(h_slice);
+        mtp_trunk_hidden_ = h_slice;
     };
 
-    // Did every linear layer capture its per-token states this step?
-    bool have_spec = any_mamba;
-    if (any_mamba) {
-        for (auto& c : cache_) {
-            if (auto* m = c.as_mamba()) {
-                if (!m->has_spec()) { have_spec = false; break; }
-            }
-        }
-    }
+    if (!kBatchVerify) {
+        // Feed each draft token with L=1; compare trunk next to draft[i+1].
+        for (int i = 0; i < n_draft; ++i) {
+#if defined(MLX_BUILD_ROCM)
+            mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+            auto tok_arr = mx::array(
+                {static_cast<int32_t>(draft_tokens[i])}, {1, 1}, mx::int32);
+            LMInput::Text tok_text(tok_arr);
+            auto st = LMOutput::State(
+                std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
+            auto result =
+                context_.call_fn(tok_text, cache_.empty() ? nullptr : &cache_, &st);
+            state_ = result.state;
+            maybe_quantize_kv_cache(
+                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
 
-    if (accepted == n_draft - 1) {
-        // All drafts accepted — caches already hold exactly [d0..d_{n-1}].
-        capture_hidden_at(n_draft - 1);
-    } else if (any_mamba && !have_spec) {
-        // Safety fallback: restore recurrent state and re-run on accepted prefix.
-        for (size_t i = 0; i < cache_.size(); ++i) {
-            if (saved_mamba[i].has_mamba) {
-                auto* m = cache_[i].as_mamba();
-                if (m) m->restore(saved_mamba[i].snapshot);
-            }
-        }
-        for (auto& c : cache_) c.set_position(trunk_cache_pos);
-        std::vector<int32_t> rerun_seq;
-        rerun_seq.reserve(1 + accepted);
-        for (int i = 0; i <= accepted; ++i) {
-            rerun_seq.push_back(static_cast<int32_t>(draft_tokens[i]));
-        }
-        auto rerun_arr = mx::array(rerun_seq.data(), {1, static_cast<int>(rerun_seq.size())}, mx::int32);
-        LMInput::Text rerun_text(rerun_arr);
-        auto rerun_state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
-        result = context_.call_fn(rerun_text, &cache_, &rerun_state);
-        state_ = result.state;
-        maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
-        logits = result.logits;
-        capture_hidden_at(accepted);
-    } else if (accepted < n_draft - 1 && !cache_.empty()) {
-        // Fast path: trim caches to [d0..d_accepted].
-        capture_hidden_at(accepted);
-        int keep_pos = trunk_cache_pos + accepted + 1;
-        for (auto& c : cache_) {
-            if (auto* m = c.as_mamba()) {
-                m->rollback_spec(accepted + 1);
+            auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
+            mx::eval(pred);
+            // logits [1,1,V] or [1,V] → host int after argmax
+            int32_t trunk_next = pred.data<int32_t>()[0];
+            if (result.state.has_value()) stash_hidden_from(*result.state);
+
+            if (i < n_draft - 1) {
+                if (trunk_next == static_cast<int32_t>(draft_tokens[i + 1])) {
+                    accepted++;
+                } else {
+                    draft_tokens[i + 1] = static_cast<int>(trunk_next);
+                    y_ = LMInput::Text(mx::array({trunk_next}, {1}, mx::int32));
+                    break;
+                }
             } else {
-                c.set_position(keep_pos);
+                // Full accept of d1..d_{n-2}; bonus token after last draft.
+                y_ = LMInput::Text(mx::array({trunk_next}, {1}, mx::int32));
+                accepted = n_draft - 1;
             }
+        }
+        if (kMtpTiming) {
+            mx::eval(y_.tokens);
+            t_verify = std::chrono::steady_clock::now();
         }
     } else {
-        capture_hidden_at(accepted);
-    }
+        // Legacy multi-token batch verify + optional capture_spec rollback.
+        std::vector<int32_t> draft_seq;
+        draft_seq.reserve(draft_tokens.size());
+        for (int t : draft_tokens) draft_seq.push_back(static_cast<int32_t>(t));
+        auto draft_arr = mx::array(
+            draft_seq.data(), {1, static_cast<int>(draft_seq.size())}, mx::int32);
+        LMInput::Text draft_text(draft_arr);
 
-    // Clear the capture flag and any leftover per-token states for next step.
-    for (auto& c : cache_) {
-        if (auto* m = c.as_mamba()) m->set_capture_spec(false);
+        struct SavedMambaState {
+            MambaCache::Snapshot snapshot;
+            bool has_mamba = false;
+        };
+        static const bool kUseIntermediates =
+            std::getenv("MLX_MTP_NO_INTERMEDIATES") == nullptr;
+        std::vector<SavedMambaState> saved_mamba;
+        saved_mamba.reserve(cache_.size());
+        bool any_mamba = false;
+        for (auto& c : cache_) {
+            if (auto* m = c.as_mamba()) {
+                SavedMambaState s;
+                s.snapshot = m->snapshot();
+                s.has_mamba = true;
+                saved_mamba.push_back(s);
+                if (kUseIntermediates) m->set_capture_spec(true);
+                any_mamba = true;
+            } else {
+                saved_mamba.push_back({});
+            }
+        }
+
+        auto state =
+            LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
+        auto result =
+            context_.call_fn(draft_text, cache_.empty() ? nullptr : &cache_, &state);
+        state_ = result.state;
+        maybe_quantize_kv_cache(
+            cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+
+        auto logits = result.logits;
+        auto trunk_argmax = mx::astype(mx::argmax(logits, -1), mx::int32);
+        mx::eval(trunk_argmax);
+        const int32_t* trunk_pred = trunk_argmax.data<int32_t>();
+
+        accepted = 0;
+        for (int i = 0; i < n_draft - 1; ++i) {
+            int32_t trunk_token = trunk_pred[i];
+            if (trunk_token == draft_tokens[i + 1]) {
+                accepted++;
+            } else {
+                draft_tokens[i + 1] = trunk_token;
+                break;
+            }
+        }
+
+        if (accepted == n_draft - 1) {
+            int32_t bonus_token = trunk_pred[n_draft - 1];
+            y_ = LMInput::Text(mx::array({bonus_token}, {1}, mx::int32));
+        } else {
+            y_ = LMInput::Text(
+                mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
+        }
+        if (kMtpTiming) {
+            mx::eval(y_.tokens);
+            t_verify = std::chrono::steady_clock::now();
+        }
+
+        auto capture_hidden_at = [&](int pos) {
+            if (result.state.has_value() &&
+                result.state->hidden_intermediates.has_value()) {
+                auto trunk_h = result.state->hidden_intermediates.value();
+                int p = std::min(pos, static_cast<int>(trunk_h.shape(1)) - 1);
+                if (p < 0) p = 0;
+                auto h_slice =
+                    mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+                mx::eval(h_slice);
+                mtp_trunk_hidden_ = h_slice;
+            }
+        };
+
+        bool have_spec = any_mamba;
+        if (any_mamba) {
+            for (auto& c : cache_) {
+                if (auto* m = c.as_mamba()) {
+                    if (!m->has_spec()) {
+                        have_spec = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (accepted == n_draft - 1) {
+            capture_hidden_at(n_draft - 1);
+        } else if (any_mamba && !have_spec) {
+            for (size_t i = 0; i < cache_.size(); ++i) {
+                if (saved_mamba[i].has_mamba) {
+                    auto* m = cache_[i].as_mamba();
+                    if (m) m->restore(saved_mamba[i].snapshot);
+                }
+            }
+            for (auto& c : cache_) c.set_position(trunk_cache_pos);
+            std::vector<int32_t> rerun_seq;
+            rerun_seq.reserve(1 + accepted);
+            for (int i = 0; i <= accepted; ++i) {
+                rerun_seq.push_back(static_cast<int32_t>(draft_tokens[i]));
+            }
+            auto rerun_arr = mx::array(
+                rerun_seq.data(), {1, static_cast<int>(rerun_seq.size())}, mx::int32);
+            LMInput::Text rerun_text(rerun_arr);
+            auto rerun_state = LMOutput::State(
+                std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
+            result = context_.call_fn(rerun_text, &cache_, &rerun_state);
+            state_ = result.state;
+            maybe_quantize_kv_cache(
+                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+            capture_hidden_at(accepted);
+        } else if (accepted < n_draft - 1 && !cache_.empty()) {
+            capture_hidden_at(accepted);
+            int keep_pos = trunk_cache_pos + accepted + 1;
+            for (auto& c : cache_) {
+                if (auto* m = c.as_mamba()) {
+                    m->rollback_spec(accepted + 1);
+                } else {
+                    c.set_position(keep_pos);
+                }
+            }
+        } else {
+            capture_hidden_at(accepted);
+        }
+
+        for (auto& c : cache_) {
+            if (auto* m = c.as_mamba()) m->set_capture_spec(false);
+        }
     }
 
     // Record acceptance for adaptive draft length.

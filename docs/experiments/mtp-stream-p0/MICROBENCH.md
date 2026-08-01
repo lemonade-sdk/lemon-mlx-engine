@@ -161,3 +161,15 @@ env MLX_ENABLE_QUANT_FUSE=1 MLX_ENABLE_QUANT_FUSE_GDN=1 MLX_LOAD_MTP_HEAD=1 MTP_
   ./build/chat LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit \
   --use-mtp --n-draft 2 --temperature 0 --max-tokens 256 --no-think
 ```
+
+## C1 / C2 ladder (post-critical re-measure)
+
+| Config | gen t/s | draft_ms | verify_ms | total_ms |
+|--------|---------|----------|-----------|----------|
+| pre-C1 dense draft | 6.05 | 156.8 | 124.1 | 281 |
+| C1 quant MTP | 15.87 | 23.7 | 86.2 | 110 |
+| C2 no-capture batch (failed) | 11.78 | 20.3 | 97.7 | 147 |
+| **C2 sequential T=1 verify** | **19.72** | 20.3 | **66.3** | **86.6** |
+| eager no MTP | 26.13 | — | — | — |
+
+Logs: `C1_TPS_probe_ndraft2.txt`, `C2_TPS_probe_ndraft2.txt` (failed path), `C2_seq_TPS_probe_ndraft2.txt`.

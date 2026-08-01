@@ -1,0 +1,173 @@
+START 2026-08-01T09:50:32-07:00 tip=724244f C2 no-capture-spec default n_draft=2
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp-t] step=1 n_draft=2 accepted=1 draft=50214us verify=140178us commit=122us total=190515us
+The foundation[mtp-t] step=2 n_draft=2 accepted=1 draft=19898us verify=73078us commit=107us total=93083us
+ of modern[mtp-t] step=3 n_draft=2 accepted=0 draft=21350us verify=73808us commit=37777us total=132936us
+ electrom[mtp-t] step=4 n_draft=2 accepted=1 draft=21323us verify=85009us commit=130us total=106463us
+agnetism[mtp-t] step=5 n_draft=2 accepted=0 draft=19619us verify=73199us commit=36471us total=129290us
+ and[mtp-t] step=6 n_draft=2 accepted=1 draft=20405us verify=83464us commit=45us total=103915us
+ remote sensing[mtp-t] step=7 n_draft=2 accepted=1 draft=20539us verify=72417us commit=38us total=92995us
+ lies in[mtp-t] step=8 n_draft=2 accepted=0 draft=20373us verify=75652us commit=36635us total=132661us
+ the[mtp-t] step=9 n_draft=2 accepted=1 draft=20102us verify=85191us commit=121us total=105414us
+ unification[mtp-t] step=10 n_draft=2 accepted=0 draft=20604us verify=72511us commit=36459us total=129574us
+ of[mtp-t] step=11 n_draft=2 accepted=1 draft=19641us verify=83398us commit=62us total=103101us
+ electric and[mtp-t] step=12 n_draft=2 accepted=1 draft=20525us verify=71703us commit=37us total=92266us
+ magnetic phenomena[mtp-t] step=13 n_draft=2 accepted=0 draft=20013us verify=73022us commit=35662us total=128697us
+ through[mtp-t] step=14 n_draft=2 accepted=1 draft=20267us verify=84204us commit=46us total=104518us
+ **Max[mtp-t] step=15 n_draft=2 accepted=1 draft=19991us verify=73680us commit=46us total=93718us
+well’s[mtp-t] step=16 n_draft=2 accepted=1 draft=19991us verify=72851us commit=33us total=92876us
+ Equations[mtp-t] step=17 n_draft=2 accepted=0 draft=20338us verify=73679us commit=35782us total=129800us
+**.[mtp-t] step=18 n_draft=2 accepted=1 draft=19417us verify=86209us commit=42us total=105670us
+ Formulated[mtp-t] step=19 n_draft=2 accepted=1 draft=19741us verify=75460us commit=32us total=95234us
+ in the[mtp-t] step=20 n_draft=2 accepted=1 draft=19365us verify=72974us commit=76us total=92416us
+ 1[mtp-t] step=21 n_draft=2 accepted=1 draft=21331us verify=77375us commit=77us total=98784us
+9th[mtp-t] step=22 n_draft=2 accepted=1 draft=21543us verify=72483us commit=47us total=94074us
+ century,[mtp-t] step=23 n_draft=2 accepted=1 draft=19870us verify=73112us commit=40us total=93023us
+ these four[mtp-t] step=24 n_draft=2 accepted=1 draft=20478us verify=72200us commit=33us total=92713us
+ partial differential[mtp-t] step=25 n_draft=2 accepted=1 draft=19484us verify=74498us commit=46us total=94029us
+ equations describe[mtp-t] step=26 n_draft=2 accepted=1 draft=20157us verify=73686us commit=109us total=93953us
+ how electric[mtp-t] step=27 n_draft=2 accepted=1 draft=19354us verify=73741us commit=67us total=93163us
+ and magnetic[mtp-t] step=28 n_draft=2 accepted=1 draft=20931us verify=74322us commit=44us total=95297us
+ fields are[mtp-t] step=29 n_draft=2 accepted=1 draft=20192us verify=73038us commit=49us total=93280us
+ generated and[mtp-t] step=30 n_draft=2 accepted=1 draft=20813us verify=74926us commit=45us total=95786us
+ altered by[mtp-t] step=31 n_draft=2 accepted=1 draft=20175us verify=74501us commit=48us total=94724us
+ each other[mtp-t] step=32 n_draft=2 accepted=1 draft=19215us verify=73550us commit=60us total=92826us
+ and by[mtp-t] step=33 n_draft=2 accepted=1 draft=20710us verify=73412us commit=87us total=94210us
+ charges and[mtp-t] step=34 n_draft=2 accepted=1 draft=20003us verify=71745us commit=43us total=91792us
+ currents.[mtp-t] step=35 n_draft=2 accepted=1 draft=20506us verify=75925us commit=51us total=96483us
+ The first[mtp-t] step=36 n_draft=2 accepted=0 draft=21077us verify=72731us commit=35467us total=129276us
+ two[mtp-t] step=37 n_draft=2 accepted=1 draft=19708us verify=84022us commit=70us total=103801us
+ equations,[mtp-t] step=38 n_draft=2 accepted=1 draft=20321us verify=72621us commit=42us total=92985us
+ Gauss’s[mtp-t] step=39 n_draft=2 accepted=1 draft=19030us verify=70911us commit=29us total=89971us
+ Law for[mtp-t] step=40 n_draft=2 accepted=1 draft=18900us verify=70425us commit=40us total=89366us
+ electricity and[mtp-t] step=41 n_draft=2 accepted=1 draft=19457us verify=74093us commit=57us total=93609us
+ magnetism[mtp-t] step=42 n_draft=2 accepted=0 draft=20135us verify=72946us commit=34306us total=127387us
+,[mtp-t] step=43 n_draft=2 accepted=1 draft=19413us verify=85819us commit=114us total=105346us
+ describe the[mtp-t] step=44 n_draft=2 accepted=1 draft=19160us verify=74240us commit=51us total=93452us
+ divergence of[mtp-t] step=45 n_draft=2 accepted=1 draft=20038us verify=71463us commit=34us total=91537us
+ the fields[mtp-t] step=46 n_draft=2 accepted=1 draft=19812us verify=73020us commit=32us total=92866us
+, indicating[mtp-t] step=47 n_draft=2 accepted=1 draft=19321us verify=70842us commit=41us total=90205us
+ that electric[mtp-t] step=48 n_draft=2 accepted=0 draft=19858us verify=75742us commit=35277us total=130878us
+ charges[mtp-t] step=49 n_draft=2 accepted=1 draft=19661us verify=83965us commit=37us total=103664us
+ are sources[mtp-t] step=50 n_draft=2 accepted=1 draft=19729us verify=70908us commit=34us total=90672us
+ or sinks[mtp-t] step=51 n_draft=2 accepted=1 draft=19683us verify=74235us commit=41us total=93961us
+ of electric[mtp-t] step=52 n_draft=2 accepted=1 draft=21058us verify=72637us commit=64us total=93761us
+ fields,[mtp-t] step=53 n_draft=2 accepted=1 draft=20060us verify=71844us commit=77us total=91982us
+ while magnetic[mtp-t] step=54 n_draft=2 accepted=1 draft=20552us verify=75472us commit=39us total=96064us
+ monopoles[mtp-t] step=55 n_draft=2 accepted=1 draft=20927us verify=76253us commit=65us total=97246us
+ do not[mtp-t] step=56 n_draft=2 accepted=1 draft=20135us verify=74192us commit=42us total=94370us
+ exist.[mtp-t] step=57 n_draft=2 accepted=1 draft=20225us verify=73823us commit=28us total=94076us
+ The remaining[mtp-t] step=58 n_draft=2 accepted=1 draft=20081us verify=73557us commit=63us total=93702us
+ two equations[mtp-t] step=59 n_draft=2 accepted=1 draft=20263us verify=72305us commit=44us total=92612us
+, Far[mtp-t] step=60 n_draft=2 accepted=1 draft=20618us verify=73865us commit=33us total=94517us
+aday’s[mtp-t] step=61 n_draft=2 accepted=1 draft=20549us verify=76124us commit=34us total=96709us
+ Law of[mtp-t] step=62 n_draft=2 accepted=1 draft=20269us verify=71813us commit=26us total=92109us
+ Induction[mtp-t] step=63 n_draft=2 accepted=0 draft=19331us verify=71135us commit=36075us total=126542us
+ and[mtp-t] step=64 n_draft=2 accepted=1 draft=19619us verify=83531us commit=35us total=103186us
+ Ampère[mtp-t] step=65 n_draft=2 accepted=0 draft=19411us verify=72715us commit=35222us total=127349us
+’s[mtp-t] step=66 n_draft=2 accepted=1 draft=20261us verify=83963us commit=46us total=104271us
+ Law with[mtp-t] step=67 n_draft=2 accepted=1 draft=20536us verify=74015us commit=51us total=94603us
+ Maxwell’s[mtp-t] step=68 n_draft=2 accepted=1 draft=19665us verify=72488us commit=34us total=92188us
+ addition,[mtp-t] step=69 n_draft=2 accepted=1 draft=20593us verify=72824us commit=27us total=93444us
+ describe the[mtp-t] step=70 n_draft=2 accepted=0 draft=19274us verify=73536us commit=36331us total=129142us
+ curl[mtp-t] step=71 n_draft=2 accepted=1 draft=20104us verify=84143us commit=87us total=104335us
+ of the[mtp-t] step=72 n_draft=2 accepted=1 draft=19522us verify=72358us commit=31us total=91912us
+ fields.[mtp-t] step=73 n_draft=2 accepted=1 draft=19476us verify=73271us commit=43us total=92792us
+ Crucially[mtp-t] step=74 n_draft=2 accepted=1 draft=19596us verify=74323us commit=41us total=93961us
+, Maxwell[mtp-t] step=75 n_draft=2 accepted=0 draft=20424us verify=71924us commit=35302us total=127651us
+’s[mtp-t] step=76 n_draft=2 accepted=1 draft=20135us verify=84326us commit=39us total=104501us
+ correction to[mtp-t] step=77 n_draft=2 accepted=0 draft=20050us verify=71886us commit=35862us total=127799us
+ Amp[mtp-t] step=78 n_draft=2 accepted=1 draft=20737us verify=84750us commit=52us total=105540us
+ère’s[mtp-t] step=79 n_draft=2 accepted=0 draft=20507us verify=73928us commit=35515us total=129951us
+ Law[mtp-t] step=80 n_draft=2 accepted=1 draft=21142us verify=83494us commit=126us total=104763us
+ introduced the[mtp-t] step=81 n_draft=2 accepted=1 draft=21363us verify=71512us commit=48us total=92924us
+ displacement current[mtp-t] step=82 n_draft=2 accepted=0 draft=20174us verify=73220us commit=35451us total=128846us
+,[mtp-t] step=83 n_draft=2 accepted=1 draft=20017us verify=85603us commit=81us total=105702us
+ revealing that[mtp-t] step=84 n_draft=2 accepted=1 draft=20917us verify=75358us commit=71us total=96347us
+ a changing[mtp-t] step=85 n_draft=2 accepted=1 draft=19902us verify=76533us commit=63us total=96500us
+ electric field[mtp-t] step=86 n_draft=2 accepted=1 draft=20150us verify=75051us commit=115us total=95317us
+ generates a[mtp-t] step=87 n_draft=2 accepted=1 draft=20301us verify=73663us commit=32us total=93996us
+ magnetic field[mtp-t] step=88 n_draft=2 accepted=1 draft=21286us verify=74292us commit=30us total=95609us
+. This[mtp-t] step=89 n_draft=2 accepted=0 draft=20192us verify=74012us commit=36475us total=130680us
+ symmetry[mtp-t] step=90 n_draft=2 accepted=1 draft=19256us verify=233227us commit=41us total=252525us
+ implies that[mtp-t] step=91 n_draft=2 accepted=1 draft=20621us verify=74554us commit=159us total=95335us
+ self-prop[mtp-t] step=92 n_draft=2 accepted=1 draft=20276us verify=72784us commit=72us total=93133us
+agating[mtp-t] step=93 n_draft=2 accepted=0 draft=20200us verify=72177us commit=36012us total=128390us
+ waves[mtp-t] step=94 n_draft=2 accepted=1 draft=20378us verify=224421us commit=43us total=244843us
+ can exist[mtp-t] step=95 n_draft=2 accepted=1 draft=20576us verify=76069us commit=82us total=96728us
+ in a[mtp-t] step=96 n_draft=2 accepted=1 draft=20743us verify=73335us commit=62us total=94141us
+ vacuum,[mtp-t] step=97 n_draft=2 accepted=1 draft=19819us verify=72376us commit=30us total=92225us
+ traveling at[mtp-t] step=98 n_draft=2 accepted=1 draft=20196us verify=73976us commit=38us total=94211us
+ the speed[mtp-t] step=99 n_draft=2 accepted=1 draft=19691us verify=73198us commit=38us total=92928us
+ of light[mtp-t] step=100 n_draft=2 accepted=0 draft=20661us verify=72143us commit=35043us total=127848us
+.[mtp-t] step=101 n_draft=2 accepted=1 draft=20423us verify=72884us commit=41us total=93349us
+ Thus,[mtp-t] step=102 n_draft=2 accepted=1 draft=19755us verify=85067us commit=115us total=104938us
+ Maxwell’s[mtp-t] step=103 n_draft=2 accepted=1 draft=20770us verify=72607us commit=33us total=93410us
+ equations not[mtp-t] step=104 n_draft=2 accepted=1 draft=19762us verify=71523us commit=31us total=91318us
+ only unified[mtp-t] step=105 n_draft=2 accepted=0 draft=19937us verify=71253us commit=191860us total=283052us
+ electricity[mtp-t] step=106 n_draft=2 accepted=1 draft=19557us verify=86681us commit=78us total=106317us
+, magnet[mtp-t] step=107 n_draft=2 accepted=1 draft=20277us verify=74917us commit=37us total=95232us
+ism,[mtp-t] step=108 n_draft=2 accepted=1 draft=20168us verify=72939us commit=126us total=93234us
+ and optics[mtp-t] step=109 n_draft=2 accepted=1 draft=19641us verify=72196us commit=85us total=91923us
+ but also[mtp-t] step=110 n_draft=2 accepted=0 draft=20930us verify=74178us commit=187193us total=282301us
+ predicted[mtp-t] step=111 n_draft=2 accepted=1 draft=19820us verify=228700us commit=29us total=248550us
+ the existence[mtp-t] step=112 n_draft=2 accepted=0 draft=19910us verify=73079us commit=191035us total=284024us
+ of[mtp-t] step=113 n_draft=2 accepted=1 draft=20037us verify=221720us commit=74us total=241831us
+ electromagnetic waves[mtp-t] step=114 n_draft=2 accepted=0 draft=20100us verify=74351us commit=50300us total=144752us
+,[mtp-t] step=115 n_draft=2 accepted=1 draft=20508us verify=251016us commit=85us total=271611us
+ forming the[mtp-t] step=116 n_draft=2 accepted=1 draft=20407us verify=75911us commit=29us total=96348us
+ theoretical bed[mtp-t] step=117 n_draft=2 accepted=1 draft=20626us verify=75219us commit=79us total=95926us
+rock for[mtp-t] step=118 n_draft=2 accepted=1 draft=19972us verify=73037us commit=30us total=93041us
+ all wireless[mtp-t] step=119 n_draft=2 accepted=0 draft=20307us verify=75304us commit=193585us total=289197us
+ communication[mtp-t] step=120 n_draft=2 accepted=1 draft=19774us verify=225987us commit=127us total=245889us
+ and radar[mtp-t] step=121 n_draft=2 accepted=1 draft=21843us verify=74665us commit=44us total=96553us
+ technology.[mtp-t] step=122 n_draft=2 accepted=1 draft=21313us verify=72870us commit=86us total=94270us
+
+
+To[mtp-t] step=123 n_draft=2 accepted=0 draft=19338us verify=74495us commit=188721us total=282555us
+ analyze[mtp-t] step=124 n_draft=2 accepted=0 draft=28124us verify=280638us commit=185969us total=494733us
+ these[mtp-t] step=125 n_draft=2 accepted=1 draft=20737us verify=254094us commit=75us total=274907us
+ electromagnetic waves[mtp-t] step=126 n_draft=2 accepted=1 draft=21931us verify=77118us commit=51us total=99101us
+, particularly[mtp-t] step=127 n_draft=2 accepted=0 draft=20007us verify=77275us commit=193843us total=291126us
+ their[mtp-t] step=128 n_draft=2 accepted=0 draft=20561us verify=230889us commit=189851us total=441302us
+ frequency[mtp-t] step=129 n_draft=2 accepted=0 draft=20367us verify=227574us commit=190928us total=438870us
+ content[mtp-t] step=130 n_draft=2 accepted=0 draft=20206us verify=227379us commit=190532us total=438118us
+,[mtp-t] step=131 n_draft=2 accepted=0 draft=20451us verify=227575us commit=190952us total=438980us
+ we[mtp-t] step=132 n_draft=2 accepted=1 draft=20629us verify=227413us commit=82us total=248125us
+ employ **[mtp-t] step=133 n_draft=2 accepted=1 draft=20645us verify=78965us commit=41us total=99652us
+Fourier[mtp-t] step=134 n_draft=2 accepted=0 draft=21314us verify=76639us commit=51106us total=149060us
+ Analysis[mtp-t] step=135 n_draft=2 accepted=0 draft=19939us verify=226069us commit=184056us total=430066us
+**.[mtp-t] step=136 n_draft=2 accepted=0 draft=19600us verify=227478us commit=186008us total=433087us
+ Since[mtp-t] step=137 n_draft=2 accepted=0 draft=20573us verify=221480us commit=195266us total=437319us
+ electromagnetic[mtp-t] step=138 n_draft=2 accepted=1 draft=21026us verify=221290us commit=51us total=242368us
+ signals are[mtp-t] step=139 n_draft=2 accepted=0 draft=20421us verify=78437us commit=191719us total=290578us
+ rarely[mtp-t] step=140 n_draft=2 accepted=0 draft=19856us verify=226260us commit=190947us total=437063us
+ pure[mtp-t] step=141 n_draft=2 accepted=1 draft=20500us verify=230581us commit=66us total=251149us
+ sine waves[mtp-t] step=142 n_draft=2 accepted=0 draft=20690us verify=77673us commit=194505us total=292868us
+ in[mtp-t] step=143 n_draft=2 accepted=1 draft=20668us verify=229960us commit=77us total=250706us
+ practical applications[mtp-t] step=144 n_draft=2 accepted=0 draft=20321us verify=76295us commit=185890us total=282508us
+,[mtp-t] step=145 n_draft=2 accepted=1 draft=19709us verify=226425us commit=77us total=246211us
+ Fourier analysis[mtp-t] step=146 n_draft=2 accepted=1 draft=20466us verify=77231us commit=65us total=97762us
+ provides a[mtp-t] step=147 n_draft=2 accepted=1 draft=22354us verify=74274us commit=66us total=96696us
+ mathematical framework[mtp-t] step=148 n_draft=2 accepted=1 draft=23017us verify=74684us commit=50us total=97751us
+ to
+Prompt:     36 tokens, 34.5985 tokens/s, 1.04051s
+Generation: 256 tokens, 11.7755 tokens/s, 21.74s
+
+
+> EXIT:0
