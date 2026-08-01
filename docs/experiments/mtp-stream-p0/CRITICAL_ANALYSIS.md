@@ -249,3 +249,18 @@ Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.
 | **C12** pipeline v1 ON | **25.84** | 0.814 | **REGRESS** −1.5 t/s | `C12_TPS_probe_ndraft2_pipeline_v1.txt` |
 
 **Verdict:** **FAIL / REGRESS.** Chat host emit of d0 is far shorter than v1 (~T₁), so the overlap wins nothing; finishing v1 on the d1-drain critical path **splits** what was a single GPU burst + fast dual emit into GPU → emit d0 → GPU finish → emit d1, adding host/guard tax. Step timers look “faster” only because v1 left the timed region. Keep code for stacks with heavy host emit; **do not default on** for gfx1150 chat. Ladder best remains **C7 27.34**.
+
+## C13 MTP draft QKV fuse (2026-08-01 fire)
+
+**Hypothesis:** MTP MoE draft attention runs three separate quant matmuls (q_gate, k, v). Fusing to one pack (trunk-style) cuts launches / may shrink draft‖v0 joint if draft still contending on 8CU.
+
+**Code** (`mtp_moe.cpp` / `mtp_moe.h`): `ensure_qkv_proj_fused()` concatenates registered q|k|v packs; forward path one matmul + slice. **Default OFF** after measure (`MLX_MTP_QKV_FUSE=1` to enable).
+
+### D3 256-tok measure (Fourier-style, n_draft=2, full quant fuse, gfx1150)
+
+| Config | gen t/s | warm mean accept | warm joint draft= ms | log |
+|--------|---------|------------------|----------------------|-----|
+| **C7** (no MTP QKV fuse) | **27.34** | 0.854 | **37.8** | `C7_TPS_probe_ndraft2.txt` |
+| **C13** `MLX_MTP_QKV_FUSE=1` | **25.45** | 0.814 | **66.9** | `C13_TPS_probe_ndraft2_qkv_fuse.txt` |
+
+**Verdict:** **FAIL / REGRESS** (−1.9 t/s). Fuse log confirmed ON; joint **inflated** (38→67 ms) — larger fused GEMM + slice is slower than three small quant matmuls on this iGPU for MTP head shapes. Accept held (~0.81). Keep code opt-in only. Ladder best remains **C7 27.34**. Plateau: C11–C13 consecutive negatives on 35B micro-opts.

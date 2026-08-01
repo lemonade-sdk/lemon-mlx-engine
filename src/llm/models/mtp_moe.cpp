@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace mx = mlx::core;
 
@@ -46,6 +47,70 @@ inline int effective_draft_top_k(int trained_top_k, int num_experts) {
     return k;
 }
 
+// C13: fuse packed quant projections along out-axis (matches trunk qwen35_moe
+// fuse_quant_projections). Opt-in MLX_MTP_QKV_FUSE=1 (default off — gfx1150
+// measured REGRESS vs C7). Contiguous packs only.
+bool fuse_quant_projections_mtp(
+    const std::vector<const mx::array*>& srcs,
+    std::optional<mx::array>& dst)
+{
+    if (dst.has_value()) return true;
+    // Default OFF after C13 measure (25.45 vs C7 27.34). Opt-in only.
+    if (std::getenv("MLX_MTP_QKV_FUSE") == nullptr) return false;
+    if (std::getenv("MLX_MTP_NO_QKV_FUSE") != nullptr) return false;
+    auto& reg = QuantizedWeightRegistry::instance();
+    std::vector<const QuantizationInfo*> qis;
+    qis.reserve(srcs.size());
+    for (auto* w : srcs) {
+        auto* q = reg.find(w);
+        if (!q) return false;
+        qis.push_back(q);
+    }
+    for (size_t i = 1; i < qis.size(); ++i) {
+        if (qis[i]->group_size != qis[0]->group_size ||
+            qis[i]->bits != qis[0]->bits) {
+            return false;
+        }
+    }
+    bool have_biases = true;
+    for (auto* q : qis) {
+        if (!q->biases) have_biases = false;
+    }
+    std::vector<mx::array> ws, ss, bs;
+    ws.reserve(srcs.size());
+    ss.reserve(srcs.size());
+    for (size_t i = 0; i < srcs.size(); ++i) {
+        ws.push_back(*srcs[i]);
+        ss.push_back(qis[i]->scales);
+        if (have_biases) bs.push_back(*qis[i]->biases);
+    }
+    auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
+        if (arrs.empty()) return false;
+        for (size_t i = 1; i < arrs.size(); ++i) {
+            if (arrs[i].ndim() != arrs[0].ndim() || arrs[i].ndim() < 1) {
+                return false;
+            }
+            for (int d = 1; d < arrs[0].ndim(); ++d) {
+                if (arrs[i].shape(d) != arrs[0].shape(d)) return false;
+            }
+        }
+        return true;
+    };
+    if (!concat_axis0_ok(ws) || !concat_axis0_ok(ss)) return false;
+    if (have_biases && !concat_axis0_ok(bs)) return false;
+    auto w = mx::contiguous(mx::concatenate(ws, 0));
+    auto s = mx::contiguous(mx::concatenate(ss, 0));
+    std::optional<mx::array> b;
+    if (have_biases) b = mx::contiguous(mx::concatenate(bs, 0));
+    mx::eval(w);
+    mx::eval(s);
+    if (b) mx::eval(*b);
+    dst = std::move(w);
+    reg.register_weight(
+        &dst.value(), std::move(s), std::move(b), qis[0]->group_size, qis[0]->bits);
+    return true;
+}
+
 }  // namespace
 
 // --- MTPDecoderLayerMoE ---
@@ -77,6 +142,21 @@ MTPDecoderLayerMoE::MTPDecoderLayerMoE(const MTPHeadConfig& args, int num_expert
     assert(args_.shared_expert_intermediate_size > 0 || args_.intermediate_size > 0);
 }
 
+void MTPDecoderLayerMoE::ensure_qkv_proj_fused() {
+    if (qkv_proj_fused_ready_) return;
+    qkv_proj_fused_ready_ = true;  // attempt once
+    if (fuse_quant_projections_mtp(
+            {&q_proj_weight_, &k_proj_weight_, &v_proj_weight_},
+            qkv_proj_fused_weight_)) {
+        static bool logged = false;
+        if (!logged) {
+            std::cerr << "[MTP] C13 QKV fuse ON (draft attn 3→1 matmul; "
+                         "MLX_MTP_QKV_FUSE=1). Escape: MLX_MTP_NO_QKV_FUSE=1\n";
+            logged = true;
+        }
+    }
+}
+
 mx::array MTPDecoderLayerMoE::operator()(
     const mx::array& x, const AttentionMask& mask, KVCache* cache) {
     int B = x.shape(0);
@@ -89,14 +169,27 @@ mx::array MTPDecoderLayerMoE::operator()(
 
     // --- self-attention sub-block (same as dense MTPDecoderLayer) ---
     auto normed = mx::fast::rms_norm(x, input_layernorm_weight_, args_.rms_norm_eps);
-    auto q_proj_out = linear_no_bias(normed, q_proj_weight_);
+
+    // C13: one fused q|k|v matmul when quant-fuse packs are available.
+    ensure_qkv_proj_fused();
+    const int q_out = n_heads * hd * 2;
+    const int k_out = n_kv_heads * hd;
+    const int v_out = n_kv_heads * hd;
+    mx::array q_proj_out(0.0f), k(0.0f), v(0.0f);
+    if (qkv_proj_fused_weight_.has_value()) {
+        auto fused = linear_no_bias(normed, *qkv_proj_fused_weight_);
+        q_proj_out = mx::slice(fused, {0, 0, 0}, {B, L, q_out});
+        k = mx::slice(fused, {0, 0, q_out}, {B, L, q_out + k_out});
+        v = mx::slice(fused, {0, 0, q_out + k_out}, {B, L, q_out + k_out + v_out});
+    } else {
+        q_proj_out = linear_no_bias(normed, q_proj_weight_);
+        k = linear_no_bias(normed, k_proj_weight_);
+        v = linear_no_bias(normed, v_proj_weight_);
+    }
     // Reshape to [B, L, num_heads, 2*head_dim] then split into queries + gate
     auto q_proj_reshaped = mx::reshape(q_proj_out, {B, L, n_heads, -1});
     auto queries = mx::slice(q_proj_reshaped, {0, 0, 0, 0}, {B, L, n_heads, hd});
     auto q_gate = mx::slice(q_proj_reshaped, {0, 0, 0, hd}, {B, L, n_heads, 2 * hd});
-
-    auto k = linear_no_bias(normed, k_proj_weight_);
-    auto v = linear_no_bias(normed, v_proj_weight_);
 
     auto q4 = mx::transpose(
         mx::fast::rms_norm(queries, q_norm_weight_, args_.rms_norm_eps), {0, 2, 1, 3});
