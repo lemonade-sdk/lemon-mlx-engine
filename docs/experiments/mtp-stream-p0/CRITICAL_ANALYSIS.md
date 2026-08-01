@@ -189,4 +189,12 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 | 4B dense eager | no | 26.50 | `H2_TPS_probe_4B_eager_no_mtp.txt` |
 | 0.8B eager | no | **113.4** | `H2_TPS_probe_0p8B_eager.txt` |
 
-**Verdict:** H2 is real for **numeric** ≥100 only at **~0.8B eager** on this iGPU. **4B MTP is not enough** (~25 t/s). Stop bar still requires **MTP path** (`--use-mtp` + head) — need small MTP-packaged model, not 0.8B eager alone. **35B MTP stop UNMET.**
+**Verdict:** H2 measured further (same fire):
+
+| Config | gen t/s | MTP head | notes |
+|--------|---------|----------|-------|
+| 0.8B eager | 113.4 | no | |
+| 0.8B MTP n_draft=2 | **97.7** | yes | accept≈0; draft tax |
+| 0.8B MTP n_draft=1 | **101.87** | yes | ≥100 numeric; no draft slots |
+
+Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.8B-4bit base). **35B still 27.34.** Do **not** declare scheduler DONE on n_draft=1 degenerate path without quality PASS; productive γ=1 0.8B needs accept fix (quant alignment).

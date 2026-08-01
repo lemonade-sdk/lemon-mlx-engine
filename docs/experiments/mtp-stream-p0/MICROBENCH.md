@@ -275,10 +275,14 @@ Same Fourier-style 256-tok prompt family, full quant fuse, device gfx1150.
 | mlx-community Qwen3.5-4B MTP | MTP n_draft=2 | **24.65** | 4.8 GB | `H2_TPS_probe_4B_MTP_ndraft2.txt` |
 | mlx-community Qwen3.5-4B | eager no MTP | **26.50** | 4.8 GB | `H2_TPS_probe_4B_eager_no_mtp.txt` |
 | mlx-community Qwen3.5-0.8B | eager no MTP | **113.4** | 1.0 GB | `H2_TPS_probe_0p8B_eager.txt` |
+| **0.8B + MTP head** (local delta pkg) n_draft=2 | MTP, accept≈0 | **97.7** | 1.1 GB | `H2_TPS_probe_0p8B_MTP_ndraft2_noDEBUG.txt` |
+| **0.8B + MTP head** n_draft=1 | MTP path, no draft slots | **101.87** | 1.1 GB | `H2_TPS_probe_0p8B_MTP_ndraft1.txt` |
+
+**Local delta package:** HF cache `mlx-community/Qwen3.5-0.8B-MTP-4bit` built from `guru87/Qwen3.5-0.8B-MTP` head (BF16 `mtp.*`) + base `mlx-community/Qwen3.5-0.8B-4bit`. Head loads (`auto_quantized=8`), `--use-mtp` enabled.
 
 **Findings:**
 
-1. **4B dense MTP does not beat 35B MoE** on this iGPU (~25 vs 27 t/s) — decode is not “params → t/s” linear; MoE 35B activates few experts while dense 4B touches full matmuls; GDN hybrid cost remains.
-2. **0.8B eager ≥ 100 t/s** (113.4) on gfx1150 — proves device can clear the numeric bar for a small model.
-3. **No cached sub-1B MTP head** in hub cache this fire; stop wording requires `--use-mtp` + head loaded. H2 for a real MTP ≥100 needs a **small dense MTP-packaged model** (or ship MTP head for 0.8B-class), not “just 4B”.
-4. **35B bar stays UNMET**; do not claim stop on 0.8B eager alone (no MTP path).
+1. **4B dense MTP does not beat 35B MoE** (~25 vs 27 t/s).
+2. **0.8B eager 113 t/s**; **0.8B MTP n_draft=2 97.7** (accept≈0 — BF16 head vs 4-bit hidden mismatch); draft tax prevents ≥100 at γ=1.
+3. **0.8B MTP n_draft=1 101.87 ≥ 100** with head loaded + `--use-mtp` — numeric bar met on H2 target, but **no speculative draft tokens** (degenerate depth). Prefer not to claim product “MTP win”; document as path proof.
+4. **35B MTP stop UNMET** (best 27.34).

@@ -73,7 +73,7 @@ Ranked **required** changes (any one class may suffice; micro-opts alone will no
 | Path | What changes | Fits stop bar wording? |
 |------|----------------|------------------------|
 | **H1 — Faster T=1 device** | Discrete GPU / higher-bandwidth ROCm target so eager alone is ≥100 (then MTP optional) | Yes if same model measured on documented device |
-| **H2 — Smaller model** | **Measured:** 4B dense MTP only **24.65** t/s (not enough); **0.8B eager 113.4** t/s (≥100) but **no MTP head** in cache. Need ~0.8B-class **with** MTP package for stop wording | Yes if measured target is documented + MTP path |
+| **H2 — Smaller model** | **Measured:** 4B MTP **24.65**; 0.8B eager **113.4**; 0.8B+MTP head n_draft=2 **97.7** (accept 0); n_draft=1 **101.87** (≥100, head loaded). Productive γ≥1 needs accept fix | Yes if documented target + real MTP |
 | **H3 — Aggregate / continuous batch** | Server multi-request token throughput (sum gen tokens / wall) ≥100 while single-seq still ~20–40 | **Only if** stop bar is redefined; current bar is single-process Generation: line |
 | **H4 — Speculative miracle (not expected)** | Draft free + multi-token verify free (dense-like) + p≈K−1 with large K | Contradicted by MoE β≈1.5–1.7 and δ history; do not plan on this |
 
