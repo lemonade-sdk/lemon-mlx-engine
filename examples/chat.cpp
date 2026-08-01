@@ -102,7 +102,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                   << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
                   << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
-                  << "  --n-draft N             MTP draft tokens per step (default: 1)\n"
+                  << "  --n-draft N             MTP block size per step (default: 1; try 2 or 4)\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
         std::exit(1);
