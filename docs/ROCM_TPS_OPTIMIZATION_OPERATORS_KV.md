@@ -109,7 +109,8 @@ Same binary/model/fused2-auto/thinking-on; only fuse env differs:
 | `FIELD_SAR_35B_FUSE_temp07_think` | ON | 0.7 | **FAIL** mid-T5 thrash (`maxwell`×~6k) |
 | `FIELD_SAR_35B_NOFUSE_temp07_think` | OFF | 0.7 | **PASS** (full SAR + Python) |
 
-**Product decision:** keep quant fuse **opt-in only** (unset = off). Do **not** set `MLX_ENABLE_QUANT_FUSE=1` for product multi-turn sampling until a numeric fuse fix lands. Enabling fuse logs a one-time stderr warning.
+**Product decision:** quant fuse remains **opt-in** (`MLX_ENABLE_QUANT_FUSE=1`).  
+**Engine fix (post-isolation):** with fuse on, **GDN in_proj is not fused** (attn QKV + MLP gate|up still fuse). GDN a/b feed softplus decay; field thrash was isolated to full qkv|z|b|a fuse under temp=0.7. Force old GDN fuse with `MLX_ENABLE_QUANT_FUSE_GDN=1` (debug only).
 
 ---
 
