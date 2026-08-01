@@ -188,11 +188,12 @@ Flags: default on; `MLX_MTP_NO_PARALLEL_DRAFT=1` serial; `MLX_MTP_PREFETCH=1` op
 
 | Config | gen t/s | notes |
 |--------|---------|-------|
-| C4 parallel (default) | **20.64** | prior best |
-| C4 + `MLX_MTP_PREFETCH=1` | **19.42** | regression; host emit too short to hide draft |
-| **C6** parallel + barrier order | **22.39** | new best (see below) |
+| C4 parallel (default) | 20.64 | |
+| C4 + `MLX_MTP_PREFETCH=1` | 19.42 | regression |
+| C6 parallel + barrier order | 22.39 | |
+| **C7** skip γ=1 MTP KV + lazy hidden | **27.34** | **best; beats eager 26.13** |
 
-Logs: `C4_TPS_probe_ndraft2_parallel.txt`, `C4_TPS_probe_ndraft2_prefetch.txt`, `C6_TPS_probe_ndraft2.txt`.
+Logs: `C4_TPS_probe_ndraft2_parallel.txt`, `C6_TPS_probe_ndraft2.txt`, `C7_TPS_probe_ndraft2.txt`.
 
 ## C6 256-tok measure (D3, 2026-08-01)
 
@@ -200,16 +201,28 @@ Logs: `C4_TPS_probe_ndraft2_parallel.txt`, `C4_TPS_probe_ndraft2_prefetch.txt`, 
 |--------|-------------|--------|---|
 | Generation t/s (256) | 20.64 | **22.39** | **+8.5%** |
 | warm mean joint draft= (ms) | 55.28 | **52.71** | −2.6 ms |
-| warm mean residual verify (ms) | 23.23 | 30.82 | (accept mix) |
-| warm mean total/step (ms) | 78.53 | 83.55 | higher wall/step |
 | warm accept rate p | 0.618 | **0.875** | prompt/content |
-| tokens/step (1+p) | 1.618 | 1.875 | |
 | Stream(cpu) | no | **no** | |
 
-**Interpretation:** C6 joint window improved modestly (55→53 ms), consistent with barrier-order hygiene. The larger gen t/s jump is **also** driven by higher accept on this Fourier technical prompt (p 0.62→0.88) — more tokens per speculative step. Do **not** attribute +8.5% solely to eval reorder. Still **≪ 100** and **≪ eager 26.13**.
+Log: `C6_TPS_probe_ndraft2.txt`.
 
-Log: `C6_TPS_probe_ndraft2.txt`. Smoke: `C6_smoke_ndraft2_max32.txt`.
+## C7 256-tok measure (D3, 2026-08-01) — same Fourier prompt as C6
+
+| Metric | C6 | **C7** | Δ |
+|--------|-----|--------|---|
+| Generation t/s (256) | 22.39 | **27.34** | **+22%** |
+| warm mean joint draft= (ms) | 52.71 | **37.79** | **−14.9 ms** (≈ T₁) |
+| warm mean residual verify (ms) | 30.82 | 30.03 | ~flat |
+| warm mean total/step (ms) | 83.55 | **67.83** | −15.7 ms |
+| warm accept rate p | 0.875 | 0.854 | similar (same prompt family) |
+| tokens/step (1+p) | 1.875 | 1.854 | |
+| vs eager 26.13 | 0.86× | **1.05×** | **MTP beats eager** |
+| Stream(cpu) | no | **no** | |
+
+**Interpretation:** C7 is a **real cost cut** (joint 53→38 ms with comparable accept). Draft fully hidden behind first T=1 verify on γ=1. Reject ≈ T₁; accept ≈ T₁ + second verify. **Still ≪ 100** (27.3 / 100 ≈ 0.27× stop bar). Free-draft ideal ceiling ~52 t/s remains; software path continues toward that, not 100, on gfx1150 35B.
+
+Log: `C7_TPS_probe_ndraft2.txt`. Smoke: `C7_smoke_ndraft2_max32.txt`.
 
 ## Path to 100 t/s (see plan §0)
 
-Stop bar is MTP Generation ≥ **100** t/s. With eager T₁ ≈ 38.3 ms (26.13 t/s), even idealized free-draft p=1 β=1 single-stream speculative decoding caps near **~2×** (~52 t/s) — **below 100**. Best measured MTP **22.39**. Hardware ceiling and required paths (faster GPU, smaller model, or multi-seq aggregate) are documented in [`MTP_OPTIMALITY_PLAN.md`](./MTP_OPTIMALITY_PLAN.md) §0. **Do not claim ≥100 without a probe log.**
+Stop bar is MTP Generation ≥ **100** t/s. Eager T₁ ≈ 38.3 ms (26.13 t/s); free-draft p=1 β=1 caps ~**2×** (~52 t/s) ≪ 100. Best measured MTP **27.34**. Paths to 100: H1 faster GPU, H2 smaller model, H3 multi-seq aggregate — see plan §0. **Do not claim ≥100 without a probe log.**

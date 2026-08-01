@@ -11,7 +11,9 @@
 | MTP pre-C1 (dense BF16 draft) | **6.05** | **156.8** | 124.1 | Draft dominated |
 | MTP C1 (runtime quant MTP head) | **15.87** | **23.7** | 86.2 | Draft −85% |
 | MTP C2 no-capture (batch verify, re-run partial) | **11.78** | 20.3 | 97.7 | **Regression** — re-run tax |
-| MTP C2 sequential T=1 verify | **19.72** | 20.3 | **66.3** | Best MTP so far |
+| MTP C2 sequential T=1 verify | **19.72** | 20.3 | **66.3** | |
+| MTP C6 barrier order | **22.39** | joint ~52.7 | — | |
+| **MTP C7** skip γ=1 KV + lazy hidden | **27.34** | joint **~37.8** | — | **Beats eager** |
 
 ## Critical verdicts
 
@@ -99,7 +101,7 @@ Log: `C4_TPS_probe_ndraft2_parallel.txt`.
 
 ## Path to 100 t/s (scheduler stop bar)
 
-User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **22.39** after C6). Analysis:
+User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** after C7). Analysis:
 
 - Eager ceiling on this device/model: **~26 t/s** (8 CU gfx1150, ~22 GB resident).
 - Speculative form \((1+p)/(\beta+\delta)\) cannot deliver ~4× over that T₁ under MoE near-linear verify; free-draft ideal still ≲ **~2×** (~52 t/s) ≪ 100.
@@ -138,6 +140,14 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **22.39** 
 2. **Deeper n_draft:** keep KV only for steps with a later draft consumer (`i < n_draft-1`).
 3. **Lazy `mtp_trunk_hidden_` stash:** drop per-step `mx::eval(h_slice)`; next draft eval pulls the slice.
 
-**Smoke** (`C7_smoke_ndraft2_max32.txt`, 32-tok): green, no Stream(cpu). Warm joint `draft=` **~38 ms** (was C6 ~53 ms) — reject total ≈ T₁; accept total ~73 ms. Short-run Generation **~29 t/s** (27 tok) is **not** a 256-tok claim vs C6 **22.39**.
+**Smoke** (`C7_smoke_ndraft2_max32.txt`): green, no Stream(cpu); joint ~38 ms.
 
-**Next:** D3 256-tok measure for C7.
+### D3 256-tok measure (same Fourier prompt as C6)
+
+| Config | gen t/s | warm joint ms | warm accept p | log |
+|--------|---------|---------------|---------------|-----|
+| C6 | 22.39 | 52.7 | 0.88 | `C6_TPS_probe_ndraft2.txt` |
+| **C7** | **27.34** | **37.8** | 0.85 | `C7_TPS_probe_ndraft2.txt` |
+| eager | 26.13 | — | — | `TPS_probe_no_mtp.txt` |
+
+**Verdict:** **REAL win.** C7 **beats full-fuse eager** (27.34 > 26.13, **~1.05×**) with joint collapsed to T₁. Accept rate similar to C6 on same prompt — Δ is not an accept confound. **Stop bar 100 still UNMET** (~3.7× short). Next toward max single-seq: residual second-verify cost / accept; toward 100: H1/H2/H3 only.

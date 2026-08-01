@@ -22,9 +22,10 @@
 | MTP C3 adaptive + barrier defer | 19.64 | no regression; control for deep n_draft |
 | MTP C4 parallel draft ‖ first verify | 20.64 | (`C4_TPS_probe_ndraft2_parallel.txt`) |
 | C4 + inter-step prefetch (`MLX_MTP_PREFETCH=1`) | 19.42 | **regression** vs C4 default; default remains off (`C4_TPS_probe_ndraft2_prefetch.txt`) |
-| **MTP C6** barrier order + device draft feed | **22.39** | best so far (`C6_TPS_probe_ndraft2.txt`); joint −2.6 ms; accept confounds part of Δ |
+| MTP C6 barrier order + device draft feed | 22.39 | (`C6_TPS_probe_ndraft2.txt`) |
+| **MTP C7** skip γ=1 MTP KV + lazy hidden | **27.34** | **best; beats eager 26.13** (`C7_TPS_probe_ndraft2.txt`); joint ≈ T₁ |
 
-**Gap to stop bar:** 100 / 22.39 ≈ **4.5×** above best MTP; 100 / 26.13 ≈ **3.8×** above eager T=1.
+**Gap to stop bar:** 100 / 27.34 ≈ **3.7×** above best MTP; 100 / 26.13 ≈ **3.8×** above eager T=1.
 
 ### 0.2 Bandwidth / speculative theory (why 100 is not a micro-opt)
 
@@ -58,8 +59,8 @@ with \(p\) = mean accepted draft tokens per step (per true draft slot rate × sl
 | Layer | Estimate | Basis |
 |-------|----------|--------|
 | **Measured eager single-seq** | **~26 t/s** | `TPS_probe_no_mtp.txt` |
-| **Measured best MTP single-seq** | **~22.4 t/s** | C6 256-tok probe |
-| **Optimistic MTP single-seq (software)** | **~28–40 t/s** | If draft ≪ T₁ and p≳0.8 and verify ≈ T₁ per emitted token → approach or slightly beat eager; still ≪100 |
+| **Measured best MTP single-seq** | **~27.3 t/s** | C7 256-tok probe (beats eager) |
+| **Optimistic MTP single-seq (software)** | **~28–40 t/s** | Joint already ≈ T₁ at γ=1; headroom is accept + cheaper second verify; still ≪100 |
 | **Hard single-seq AR ceiling (this iGPU)** | **≪ 100 t/s** for 35B-class MoE | 8 CU, low_cu, ~22 GB weights resident; bandwidth-bound decode |
 | **Aggregate 100 t/s (product)** | Possible only as **multi-seq / continuous-batch server throughput**, smaller model, or different GPU | See §0.4 |
 
@@ -96,7 +97,7 @@ Priority order for **D2** fires (never disable MTP):
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | Measured MTP Generation t/s **≥ 100** on LemonMLXE 35B (or documented different measured target) with `--use-mtp` + head loaded; probe under this dir | **UNMET** (best **22.39**) |
+| 1 | Measured MTP Generation t/s **≥ 100** on LemonMLXE 35B (or documented different measured target) with `--use-mtp` + head loaded; probe under this dir | **UNMET** (best **27.34**) |
 | 2 | Smoke green (no Stream(cpu)) | met on C1–C4 probes |
 | 3 | MICROBENCH / CRITICAL_ANALYSIS include the ≥100 result | **UNMET** |
 | 4 | Quintuple supervisors PASS on stop claim | N/A until (1) |
@@ -184,7 +185,7 @@ Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 | **C3** | Adaptive n_draft + deferred barriers | hold **~19.6** |
 | **C4** | Parallel draft ‖ first verify | **20.64** t/s |
 | **C6** | Eval d0 before draft launch; device draft slices; no double-eval fill | **22.39** gen t/s (256); joint 55→53 ms; see CRITICAL C6 |
-| **C7** | Skip MTP KV on γ=1 draft; lazy trunk-hidden stash | Smoke: joint ~38 ms (was ~53); **256 TBD D3** |
+| **C7** | Skip MTP KV on γ=1 draft; lazy trunk-hidden stash | **27.34** gen t/s (256); joint 52.7→37.8 ms; **> eager 26.13** |
 
 ### Failed / rejected experiments
 
@@ -232,10 +233,9 @@ When 5.1 impossible: keep iterating real cuts; main agent / human must choose H1
 
 ## 6. Next fire recommendation
 
-1. **D3 C7:** 256-tok measure (expect joint≈T₁ if smoke holds).  
-2. Further: true C5 draft lm_head residual if still below eager.  
-3. Do **not** implement auto-fallback.  
-4. Plateau still ≪100 on gfx1150 35B; escalate H1/H2 for ≥100.
+1. **D2:** second-verify / accept-path residual (only lever left under joint≈T₁), or quality Maxwell.  
+2. **Do not** implement auto-fallback.  
+3. Product: MTP can now **beat** eager on this bar (~1.05×); still document H1/H2 for any ≥100 claim.
 
 ---
 
