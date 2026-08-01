@@ -820,6 +820,8 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
 
     if (!kBatchVerify) {
         // Feed each draft token with L=1; compare trunk next to draft[i+1].
+        // Defer KV quant + hidden stash to end of loop (fewer host barriers).
+        std::optional<LMOutput::State> last_st;
         for (int i = 0; i < n_draft; ++i) {
 #if defined(MLX_BUILD_ROCM)
             mlx::core::gpu_set_graph_decode_mode(true);
@@ -832,14 +834,11 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             auto result =
                 context_.call_fn(tok_text, cache_.empty() ? nullptr : &cache_, &st);
             state_ = result.state;
-            maybe_quantize_kv_cache(
-                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+            last_st = result.state;
 
             auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
             mx::eval(pred);
-            // logits [1,1,V] or [1,V] → host int after argmax
             int32_t trunk_next = pred.data<int32_t>()[0];
-            if (result.state.has_value()) stash_hidden_from(*result.state);
 
             if (i < n_draft - 1) {
                 if (trunk_next == static_cast<int32_t>(draft_tokens[i + 1])) {
@@ -855,6 +854,9 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
                 accepted = n_draft - 1;
             }
         }
+        maybe_quantize_kv_cache(
+            cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+        if (last_st.has_value()) stash_hidden_from(*last_st);
         if (kMtpTiming) {
             mx::eval(y_.tokens);
             t_verify = std::chrono::steady_clock::now();
@@ -1042,7 +1044,25 @@ void TokenIterator::record_acceptance(int proposed, int accepted) {
 }
 
 int TokenIterator::current_draft_count() const {
-    return n_draft_tokens_;
+    // Adaptive block size from recent accepts (C3). Never collapses to "MTP
+    // off": when the user asked for n_draft>=2 we always keep at least 2 so
+    // speculation still runs. Caps at n_draft_tokens_.
+    // Disable: MLX_MTP_FIXED_DRAFT=1 → always n_draft_tokens_.
+    if (n_draft_tokens_ <= 2) return n_draft_tokens_;
+    if (std::getenv("MLX_MTP_FIXED_DRAFT") != nullptr) return n_draft_tokens_;
+
+    const int n = static_cast<int>(
+        std::min(accept_history_idx_, static_cast<size_t>(kAcceptHistorySize)));
+    if (n <= 0) return n_draft_tokens_;
+
+    int sum = 0;
+    for (int i = 0; i < n; ++i) sum += static_cast<int>(accept_history_[i]);
+    // accepted ∈ [0, n_draft-1]; want block ≈ 1 (d0) + mean_accepted + small slack
+    const float mean_acc = static_cast<float>(sum) / static_cast<float>(n);
+    int want = static_cast<int>(mean_acc + 2.0f);  // d0 + drafts
+    if (want < 2) want = 2;
+    if (want > n_draft_tokens_) want = n_draft_tokens_;
+    return want;
 }
 
 // ---------------------------------------------------------------------------

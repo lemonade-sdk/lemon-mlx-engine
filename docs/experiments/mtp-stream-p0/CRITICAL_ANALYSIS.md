@@ -59,3 +59,17 @@ Still ~25% short of eager. Residual:
 1. Close gap: async emit, cheaper draft lm_head, or only draft when history accepts well (adaptive K that still runs MTP when useful — not disable).
 2. Quality: full Maxwell SAR with C1+C2 sequential at temp 0 and 0.7.
 3. Optional A/B: `MLX_MTP_BATCH_VERIFY=1` vs sequential on n_draft=4.
+
+## C3 (barrier defer + adaptive n_draft)
+
+| Config | gen t/s | draft_ms | verify_ms | notes |
+|--------|---------|----------|-----------|-------|
+| C2 seq n_draft=2 | 19.72 | 20.3 | 66.3 | prior best |
+| C3 adaptive n_draft=2 | **19.64** | 20.4 | 66.5 | no regression |
+| C3 adaptive max=4 | 18.41 | 27.0 | 67.6 | saw n_draft 2/3/4 |
+| C3 fixed n_draft=4 | **19.66** | 26.3 | 82.5 | sequential verify scales OK |
+| eager | 26.13 | — | — | still ahead |
+
+Changes: defer KV quant + hidden stash to end of sequential verify; `current_draft_count()` uses accept history (min 2, max n_draft_tokens). `MLX_MTP_FIXED_DRAFT=1` disables adaptive.
+
+**Review:** Adaptive did not beat fixed-2/4 on this probe; kept as cost control for longer n_draft when accept collapses. Barrier defer holds ~19.6 t/s.
