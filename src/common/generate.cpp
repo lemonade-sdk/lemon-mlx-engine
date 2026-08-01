@@ -36,9 +36,34 @@ void decode_capture_destroy();
 } // namespace mlx::core
 #endif
 
+// mlx registers CPU CommandEncoders in thread_local maps at stream creation
+// (mlx/backend/cpu/eval.cpp). Streams created on the main/load thread are
+// invisible to httplib worker threads — eval then throws
+// "There is no Stream(cpu, 0) in current thread" (PR #63 P0-MTP / M1 server).
+// Re-bind known CPU streams into this thread's encoder map (try_emplace).
+namespace mlx::core::cpu {
+void new_stream(Stream s);
+} // namespace mlx::core::cpu
+
 namespace mlx_lm {
 
 namespace mx = mlx::core;
+
+static void ensure_thread_cpu_stream_encoders() {
+    static thread_local size_t last_n = 0;
+    auto streams = mx::get_streams();
+    if (streams.size() == last_n && last_n > 0) {
+        return;
+    }
+    for (const auto& s : streams) {
+        if (s.device.type == mx::Device::cpu) {
+            mlx::core::cpu::new_stream(s);
+        }
+    }
+    // Ensure this thread also has a default CPU stream for future host ops.
+    (void)mx::default_stream(mx::Device::cpu);
+    last_n = mx::get_streams().size();
+}
 
 // MLX_KV_OFFSET_LOG=1: stderr KV max offset every MLX_KV_OFFSET_EVERY (default 64).
 static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
@@ -95,6 +120,8 @@ struct StreamGuard {
     mx::Stream old_stream_;
     bool changed_ = false;
     StreamGuard(mx::Stream s) : old_stream_(mx::default_stream(mx::default_device())) {
+        // Bind CPU stream encoders onto this worker before any eval.
+        ensure_thread_cpu_stream_encoders();
 #ifndef __APPLE__
         if (s != old_stream_) {
             mx::set_default_stream(s);
@@ -627,8 +654,19 @@ TokenIterator::TokenIterator(
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)  // Initialize with 1 (accepted)
 {
-    // When MTP is active, request hidden_intermediates from the model.
+    // M6 (PR #63): pure-graph and MTP are mutually exclusive. TokenIterator::next
+    // short-circuits to MTP when use_mtp_, so pure never runs on the same request —
+    // but operators may set both env flags by mistake. Log once so M6 is auditable.
     if (use_mtp_) {
+        const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
+        if (pure && pure[0] == '1' && pure[1] == '\0') {
+            static bool logged = false;
+            if (!logged) {
+                std::cerr << "[MTP] M6 XOR: MLX_DECODE_GRAPH_PURE=1 ignored while "
+                             "--use-mtp is active (MTP path takes precedence)\n";
+                logged = true;
+            }
+        }
         mtp_caches_ = context.new_mtp_cache_fn(params);
         state_ = LMOutput::State();  // Empty state signals model to return hidden
     }
@@ -686,6 +724,15 @@ TokenIterator::TokenIterator(
     , accept_history_(kAcceptHistorySize, 1)
 {
     if (use_mtp_) {
+        const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
+        if (pure && pure[0] == '1' && pure[1] == '\0') {
+            static bool logged_ext = false;
+            if (!logged_ext) {
+                std::cerr << "[MTP] M6 XOR: MLX_DECODE_GRAPH_PURE=1 ignored while "
+                             "--use-mtp is active (MTP path takes precedence)\n";
+                logged_ext = true;
+            }
+        }
         mtp_caches_ = context.new_mtp_cache_fn(params);
         state_ = LMOutput::State();  // Empty state signals model to return hidden
     }

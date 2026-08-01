@@ -40,5 +40,18 @@ So `--n-draft 2` → 1 draft token verified; `--n-draft 4` → 3 draft tokens.
 
 ## Stream fix
 
-- `StreamGuard` on `mtp_speculative_step`
+- `StreamGuard` on `mtp_speculative_step` / `step` / `prepare`
 - Own gen stream default on Linux/ROCm (`MLX_GEN_OWN_STREAM=0` to opt out)
+- **Server workers:** re-bind CPU stream encoders into thread-local maps (`ensure_thread_cpu_stream_encoders`) — fixes PR #63 HTTP 500 `Stream(cpu, 0)` under `--use-mtp`
+
+## P0-MTP gates (PR #63 close)
+
+| Gate | Result | Evidence |
+|------|--------|----------|
+| M1 short HTTP MTP | **PASS** | `gates/raw/M1-short-v2.json` |
+| M2 long HTTP MTP | **PASS** | `gates/raw/M2-long.json` |
+| M3 thinking+MTP | **PASS** | `gates/raw/M3-*.json` |
+| M4 CLI MTP | **PASS** | `gates/logs/M4-chat.log` |
+| M6 pure XOR | **PASS** | `gates/logs/M6-xor.log` |
+
+Details: `P0_MTP_GATES.md`, `gates/RESULTS.md`. Harness: `run_p0_mtp_gates.sh`.

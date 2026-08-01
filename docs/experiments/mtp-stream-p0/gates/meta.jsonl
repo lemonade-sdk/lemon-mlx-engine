@@ -1,0 +1,6 @@
+{"gate":"M1","status":"PASS","engine_pre":"430ae5b29c927fc4d32d984dc72919b73a6bd9fc","note":"HTTP200 short no Stream after CPU TLS rebind"}
+{"gate":"M2","status":"PASS","note":"HTTP200 long wave eq"}
+{"gate":"M3","status":"PASS","note":"thinking+MTP short+long"}
+{"gate":"M4","status":"PASS","note":"CLI MTP"}
+{"gate":"M6","status":"PASS","note":"XOR log pure ignored under MTP"}
+{"mlx":"75915908dfe5028335d318b10340313744fd3a8d"}

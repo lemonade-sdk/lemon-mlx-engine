@@ -1,0 +1,4 @@
+[gate] starting server → docs/experiments/mtp-stream-p0/gates/logs/M1-server.log (--no-think --max-tokens 128)
+[gate] health ok after 6s
+[gate] M1 FAIL — http=500
+FAIL: M1 http 500

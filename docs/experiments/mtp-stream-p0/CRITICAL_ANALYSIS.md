@@ -56,6 +56,10 @@ Still ~25% short of eager. Residual:
 
 - LoopBrake / auto-disable MTP when slow / seatbelt scorers — **rejected**.
 
+## PR #63 P0-MTP server gate (Stream(cpu,0) HTTP 500)
+
+CLI MTP was green after `StreamGuard` + own gen stream; **server** still 500’d because mlx CPU command encoders are **thread_local** and httplib workers never created `Stream(cpu, 0)`. Fix: re-bind known CPU streams into the worker TLS map inside `StreamGuard` (`ensure_thread_cpu_stream_encoders`). **M1+M2+M3 PASS** — see `gates/RESULTS.md`.
+
 ## What “resolved” looks like next
 
 1. Close gap: async emit, cheaper draft lm_head, or only draft when history accepts well (adaptive K that still runs MTP when useful — not disable).
