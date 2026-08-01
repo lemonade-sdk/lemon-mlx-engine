@@ -61,14 +61,14 @@ generate:            async one-behind sample
 
 | # | Lever | How | Expected TPS | Risk |
 |---|--------|-----|--------------|------|
-| **1** | **Quant matmul fusion** | `MLX_ENABLE_QUANT_FUSE=1` | Often **meaningful** (fewer quant launches: QKV, GDN in_proj, SwiGLU gate\|up) | Numeric/quality; must field A/B |
+| **1** | **Quant matmul fusion** | `MLX_ENABLE_QUANT_FUSE=1` (remain **opt-in**) | Field: ~**+0–3 t/s** on 35B gfx1150 (see A/B below); not defaulted | Numeric/quality; memory +~1.6 GB |
 | **2** | **Keep fused2 on** (tip auto-on) | Avoid `NO_FUSED2` / `FUSED2=0` unless A/B | **Small** (~0–2 t/s on 35B iGPU) | Historical thrash; re-check quality |
 | **3** | **Leave KV inplace on** | Don’t set `MLX_KV_INPLACE_OFF` | **Baseline** — turning it off usually **hurts** TPS | — |
 | **4** | **Leave pure-graph off on APU** | Don’t set `MLX_DECODE_GRAPH_PURE=1` on gfx115x APU | Avoids **regression** (~few t/s) | Pure can help **launch-bound dGPU** (e.g. R9700-class) |
 
 #### Locked measure recipe
 
-One binary, same 35B prompt, compare gen t/s from `[TPS]` lines:
+One binary, same 35B prompt, compare gen t/s from chat `Generation:` / server `[TPS]` lines:
 
 ```bash
 # baseline (product)
@@ -85,6 +85,21 @@ MLX_DECODE_GRAPH_PURE=1 ./build/chat MODEL ...
 ```
 
 Do **not** optimize blind.
+
+#### Field A/B — quant fuse (this branch, gfx1150 / 890M)
+
+**Setup:** tip binary `build/chat`, model `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit` local snapshot, fused2 default (auto-on), pure-graph unset, MTP head off, fixed prompt, `temp=0`.
+
+| Arm | Mode | Gen tokens | Gen t/s | Active mem | Thrash | Quality |
+|-----|------|------------|---------|------------|--------|---------|
+| baseline (fuse off) | chat `--no-think` | 118 | **29.10** | 18.2 GB | no | coherent |
+| `MLX_ENABLE_QUANT_FUSE=1` | chat `--no-think` | 116 | **29.35** | 19.8 GB | no | coherent |
+| baseline | `--raw --ignore-eos` | 256 | **27.33** | 18.2 GB | no | OK |
+| `MLX_ENABLE_QUANT_FUSE=1` | `--raw --ignore-eos` | 256 | **30.31** | 19.8 GB | no | OK |
+
+**Readout:** fixed-token raw path ~**+3 t/s (~+11%)**; short chat path ~flat (noise). Fuse holds extra concat weights (~**+1.6 GB** active). No thrash observed.
+
+**Product decision:** keep quant fuse **opt-in** (`MLX_ENABLE_QUANT_FUSE=1`). Gain is real on the fixed-256 arm but not strong enough (memory + numeric risk + one-shot sample) to flip the default.
 
 ---
 
@@ -155,10 +170,10 @@ Do **not** optimize blind.
 
 ## Concrete next experiments (TPS-only)
 
-1. **Quant fuse A/B** on 35B gfx115x — same prompt length; report gen t/s and any thrash.  
-2. **Fused2 on vs `NO_FUSED2=1`** — confirm tip polarity still ~flat TPS + quality.  
-3. **MTP smoke** (if head loaded) — short fixed prompt; measure tokens/s and accept rate; stop if thrash returns.  
-4. **Pure-graph only on discrete GPU** if you care about launch-bound dGPUs; **not** first for 890M-class APU.
+1. **Quant fuse A/B** on 35B gfx115x — **done** (see Field A/B); remain opt-in.  
+2. **Fused2** tip polarity — **verified** auto-on (`FUSED2=0` / `NO_FUSED2=1` off).  
+3. **MTP smoke** (if head loaded) — short fixed prompt; measure tokens/s and accept rate; quality gate required; stop if thrash returns.  
+4. **Pure-graph only on discrete GPU** if you care about launch-bound dGPUs; **not** for 890M-class APU default.
 
 ---
 
@@ -167,7 +182,7 @@ Do **not** optimize blind.
 | Question | Answer |
 |----------|--------|
 | What further TPS opts exist? | **Quant fuse (wired, off), MTP (wired, off), fused2 (modest), pure-graph (situational)**; KV inplace already on. |
-| Biggest likely win without new architecture? | **`MLX_ENABLE_QUANT_FUSE=1` + measure**; then **MTP** if quality holds. |
+| Biggest likely win without new architecture? | Fuse measured (~+0–3 t/s, stay opt-in); next **MTP** if quality holds. |
 | More GDN f32/softplus churn? | **Wrong lever for TPS** on GPU. |
 | Pure-graph for APU? | **Usually not** — eager often beats pure on gfx1151-class. |
 
