@@ -959,92 +959,97 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             last_st = result.state;
             auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
 
-            // Join: materialise trunk pred and draft tokens together (once).
-            if (drafts_dev.has_value()) {
-                mx::eval(pred, *drafts_dev);
-                // Host draft ids for emit/debug only — drafts_dev already eval'd
-                // (do not re-eval inside fill; that was a second barrier).
-                draft_tokens.clear();
-                draft_tokens.push_back(static_cast<int>(y_.tokens.item<int32_t>()));
-                const int n_extra = static_cast<int>(drafts_dev->size());
-                const int32_t* dptr = drafts_dev->data<int32_t>();
-                for (int i = 0; i < n_extra; ++i) {
-                    draft_tokens.push_back(static_cast<int>(dptr[i]));
-                }
-            } else {
-                mx::eval(pred);
-                draft_tokens.clear();
-                draft_tokens.push_back(static_cast<int>(y_.tokens.item<int32_t>()));
-            }
-            if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
-
-            // Accept decision for d1 vs trunk_next after d0.
+            // C15: join pred + drafts on device; accept compare from device
+            // pointers before building full host draft_tokens. On reject only
+            // keep d0 for emit (skip host materialize of rejected drafts).
+            static const bool kMtpDebugEarly =
+                (std::getenv("MTP_DEBUG") != nullptr);
             // C12: pipeline v1 under host emit of d0 (γ=1 accept only).
-            // Measured REGRESS on gfx1150 chat (host emit too short to hide v1;
-            // finish_pending_v1 on d1 drain adds critical-path tax). Opt-in:
-            // MLX_MTP_PIPELINE_V1=1. Escape remains MLX_MTP_NO_PIPELINE_V1=1.
+            // Measured REGRESS on gfx1150; opt-in MLX_MTP_PIPELINE_V1=1.
             static const bool kPipelineV1 =
                 std::getenv("MLX_MTP_PIPELINE_V1") != nullptr &&
                 std::getenv("MLX_MTP_NO_PIPELINE_V1") == nullptr;
             bool pipelined_v1 = false;
 
-            if (draft_tokens.size() >= 2) {
-                int32_t trunk_next = pred.data<int32_t>()[0];
-                if (trunk_next == static_cast<int32_t>(draft_tokens[1])) {
-                    accepted = 1;
-                    // Continue sequential verify from i=1 (feed d1..).
-                    // Prefer device slices of drafts_dev over host re-upload.
-                    for (int i = 1; i < n_draft; ++i) {
+            draft_tokens.clear();
+            bool draft_match = false;
+            if (drafts_dev.has_value()) {
+                mx::eval(pred, *drafts_dev);
+                // d0 already eval'd before side-stream draft (C6).
+                const int32_t d0 = y_.tokens.item<int32_t>();
+                draft_tokens.push_back(static_cast<int>(d0));
+                const int n_extra = static_cast<int>(drafts_dev->size());
+                const int32_t* dptr = drafts_dev->data<int32_t>();
+                const int32_t trunk_next = pred.data<int32_t>()[0];
+                if (n_extra >= 1 && trunk_next == dptr[0]) {
+                    draft_match = true;
+                    // Accept: host ids for emit/debug (d1..).
+                    for (int i = 0; i < n_extra; ++i) {
+                        draft_tokens.push_back(static_cast<int>(dptr[i]));
+                    }
+                } else if (n_extra >= 1 && kMtpDebugEarly) {
+                    // Reject but keep draft ids for MTP_DEBUG visibility only.
+                    for (int i = 0; i < n_extra; ++i) {
+                        draft_tokens.push_back(static_cast<int>(dptr[i]));
+                    }
+                }
+                // else reject: draft_tokens = {d0} only
+            } else {
+                mx::eval(pred);
+                draft_tokens.push_back(
+                    static_cast<int>(y_.tokens.item<int32_t>()));
+            }
+            if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
+
+            if (draft_match && draft_tokens.size() >= 2) {
+                accepted = 1;
+                // Continue sequential verify from i=1 (feed d1..).
+                // Prefer device slices of drafts_dev over host re-upload.
+                for (int i = 1; i < n_draft; ++i) {
 #if defined(MLX_BUILD_ROCM)
-                        mlx::core::gpu_set_graph_decode_mode(true);
+                    mlx::core::gpu_set_graph_decode_mode(true);
 #endif
-                        // draft_tokens[i] == drafts_dev[i-1]; prefer device slice.
-                        mx::array t2 =
-                            drafts_dev.has_value()
-                                ? mx::reshape(
-                                      mx::slice(*drafts_dev, {i - 1}, {i}), {1, 1})
-                                : mx::array(
-                                      {static_cast<int32_t>(draft_tokens[i])},
-                                      {1, 1}, mx::int32);
-                        if (t2.dtype() != mx::int32) {
-                            t2 = mx::astype(t2, mx::int32);
-                        }
-                        LMInput::Text t2_text(t2);
-                        auto r2 = context_.call_fn(
-                            t2_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
-                        state_ = r2.state;
-                        last_st = r2.state;
-                        auto pred2 = mx::astype(mx::argmax(r2.logits, -1), mx::int32);
-                        if (i < n_draft - 1) {
-                            mx::eval(pred2);
-                            int32_t tn = pred2.data<int32_t>()[0];
-                            if (tn == static_cast<int32_t>(draft_tokens[i + 1])) {
-                                accepted++;
-                            } else {
-                                y_ = LMInput::Text(mx::reshape(pred2, {1}));
-                                break;
-                            }
-                        } else if (kPipelineV1 && n_draft == 2 && i == 1) {
-                            // C12: do not wait for residual pred2 — return d0 now;
-                            // finish_pending_v1_() runs when draining buffered d1
-                            // (host emit of d0 overlaps GPU v1).
-                            pending_v1_pred_ = pred2;
-                            pending_v1_state_ = r2.state;
-                            pending_v1_ = true;
-                            pipelined_v1 = true;
-                            accepted = 1;
+                    // draft_tokens[i] == drafts_dev[i-1]; prefer device slice.
+                    mx::array t2 =
+                        drafts_dev.has_value()
+                            ? mx::reshape(
+                                  mx::slice(*drafts_dev, {i - 1}, {i}), {1, 1})
+                            : mx::array(
+                                  {static_cast<int32_t>(draft_tokens[i])},
+                                  {1, 1}, mx::int32);
+                    if (t2.dtype() != mx::int32) {
+                        t2 = mx::astype(t2, mx::int32);
+                    }
+                    LMInput::Text t2_text(t2);
+                    auto r2 = context_.call_fn(
+                        t2_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+                    state_ = r2.state;
+                    last_st = r2.state;
+                    auto pred2 = mx::astype(mx::argmax(r2.logits, -1), mx::int32);
+                    if (i < n_draft - 1) {
+                        mx::eval(pred2);
+                        int32_t tn = pred2.data<int32_t>()[0];
+                        if (tn == static_cast<int32_t>(draft_tokens[i + 1])) {
+                            accepted++;
                         } else {
                             y_ = LMInput::Text(mx::reshape(pred2, {1}));
-                            accepted = n_draft - 1;
+                            break;
                         }
+                    } else if (kPipelineV1 && n_draft == 2 && i == 1) {
+                        // C12: do not wait for residual pred2 — return d0 now;
+                        // finish_pending_v1_() runs when draining buffered d1.
+                        pending_v1_pred_ = pred2;
+                        pending_v1_state_ = r2.state;
+                        pending_v1_ = true;
+                        pipelined_v1 = true;
+                        accepted = 1;
+                    } else {
+                        y_ = LMInput::Text(mx::reshape(pred2, {1}));
+                        accepted = n_draft - 1;
                     }
-                } else {
-                    // Reject d1: y_ is trunk's alternative (pred already eval'd).
-                    y_ = LMInput::Text(mx::reshape(pred, {1}));
-                    accepted = 0;
                 }
             } else {
-                // No draft produced — treat pred as next y_.
+                // Reject d1 or no draft: y_ is trunk alternative (pred eval'd).
                 y_ = LMInput::Text(mx::reshape(pred, {1}));
                 accepted = 0;
             }

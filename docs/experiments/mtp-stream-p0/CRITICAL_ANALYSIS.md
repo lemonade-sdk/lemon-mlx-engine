@@ -279,3 +279,18 @@ Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.
 | **C14** `MLX_MTP_NO_SHARED=1` | **25.60** | **0.705** | **62.9** | `C14_TPS_probe_ndraft2_no_shared.txt` |
 
 **Verdict:** **FAIL / REGRESS** (−1.7 t/s). Accept dropped (0.85→0.71); joint inflated (38→63 ms) — shared expert is quality-critical for this head, not free overhead. Flag opt-in only. Ladder best remains **C7 27.34**. **C11–C14 all regressed** — stop thrashing 35B draft-path micro-opts; free-draft sequential verify ≈ eager ceiling.
+
+## C15 device-side accept + lazy host drafts (2026-08-01 fire)
+
+**Hypothesis:** Parallel join always built full host `draft_tokens` before compare. Compare from device pointers first; on reject keep only d0 for emit (skip host materialize of rejected drafts) to cut barrier tax.
+
+**Code** (`generate.cpp` parallel path): eval(pred, drafts_dev) → compare `trunk_next` to `dptr[0]` → materialize d1.. only on accept (or always when `MTP_DEBUG` for log visibility).
+
+### D3 256-tok measure (Fourier-style, n_draft=2, full quant fuse, gfx1150, MTP_DEBUG+TIMING)
+
+| Config | gen t/s | warm mean accept | warm joint draft= ms | log |
+|--------|---------|------------------|----------------------|-----|
+| **C7** | **27.34** | 0.854 | **37.8** | `C7_TPS_probe_ndraft2.txt` |
+| **C15** device accept | **25.33** | 0.814 | **67.4** | `C15_TPS_probe_ndraft2_device_accept.txt` |
+
+**Verdict:** **FAIL / REGRESS** (−2.0 t/s). Probe used `MTP_DEBUG=1` so reject path still materializes drafts for logs (C15 reject-lazy partly nullified). Even so, no win vs C7; joint slot higher (noise/contention). Keep cleaner device-first compare as hygiene. Ladder best remains **C7 27.34**. **C11–C15 consecutive non-wins** — 35B single-seq MTP micro-opt plateau confirmed.
