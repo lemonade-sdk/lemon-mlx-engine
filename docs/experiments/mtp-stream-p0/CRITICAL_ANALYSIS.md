@@ -99,7 +99,7 @@ Log: `C4_TPS_probe_ndraft2_parallel.txt`.
 
 ## Path to 100 t/s (scheduler stop bar)
 
-User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **20.64**). Analysis:
+User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **22.39** after C6). Analysis:
 
 - Eager ceiling on this device/model: **~26 t/s** (8 CU gfx1150, ~22 GB resident).
 - Speculative form \((1+p)/(\beta+\delta)\) cannot deliver ~4× over that T₁ under MoE near-linear verify; free-draft ideal still ≲ **~2×** (~52 t/s) ≪ 100.
@@ -116,6 +116,16 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **20.64**)
 2. Skip second `eval` inside host draft materialization after join already `eval(pred, drafts_dev)`.
 3. Sequential verify feeds **slice `drafts_dev`** instead of host `int` re-upload.
 
-**Smoke** (`C6_smoke_ndraft2_max32.txt`, 32-tok, n_draft=2): green, no Stream(cpu); warm joint `draft=` timer still **~53 ms** (not collapsed to ~38 ms T₁) — GPU contention on 8 CU likely dominates remaining gap; short-run Generation **~24 t/s** (27 tok) is **not** a 256-tok claim vs C4 **20.64**.
+**Smoke** (`C6_smoke_ndraft2_max32.txt`): green, no Stream(cpu).
 
-**Next:** D3 256-tok measure for C6; if flat, C5 vocab/lm_head residual or H1/H2 for ≥100.
+### D3 256-tok measure (this fire)
+
+| Config | gen t/s | warm joint ms | warm accept p | log |
+|--------|---------|---------------|---------------|-----|
+| C4 parallel | 20.64 | 55.3 | 0.62 | `C4_TPS_probe_ndraft2_parallel.txt` |
+| **C6** | **22.39** | **52.7** | **0.88** | `C6_TPS_probe_ndraft2.txt` |
+| eager | 26.13 | — | — | `TPS_probe_no_mtp.txt` |
+
+**Verdict:** **REAL modest ladder step** to **22.39** gen t/s (+8.5% vs C4). Joint wall only −2.6 ms (still ~53 ms ≫ T₁ 38 ms → 8CU contention remains). Higher accept rate on this probe’s prompt is a **confound** for attributing the full +8.5% to C6 alone. **Not** a path to 100; gap to eager still ~14%.
+
+**Next D2:** residual joint/contention or C5 draft cost; quality Maxwell SAR optional. For ≥100: H1/H2/H3 only.
