@@ -47,7 +47,8 @@ generate:            async one-behind sample
 | **async_eval** one-behind | **ON** | Overlaps sample with next setup — keep unless debugging |
 | **f32 SSM lifetime** | **ON** (this PR) | Correctness; small GPU tax, big CPU tax |
 | **fused2** `gdn_fused_decode` | **Auto-on** at tip (opt-out: `MLX_GDN_FUSED2=0` or `MLX_GDN_NO_FUSED2=1`) | 1 launch vs many for GDN T=1 — modest TPS |
-| **Quant fuse** QKV / in_proj / gate_up | **OFF** (`MLX_ENABLE_QUANT_FUSE=1`) | **Largest remaining “switch” on this stack** if stable |
+| **Quant fuse** attn QKV + MLP gate\|up | **OFF** unless `MLX_ENABLE_QUANT_FUSE=1` | Opt-in TPS; GDN `in_proj` **not** in this set (see below) |
+| **GDN in_proj quant fuse** | **OFF** unless `MLX_ENABLE_QUANT_FUSE` **and** `MLX_ENABLE_QUANT_FUSE_GDN=1` | Debug-only; full `qkv\|z\|b\|a` pack thrash @ temp=0.7 |
 | **Pure-graph** | **OFF** (`MLX_DECODE_GRAPH_PURE=1`) | Capture-once; note: **eager often faster on gfx1151 APU (~68 vs ~64)** |
 | **MTP** | **OFF** (head skip) | Speculative multi-token — biggest theoretical TPS if acceptance is good |
 | **KV quant** (`--kv-bits`) | Off | Memory; sometimes latency tradeoff |
@@ -97,20 +98,24 @@ Do **not** optimize blind.
 | baseline | `--raw --ignore-eos` | 256 | **27.33** | 18.2 GB | no | OK |
 | `MLX_ENABLE_QUANT_FUSE=1` | `--raw --ignore-eos` | 256 | **30.31** | 19.8 GB | no | OK |
 
-**Readout:** fixed-token raw path ~**+3 t/s (~+11%)**; short chat path ~flat (noise). Fuse holds extra concat weights (~**+1.6 GB** active). No thrash on short/temp=0 runs.
+**Readout:** fixed-token raw path ~**+3 t/s (~+11%)**; short chat path ~flat (noise). The **19.8 GB** arm is **full fuse era** (included GDN `in_proj`). Selective product fuse (attn/MLP only) field load ~**18.4 GB** active. No thrash on short/temp=0 runs.
 
 #### Field isolation — multi-turn thinking @ temp 0.7 (Maxwell SAR)
 
-Same binary/model/fused2-auto/thinking-on; only fuse env differs:
+Same model `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit`, fused2-auto, thinking-on; fuse env differs:
 
 | Cell | Fuse | temp | Result |
 |------|------|------|--------|
-| `FIELD_SAR_35B_FUSE_temp0_think` | ON | 0 | **PASS** (full SAR + Python) |
-| `FIELD_SAR_35B_FUSE_temp07_think` | ON | 0.7 | **FAIL** mid-T5 thrash (`maxwell`×~6k) |
+| `FIELD_SAR_35B_FUSE_temp0_think` | ON (full, pre-selective) | 0 | **PASS** (full SAR + Python) |
+| `FIELD_SAR_35B_FUSE_temp07_think` | ON (full GDN in_proj) | 0.7 | **FAIL** mid-T5 thrash (`maxwell`×~6k) |
 | `FIELD_SAR_35B_NOFUSE_temp07_think` | OFF | 0.7 | **PASS** (full SAR + Python) |
+| `FIELD_SAR_35B_FUSE_SAFE_temp07_think` | ON selective (attn/MLP; **GDN in_proj off**) | 0.7 | **PASS** (5 turns + Python; ~26–27 t/s; exit 0) |
+
+**SAFE log:** `docs/experiments/rocm-decode-degeneration/logs/FIELD_SAR_35B_FUSE_SAFE_temp07_think.txt`  
+(Gens: 2293 / 2634 / 2616 / 2618 / 5880 tok; no thrash; usable `numpy` Python.)
 
 **Product decision:** quant fuse remains **opt-in** (`MLX_ENABLE_QUANT_FUSE=1`).  
-**Engine fix (post-isolation):** with fuse on, **GDN in_proj is not fused** (attn QKV + MLP gate|up still fuse). GDN a/b feed softplus decay; field thrash was isolated to full qkv|z|b|a fuse under temp=0.7. Force old GDN fuse with `MLX_ENABLE_QUANT_FUSE_GDN=1` (debug only).
+**Engine fix (post-isolation):** with fuse on, **GDN in_proj is not fused** (attn QKV + MLP gate|up still fuse). GDN a/b feed softplus decay; field thrash was isolated to full qkv|z|b|a fuse under temp=0.7. Force old GDN fuse with **both** `MLX_ENABLE_QUANT_FUSE=1` and `MLX_ENABLE_QUANT_FUSE_GDN=1` (debug only).
 
 ---
 
