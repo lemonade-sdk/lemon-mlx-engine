@@ -73,3 +73,24 @@ Still ~25% short of eager. Residual:
 Changes: defer KV quant + hidden stash to end of sequential verify; `current_draft_count()` uses accept history (min 2, max n_draft_tokens). `MLX_MTP_FIXED_DRAFT=1` disables adaptive.
 
 **Review:** Adaptive did not beat fixed-2/4 on this probe; kept as cost control for longer n_draft when accept collapses. Barrier defer holds ~19.6 t/s.
+
+## C4 (parallel draft + first verify; empty State signal)
+
+| Config | gen t/s | notes |
+|--------|---------|-------|
+| C2/C3 sequential n_draft=2 | 19.64–19.72 | prior best |
+| **C4 parallel draft‖first verify** | **20.64** | side-stream draft + trunk d0 verify join |
+| eager | 26.13 | still ~21% ahead |
+
+**Code** (`generate.cpp`):
+
+1. **Parallel draft + first verify:** MTP draft chain runs on a dedicated side stream while the trunk verifies `d0` on the generation stream; join before accept decision. On accept, sequential T=1 continues for remaining tokens. Disable: `MLX_MTP_NO_PARALLEL_DRAFT=1`.
+2. **Empty `LMOutput::State` signal** for “return hidden” (no per-token `mx::array(0.0f)` dummy).
+3. Keep device `argmax` as `y_` (no host re-upload) on reject/bonus.
+4. Inter-step draft prefetch is **opt-in** (`MLX_MTP_PREFETCH=1`) — default off; host emit on this stack is too short to hide draft and post-step draft became unaccounted wall.
+
+**Warm timing note (parallel accounting):** the `draft=` timer slot includes the joint draft‖first-verify window (~55 ms); `verify=` is residual (0 on reject, ~38 ms second token on accept). Real wall step totals: acc0 ~55 ms (was ~58), acc1 ~93 ms (was ~95). Gen **20.64 t/s** vs C3 **19.6** (~+5%).
+
+**mlx-lm PR#990 contrast:** mlx-lm verifies `[confirmed, draft]` in one multi-token backbone pass with GDN `n_confirmed` rollback. Our sequential T=1 won on gfx1150 MoE (batch verify β≈1.6). C4 keeps sequential accept/early-exit but hides draft latency behind the first T=1 verify. MoE reference gains remain small (mlx-lm ~1.03–1.11× on Metal MoE); we remain below eager until draft cost collapses further or multi-token verify becomes free.
+
+Log: `C4_TPS_probe_ndraft2_parallel.txt`.

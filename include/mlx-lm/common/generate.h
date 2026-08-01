@@ -401,9 +401,21 @@ private:
     size_t accept_history_idx_ = 0;
     static constexpr int kAcceptHistorySize = 64;
 
+    // C4 optional inter-step draft prefetch (MLX_MTP_PREFETCH=1). Default off:
+    // primary C4 win is parallel draft + first verify on a side stream.
+    std::optional<mlx::core::array> pending_draft_dev_;  // d1..d_{K-1} on device
+    int pending_draft_n_ = 0;
+    bool pending_draft_valid_ = false;
+
     // MTP speculative step: generates draft tokens via MTP head,
     // verifies against trunk model, returns accepted tokens.
     std::vector<int> mtp_speculative_step();
+
+    // Run MTP draft chain for d1..d_{n_draft-1}; returns device int array
+    // shaped [n_draft-1] (empty optional if no draft slots). Uses
+    // mtp_trunk_hidden_ + y_ as d0. Resets mtp_caches_ to position 0.
+    // If async_launch, schedules with async_eval (caller must eval later).
+    std::optional<mlx::core::array> mtp_run_draft_chain(int n_draft, bool async_launch);
 
     // Record acceptance history for adaptive draft length.
     void record_acceptance(int proposed, int accepted);

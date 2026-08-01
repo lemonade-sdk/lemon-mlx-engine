@@ -173,3 +173,17 @@ env MLX_ENABLE_QUANT_FUSE=1 MLX_ENABLE_QUANT_FUSE_GDN=1 MLX_LOAD_MTP_HEAD=1 MTP_
 | eager no MTP | 26.13 | — | — | — |
 
 Logs: `C1_TPS_probe_ndraft2.txt`, `C2_TPS_probe_ndraft2.txt` (failed path), `C2_seq_TPS_probe_ndraft2.txt`.
+
+## C4 parallel draft‖first verify (2026-08-01)
+
+| Config | gen t/s | warm mean total_ms | notes |
+|--------|---------|--------------------|-------|
+| C3 adaptive n_draft=2 | 19.64 | ~86 | sequential draft then verify |
+| **C4 parallel n_draft=2** | **20.64** | **78.5** | side-stream draft ‖ trunk d0 |
+| eager | 26.13 | ~38.3 (T₁) | |
+
+C4 warm split (timer semantics changed): joint draft‖first-verify window ≈55 ms; residual verify ≈23 ms mean (0 on reject / ~38 on accept second token). Accept rate unchanged (~0.62). Smoke green (no Stream(cpu)).
+
+Flags: default on; `MLX_MTP_NO_PARALLEL_DRAFT=1` serial; `MLX_MTP_PREFETCH=1` opt-in inter-step prefetch (default off).
+
+Log: `C4_TPS_probe_ndraft2_parallel.txt`.
