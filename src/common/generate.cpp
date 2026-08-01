@@ -816,6 +816,9 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     // threw "There is no Stream(cpu, 0) in current thread" under --use-mtp.
     StreamGuard sg(generation_stream());
 
+    // C12: never start a new step with an unfinished pipelined v1.
+    if (pending_v1_) finish_pending_v1_();
+
     // Fallback to plain decode if MTP is not available on this context.
     if (!use_mtp_ || context_.get_mtp_head_fn == nullptr || context_.embed_fn == nullptr
         || context_.apply_lm_head_fn == nullptr) {
@@ -976,6 +979,15 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
 
             // Accept decision for d1 vs trunk_next after d0.
+            // C12: pipeline v1 under host emit of d0 (γ=1 accept only).
+            // Measured REGRESS on gfx1150 chat (host emit too short to hide v1;
+            // finish_pending_v1 on d1 drain adds critical-path tax). Opt-in:
+            // MLX_MTP_PIPELINE_V1=1. Escape remains MLX_MTP_NO_PIPELINE_V1=1.
+            static const bool kPipelineV1 =
+                std::getenv("MLX_MTP_PIPELINE_V1") != nullptr &&
+                std::getenv("MLX_MTP_NO_PIPELINE_V1") == nullptr;
+            bool pipelined_v1 = false;
+
             if (draft_tokens.size() >= 2) {
                 int32_t trunk_next = pred.data<int32_t>()[0];
                 if (trunk_next == static_cast<int32_t>(draft_tokens[1])) {
@@ -1012,6 +1024,15 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
                                 y_ = LMInput::Text(mx::reshape(pred2, {1}));
                                 break;
                             }
+                        } else if (kPipelineV1 && n_draft == 2 && i == 1) {
+                            // C12: do not wait for residual pred2 — return d0 now;
+                            // finish_pending_v1_() runs when draining buffered d1
+                            // (host emit of d0 overlaps GPU v1).
+                            pending_v1_pred_ = pred2;
+                            pending_v1_state_ = r2.state;
+                            pending_v1_ = true;
+                            pipelined_v1 = true;
+                            accepted = 1;
                         } else {
                             y_ = LMInput::Text(mx::reshape(pred2, {1}));
                             accepted = n_draft - 1;
@@ -1028,18 +1049,26 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
                 accepted = 0;
             }
 
-            maybe_quantize_kv_cache(
-                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
-            if (last_st.has_value()) stash_hidden_from(*last_st);
-            // C8: kick residual accept-path T=1 (y_/pred2) immediately so it can
-            // run under host emit of d0 (+ buffered drafts). Do not force a full
-            // mx::eval here — MTP_TIMING used to barrier-sync residual into the
-            // step wall and destroy hide-under-emit (opt-in: MTP_TIMING_SYNC=1).
-            mx::async_eval(y_.tokens);
+            if (!pipelined_v1) {
+                maybe_quantize_kv_cache(
+                    cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+                if (last_st.has_value()) stash_hidden_from(*last_st);
+                // C8: kick residual accept-path T=1 (y_/pred2) immediately so it can
+                // run under host emit of d0 (+ buffered drafts). Do not force a full
+                // mx::eval here — MTP_TIMING used to barrier-sync residual into the
+                // step wall and destroy hide-under-emit (opt-in: MTP_TIMING_SYNC=1).
+                mx::async_eval(y_.tokens);
+            } else {
+                // Residual y_ deferred until finish_pending_v1_(); still schedule
+                // the in-flight pred graph without a host barrier.
+                if (pending_v1_pred_.has_value()) {
+                    mx::async_eval(*pending_v1_pred_);
+                }
+            }
             if (kMtpTiming) {
                 static const bool kTimingSync =
                     std::getenv("MTP_TIMING_SYNC") != nullptr;
-                if (kTimingSync) mx::eval(y_.tokens);
+                if (kTimingSync && !pipelined_v1) mx::eval(y_.tokens);
                 t_verify = std::chrono::steady_clock::now();
             }
         } else {
@@ -1375,6 +1404,39 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     return {draft_tokens[0]};
 }
 
+void TokenIterator::finish_pending_v1_() {
+    if (!pending_v1_ || !pending_v1_pred_.has_value()) {
+        pending_v1_ = false;
+        pending_v1_pred_.reset();
+        pending_v1_state_.reset();
+        return;
+    }
+    // Same stream as generate / mtp_speculative_step (ROCm TLS encoders).
+    StreamGuard sg(generation_stream());
+#if defined(MLX_BUILD_ROCM)
+    mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+    mx::eval(*pending_v1_pred_);
+    y_ = LMInput::Text(mx::reshape(*pending_v1_pred_, {1}));
+    if (pending_v1_state_.has_value()) {
+        state_ = pending_v1_state_;
+        // Same lazy trunk-hidden stash as mtp_speculative_step (C7).
+        if (pending_v1_state_->hidden_intermediates.has_value()) {
+            auto trunk_h = pending_v1_state_->hidden_intermediates.value();
+            int tlen = trunk_h.shape(1);
+            int p = std::max(0, tlen - 1);
+            mtp_trunk_hidden_ = mx::slice(
+                trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+        }
+    }
+    maybe_quantize_kv_cache(
+        cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+    mx::async_eval(y_.tokens);
+    pending_v1_ = false;
+    pending_v1_pred_.reset();
+    pending_v1_state_.reset();
+}
+
 void TokenIterator::record_acceptance(int proposed, int accepted) {
     uint8_t val = static_cast<uint8_t>(accepted);
     accept_history_[accept_history_idx_ % kAcceptHistorySize] = val;
@@ -1428,19 +1490,26 @@ void TokenIterator::measure_prefill_boundary_() {
 
 std::optional<int> TokenIterator::next() {
     if (max_tokens_.has_value() && token_count_ >= max_tokens_.value()) {
+        // Complete any in-flight v1 so KV/cache stay consistent even if we
+        // stop without emitting the buffered draft token.
+        if (pending_v1_) finish_pending_v1_();
         return std::nullopt;
     }
 
     // MTP path: drain buffer first, then run speculative step.
     if (use_mtp_) {
         if (!draft_buffer_.empty() && draft_buffer_idx_ < draft_buffer_.size()) {
-            // Return a buffered accepted token; do NOT touch y_.
+            // C12: finish deferred v1 before emitting buffered d1 (host already
+            // had a chance to emit d0 while v1 ran).
+            if (pending_v1_) finish_pending_v1_();
+            // Return a buffered accepted token; do NOT touch y_ further.
             int tok = draft_buffer_[draft_buffer_idx_++];
             token_count_++;
             return tok;
         }
 
-        // Buffer exhausted — run new MTP speculative step.
+        // Buffer exhausted — complete any orphan pending v1, then new step.
+        if (pending_v1_) finish_pending_v1_();
         draft_buffer_.clear();
         draft_buffer_idx_ = 0;
         auto accepted = mtp_speculative_step();
@@ -1448,7 +1517,10 @@ std::optional<int> TokenIterator::next() {
         // Do not hard-sync y_ here: C4 may have async-prefetched the next draft
         // that depends on y_; a full barrier would collapse the overlap with
         // host emit. y_ is materialised when the next draft/eval needs it.
-        mx::async_eval(y_.tokens);
+        // C12: when v1 is still pending, y_ is not set yet — skip async_eval.
+        if (!pending_v1_) {
+            mx::async_eval(y_.tokens);
+        }
         measure_prefill_boundary_();
         return accepted.empty() ? std::nullopt : std::optional<int>(accepted[0]);
     }

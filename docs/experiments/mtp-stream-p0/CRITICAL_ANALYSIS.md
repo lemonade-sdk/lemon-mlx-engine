@@ -229,3 +229,23 @@ Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.
 **Verdict:** **FAIL / slight REGRESS** vs C7 (−0.40 gen t/s). Accept dropped (0.85→0.72) so tokens/step fell enough to erase any step-wall savings. Joint timer slot **inflated** (38→60 ms) — fewer experts did **not** shrink the draft‖first-verify window on this stack (argpartition/gather shape change + accept pattern; not a free δ cut). Flag remains **opt-in default-off** for future top_k A/B; do **not** ship top_k=2 as default.
 
 **Implication:** Confirms post-C7 plateau — draft MoE expert count is not the remaining lever to beat ~27.3 on gfx1150 35B. Next real cuts: C5 fused/cheaper lm_head only if joint still draft-bound under a new measurement; otherwise H1/H2/H3 for ≥100.
+
+## C12 pipeline second-verify under d0 emit (2026-08-01 fire)
+
+**Hypothesis:** On γ=1 accept, current path finishes joint (draft‖v0) **and** v1 (feed d1) before returning d0 to the host. Host is idle during v1 (~T₁). Kick v1 async after match, return d0 immediately, complete v1 when draining buffered d1 so host emit of d0 overlaps GPU v1.
+
+**Code** (`generate.cpp` / `generate.h`):
+
+1. On parallel-path accept with `n_draft==2`, store `pred2` + state without `eval`; set `pending_v1_`.
+2. `finish_pending_v1_()`: StreamGuard, eval pred, set `y_`, stash hidden, quantize KV.
+3. `next()` finishes pending v1 before emitting buffered d1 / starting a new step / hitting max_tokens.
+4. **Default OFF** after measure: enable with `MLX_MTP_PIPELINE_V1=1`.
+
+### D3 256-tok measure (Fourier-style, n_draft=2, full quant fuse, gfx1150)
+
+| Config | gen t/s | warm mean accept | notes | log |
+|--------|---------|------------------|-------|-----|
+| **C7** (no pipeline) | **27.34** | 0.854 | best | `C7_TPS_probe_ndraft2.txt` |
+| **C12** pipeline v1 ON | **25.84** | 0.814 | **REGRESS** −1.5 t/s | `C12_TPS_probe_ndraft2_pipeline_v1.txt` |
+
+**Verdict:** **FAIL / REGRESS.** Chat host emit of d0 is far shorter than v1 (~T₁), so the overlap wins nothing; finishing v1 on the d1-drain critical path **splits** what was a single GPU burst + fast dual emit into GPU → emit d0 → GPU finish → emit d1, adding host/guard tax. Step timers look “faster” only because v1 left the timed region. Keep code for stacks with heavy host emit; **do not default on** for gfx1150 chat. Ladder best remains **C7 27.34**.

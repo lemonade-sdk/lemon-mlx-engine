@@ -196,6 +196,7 @@ Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 | C2 no-capture batch verify | **11.78** t/s regression |
 | C4 prefetch default | **19.42** t/s regression (flag remains opt-in off) |
 | **C11** `MLX_MTP_DRAFT_TOPK=2` (draft MoE routing shortcut) | **26.94** gen t/s vs C7 **27.34**; accept 0.85→0.72; joint 38→60 ms — **regress**; flag opt-in off |
+| **C12** pipeline v1 under d0 emit (`MLX_MTP_PIPELINE_V1`) | **25.84** gen t/s vs C7 **27.34** — **regress**; host emit too short; default off |
 | Auto-disable / LoopBrake | **HARD BAN** |
 
 ### Next D2 candidates (see §0.5)
@@ -237,10 +238,10 @@ When 5.1 impossible: main agent / human must choose **H1/H2/H3** or bar change �
 
 ## 6. Next fire recommendation
 
-1. **Stop t/s micro-opt thrash** on gfx1150 35B — plateau **~27 t/s** (C11 top_k shortcut also failed).  
+1. **Stop t/s micro-opt thrash** on gfx1150 35B — plateau **~27 t/s** (C11 top_k + C12 pipeline-v1 both failed).  
 2. For ≥100 bar: **H1** faster GPU with 35B MTP, or **H2** small MTP (0.8B already **100.045** productive), or **H3** multi-seq.  
 3. Do **not** claim stop on 0.8B eager-only (no `--use-mtp` head).  
-4. Optional: Maxwell quality under C7; C5 only if a new microbench shows draft still long-pole after C7. No auto-fallback “win”.
+4. Optional: Maxwell quality under C7. Further 35B micro-opts need a proven long-pole; free-draft sequential verify already ≈ eager ceiling. No auto-fallback “win”.
 
 ---
 

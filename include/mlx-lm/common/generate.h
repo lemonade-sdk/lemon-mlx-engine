@@ -407,6 +407,14 @@ private:
     int pending_draft_n_ = 0;
     bool pending_draft_valid_ = false;
 
+    // C12: pipeline second T=1 verify (v1) under host emit of d0 on γ=1 accept.
+    // After joint draft‖v0 match, kick call_fn(d1) without waiting; finish when
+    // draining buffered d1 (or before the next step / stop). Opt-in:
+    // MLX_MTP_PIPELINE_V1=1 (default off — gfx1150 chat regressed vs C7).
+    bool pending_v1_ = false;
+    std::optional<mlx::core::array> pending_v1_pred_;
+    std::optional<LMOutput::State> pending_v1_state_;
+
     // MTP speculative step: generates draft tokens via MTP head,
     // verifies against trunk model, returns accepted tokens.
     std::vector<int> mtp_speculative_step();
@@ -416,6 +424,9 @@ private:
     // mtp_trunk_hidden_ + y_ as d0. Resets mtp_caches_ to position 0.
     // If async_launch, schedules with async_eval (caller must eval later).
     std::optional<mlx::core::array> mtp_run_draft_chain(int n_draft, bool async_launch);
+
+    // Complete deferred v1 verify: eval pred, set y_, stash hidden, quantize KV.
+    void finish_pending_v1_();
 
     // Record acceptance history for adaptive draft length.
     void record_acceptance(int proposed, int accepted);
