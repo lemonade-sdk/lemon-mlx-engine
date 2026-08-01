@@ -573,12 +573,12 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
     }
 
     // Capture trunk hidden state at last prompt position for first MTP step.
+    // C7: keep slice lazy (materialized with first draft eval).
     if (use_mtp_ && state_.has_value() && state_->hidden_intermediates.has_value()) {
         auto trunk_h = state_->hidden_intermediates.value();  // [B, T, H]
         int last_pos = trunk_h.shape(1) - 1;
         auto h_slice = mx::slice(trunk_h, {0, last_pos, 0},
                                  {1, last_pos + 1, trunk_h.shape(2)});  // [1, 1, H]
-        mx::eval(h_slice);
         mtp_trunk_hidden_ = h_slice;
     }
 }
@@ -709,9 +709,14 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
     MTPHead* mtp_head = static_cast<MTPHead*>(context_.get_mtp_head_fn());
     if (mtp_head == nullptr) return std::nullopt;
 
-    // Fresh MTP KV for this draft block (independent of trunk cache).
-    for (auto& c : mtp_caches_) {
-        c.set_position(0);
+    // C7: MTP KV only needed when drafting ≥2 tokens in one chain (n_draft≥3).
+    // Default γ≈1 path is n_draft=2 → a single draft step; skip cache reset +
+    // update (rope offset 0, no write) to cut draft bandwidth/launches.
+    const bool use_mtp_kv = (n_draft > 2) && !mtp_caches_.empty();
+    if (use_mtp_kv) {
+        for (auto& c : mtp_caches_) {
+            c.set_position(0);
+        }
     }
 
     auto hidden = mtp_trunk_hidden_.has_value()
@@ -732,8 +737,11 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
 
     for (int i = 1; i < n_draft; ++i) {
         auto prev_embed = context_.embed_fn(prev_tok_arr);
-        hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{},
-                            mtp_caches_.empty() ? nullptr : &mtp_caches_[0]);
+        // Pass MTP KV only when a later draft step will read it (i < n_draft-1).
+        KVCache* mtp_cache = (use_mtp_kv && i < n_draft - 1)
+            ? &mtp_caches_[0]
+            : nullptr;
+        hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{}, mtp_cache);
         auto norm_h = mtp_head->apply_output_norm(hidden);
         auto logits = context_.apply_lm_head_fn(norm_h);
         prev_tok_arr = mx::reshape(
@@ -842,7 +850,8 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         int tlen = trunk_h.shape(1);
         int p = std::max(0, tlen - 1);
         auto h_slice = mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
-        mx::eval(h_slice);
+        // C7: leave lazy — next draft's async_eval/eval pulls this; avoid
+        // a hard per-step barrier after every speculative step.
         mtp_trunk_hidden_ = h_slice;
     };
 
@@ -1178,7 +1187,7 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
                 if (p < 0) p = 0;
                 auto h_slice =
                     mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
-                mx::eval(h_slice);
+                // C7: lazy stash (same as sequential path).
                 mtp_trunk_hidden_ = h_slice;
             }
         };

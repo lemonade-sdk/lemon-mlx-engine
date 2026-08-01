@@ -129,3 +129,15 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **22.39** 
 **Verdict:** **REAL modest ladder step** to **22.39** gen t/s (+8.5% vs C4). Joint wall only −2.6 ms (still ~53 ms ≫ T₁ 38 ms → 8CU contention remains). Higher accept rate on this probe’s prompt is a **confound** for attributing the full +8.5% to C6 alone. **Not** a path to 100; gap to eager still ~14%.
 
 **Next D2:** residual joint/contention or C5 draft cost; quality Maxwell SAR optional. For ≥100: H1/H2/H3 only.
+
+## C7 (skip single-step MTP KV + lazy hidden stash; 2026-08-01)
+
+**Code** (`generate.cpp`):
+
+1. **`n_draft==2` (γ≈1):** do not reset/update MTP layer KV — single draft step never rereads cache (rope offset 0, `cache=nullptr`).
+2. **Deeper n_draft:** keep KV only for steps with a later draft consumer (`i < n_draft-1`).
+3. **Lazy `mtp_trunk_hidden_` stash:** drop per-step `mx::eval(h_slice)`; next draft eval pulls the slice.
+
+**Smoke** (`C7_smoke_ndraft2_max32.txt`, 32-tok): green, no Stream(cpu). Warm joint `draft=` **~38 ms** (was C6 ~53 ms) — reject total ≈ T₁; accept total ~73 ms. Short-run Generation **~29 t/s** (27 tok) is **not** a 256-tok claim vs C6 **22.39**.
+
+**Next:** D3 256-tok measure for C7.

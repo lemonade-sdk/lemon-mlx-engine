@@ -184,6 +184,7 @@ Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 | **C3** | Adaptive n_draft + deferred barriers | hold **~19.6** |
 | **C4** | Parallel draft ‖ first verify | **20.64** t/s |
 | **C6** | Eval d0 before draft launch; device draft slices; no double-eval fill | **22.39** gen t/s (256); joint 55→53 ms; see CRITICAL C6 |
+| **C7** | Skip MTP KV on γ=1 draft; lazy trunk-hidden stash | Smoke: joint ~38 ms (was ~53); **256 TBD D3** |
 
 ### Failed / rejected experiments
 
@@ -231,10 +232,10 @@ When 5.1 impossible: keep iterating real cuts; main agent / human must choose H1
 
 ## 6. Next fire recommendation
 
-1. **D2 residual:** attack remaining joint ~53 ms (contention / single-stream schedule) or true C5 draft kernel cost.  
-2. **D3** after each cut: 256-tok with same prompt family when comparing.  
+1. **D3 C7:** 256-tok measure (expect joint≈T₁ if smoke holds).  
+2. Further: true C5 draft lm_head residual if still below eager.  
 3. Do **not** implement auto-fallback.  
-4. Plateau is ~22–26 t/s on this device; escalate H1/H2 for any ≥100 claim.
+4. Plateau still ≪100 on gfx1150 35B; escalate H1/H2 for ≥100.
 
 ---
 
