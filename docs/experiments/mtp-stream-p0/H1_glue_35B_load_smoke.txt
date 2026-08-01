@@ -1,0 +1,33 @@
+START 2026-08-01T12:09:39-07:00 tip=7688d95 H1 glue on 35B
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp] step=1 n_draft=2 accepted=1 drafts=[12675,1017]
+[mtp-t] step=1 n_draft=2 accepted=1 draft=385857us verify=4948us commit=35us total=390841us
+Hi there[mtp] step=2 n_draft=2 accepted=1 drafts=[11,1204]
+[mtp-t] step=2 n_draft=2 accepted=1 draft=69814us verify=3596us commit=18us total=73428us
+, how[mtp] step=3 n_draft=2 accepted=1 drafts=[513,488]
+[mtp-t] step=3 n_draft=2 accepted=1 draft=69223us verify=3636us commit=16us total=72877us
+ are you[mtp] step=4 n_draft=2 accepted=1 drafts=[3242,30]
+[mtp-t] step=4 n_draft=2 accepted=1 draft=68910us verify=3344us commit=17us total=72271us
+ today?[mtp] step=5 n_draft=2 accepted=1 drafts=[248046,198]
+[mtp-t] step=5 n_draft=2 accepted=1 draft=70992us verify=3857us commit=36us total=74887us
+
+Prompt:     18 tokens, 23.1881 tokens/s, 0.776262s
+Generation: 9 tokens, 30.6509 tokens/s, 0.29363s
+
+
+> EXIT:0

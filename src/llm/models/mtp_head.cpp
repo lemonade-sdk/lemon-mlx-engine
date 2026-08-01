@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace mx = mlx::core;
@@ -358,13 +359,16 @@ void MTPHead::load_mtp_weights(
         }
     }
 
-    // HF / guru87-style MTP heads store RMSNorm as (γ − 1). mlx-community
-    // converted packages (e.g. 4B-MTP-4bit) already bake +1 into the file.
-    // Without the shift, draft logits are garbage and accept rate sticks at 0
-    // (field: 0.8B H2 n_draft=2, KEEP_BF16 and runtime-quant both accept=0).
-    // Detect unshifted raw: pre_fc_norm_hidden mean is near 0 / negative
+    // Glue: HF / guru87-style MTP heads store RMSNorm as (γ − 1). Official
+    // mlx-community *and* LemonMLXE converted packages usually bake +1 already.
+    // Without the shift, draft logits are garbage and accept sticks at 0
+    // (field: 0.8B H2 n_draft=2). LemonMLXE 35B field load: norm_shifted=0
+    // (pre_mean already ≥0.2) — glue correctly no-ops.
+    // Detect unshifted raw: pre_fc_norm_hidden mean near 0 / negative
     // (shifted packages sit ~0.5–1.0). Escape: MLX_MTP_NO_NORM_SHIFT=1.
+    // Never force +1 on already-shifted heads (double-shift kills accept).
     int norm_shifted = 0;
+    float pre_mean_logged = std::numeric_limits<float>::quiet_NaN();
     static const bool kNoNormShift =
         std::getenv("MLX_MTP_NO_NORM_SHIFT") != nullptr;
     if (!kNoNormShift) {
@@ -376,6 +380,7 @@ void MTPHead::load_mtp_weights(
                 mx::mean(mx::astype(*pre_it->second, mx::float32));
             mx::eval(mean_arr);
             const float pre_mean = mean_arr.item<float>();
+            pre_mean_logged = pre_mean;
             if (pre_mean < 0.2f) {
                 for (auto& [k, ptr] : wmap) {
                     if (ptr == nullptr) continue;
@@ -401,14 +406,22 @@ void MTPHead::load_mtp_weights(
                         }
                     }
                     if (!shift_eval.empty()) mx::eval(shift_eval);
-                    std::cerr << "[MTP] RMSNorm +1 shift applied to "
+                    std::cerr << "[MTP] RMSNorm +1 glue applied to "
                               << norm_shifted
                               << " tensors (pre_fc_norm_hidden mean was "
                               << pre_mean << "; raw HF/guru87 style)\n";
                 }
+            } else {
+                std::cerr << "[MTP] RMSNorm glue: no shift needed "
+                             "(pre_fc_norm_hidden mean="
+                          << pre_mean
+                          << " ≥ 0.2; package already γ-style / converted)\n";
             }
         }
+    } else {
+        std::cerr << "[MTP] RMSNorm glue skipped (MLX_MTP_NO_NORM_SHIFT=1)\n";
     }
+    (void)pre_mean_logged;
 
     if (auto_quantized > 0) {
         // Materialize packed weights + scales so load does not leave lazy graphs.
