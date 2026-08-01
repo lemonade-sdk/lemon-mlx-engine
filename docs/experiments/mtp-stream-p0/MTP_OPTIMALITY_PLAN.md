@@ -1,9 +1,106 @@
 # MTP Optimality Plan (fix/mtp-stream-p0)
 
-**Date:** 2026-08-01  
-**Model bar:** `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit` on gfx1150  
-**Branch tip at plan write:** see git log on this file  
-**Goal:** make MTP either beat or auto-fallback vs full-fuse eager (~26 t/s), without reintroducing LoopBrake or dual-loading two 35B processes.
+**Date:** 2026-08-01 (D1 path-to-100 revision)  
+**Model bar:** `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit` on **gfx1150** (AMD Radeon 890M, **cus=8**, low_cu iGPU)  
+**Branch tip at this revision:** see git log on this file  
+**User stop bar (scheduler):** **measured MTP Generation t/s ≥ 100** on the Generation: line (real probe log under this dir), smoke green (no Stream(cpu)), MICROBENCH/CRITICAL_ANALYSIS updated, quintuple supervisors PASS on stop claim.
+
+**HARD BAN (never implement as “win”):** LoopBrake / phrase-brake / early-stop seatbelts; auto-disable MTP when slow; silent eager fallback as fix; max_tokens tricks; inventing ≥100 t/s without a probe log.
+
+---
+
+## 0. Executive: path to 100 t/s (this fire’s D1)
+
+### 0.1 Measured single-stream ladder (256-tok, no-think, full quant fuse, gfx1150)
+
+| Config | gen t/s | Notes |
+|--------|---------|-------|
+| Eager (no MTP path) | **26.13** | Single-seq product baseline |
+| MTP pre-C1 (dense BF16 draft) | 6.05 | Draft dominated (~157 ms) |
+| MTP C1 (runtime quant head) | 15.87 | draft 157→24 ms |
+| MTP C2 sequential T=1 verify | 19.72 | verify 86→66 ms |
+| MTP C3 adaptive + barrier defer | 19.64 | no regression; control for deep n_draft |
+| **MTP C4 parallel draft ‖ first verify** | **20.64** | best MTP so far (`C4_TPS_probe_ndraft2_parallel.txt`) |
+| C4 + inter-step prefetch (`MLX_MTP_PREFETCH=1`) | 19.42 | **regression** vs C4 default; default remains off (`C4_TPS_probe_ndraft2_prefetch.txt`) |
+
+**Gap to stop bar:** 100 / 20.64 ≈ **4.8×** above best MTP; 100 / 26.13 ≈ **3.8×** above eager T=1.
+
+### 0.2 Bandwidth / speculative theory (why 100 is not a micro-opt)
+
+mlx-lm MTP form ([PR #990](https://github.com/ml-explore/mlx-lm/pull/990)):
+
+\[
+\text{speedup} \approx \frac{1+p}{\beta + \delta}
+\]
+
+with \(p\) = mean accepted draft tokens per step (per true draft slot rate × slots), \(\beta = T_{\text{verify}}/(K\cdot T_1)\), \(\delta = T_{\text{draft}}/T_1\), \(T_1 \approx 38.3\,\text{ms}\) at 26.13 t/s.
+
+**Field (post-C2/C4, K=2 ≈ one draft slot):**
+
+| Quantity | Ballpark | Source |
+|----------|----------|--------|
+| \(T_1\) | ~38.3 ms | eager 26.13 t/s |
+| draft residual after C4 hide | still ~20–55 ms joint window | C4 timers |
+| T=1 trunk verify | ~35–40 ms | ≈ one eager step |
+| \(p\) (n_draft=2) | ~0.6–0.7 | accept histograms |
+| \(\beta\) multi-token batch verify (pre-C2) | ~1.5–1.7 | MICROBENCH VERIFY_COST |
+
+**Implications:**
+
+1. **Even if draft were free** (\(\delta=0\)) and every draft accepted (\(p=1\)) with \(\beta=1\): speedup ≤ **2×** → ceiling **~52 t/s** on this device — **still &lt; 100**.
+2. **Even if draft free, p→∞ theoretically impossible** on single-stream: each accepted token still needs trunk-equivalent work somewhere; MoE multi-token verify does **not** reuse weights the way dense does (community consensus: MoE verify pulls different experts → near-linear traffic).
+3. mlx-lm MoE field: Qwen3.5-35B-A3B 4-bit M4 Pro **~1.03–1.11×** only when overhead is tiny — dense 27B sees **~1.5×**. OptiQ: γ=1 optimal; adaptive depth often **loses**. Our C4 **0.79× eager** is still a code-tax problem, but closing to 1.0–1.2× eager does **not** reach 100.
+4. **100 t/s single-seq on this 35B@gfx1150 is not a realistic MTP optimality target** given measured \(T_1\) and MoE physics. Claiming it without a probe log is banned; inventing it is banned.
+
+### 0.3 Hardware ceiling (honest)
+
+| Layer | Estimate | Basis |
+|-------|----------|--------|
+| **Measured eager single-seq** | **~26 t/s** | `TPS_probe_no_mtp.txt` |
+| **Measured best MTP single-seq** | **~20.6 t/s** | C4 parallel probe |
+| **Optimistic MTP single-seq (software)** | **~28–40 t/s** | If draft ≪ T₁ and p≳0.8 and verify ≈ T₁ per emitted token → approach or slightly beat eager; still ≪100 |
+| **Hard single-seq AR ceiling (this iGPU)** | **≪ 100 t/s** for 35B-class MoE | 8 CU, low_cu, ~22 GB weights resident; bandwidth-bound decode |
+| **Aggregate 100 t/s (product)** | Possible only as **multi-seq / continuous-batch server throughput**, smaller model, or different GPU | See §0.4 |
+
+Device stamp from probes: `gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB` · model mem ~21.9 GB with quant MTP head.
+
+### 0.4 What *would* make Generation or product ≥100 t/s real
+
+Ranked **required** changes (any one class may suffice; micro-opts alone will not):
+
+| Path | What changes | Fits stop bar wording? |
+|------|----------------|------------------------|
+| **H1 — Faster T=1 device** | Discrete GPU / higher-bandwidth ROCm target so eager alone is ≥100 (then MTP optional) | Yes if same model measured on documented device |
+| **H2 — Smaller model** | e.g. dense 4B–9B or much smaller MoE where eager already 50–150 t/s on this iGPU | Yes if plan documents measured target model |
+| **H3 — Aggregate / continuous batch** | Server multi-request token throughput (sum gen tokens / wall) ≥100 while single-seq still ~20–40 | **Only if** stop bar is redefined; current bar is single-process Generation: line |
+| **H4 — Speculative miracle (not expected)** | Draft free + multi-token verify free (dense-like) + p≈K−1 with large K | Contradicted by MoE β≈1.5–1.7 and δ history; do not plan on this |
+
+**Documented decision for this branch:** keep measuring **single-seq Generation t/s** on LemonMLXE 35B gfx1150; **do not fake 100**. Continue real throughput cuts toward **max single-seq MTP** (close gap to eager, then beat eager if physics allows). When software plateau is clear, stop claim for “100 on this stack” is **FAIL with hardware ceiling** — escalate to H1/H2 or renegotiate bar (not seatbelt).
+
+### 0.5 Still-valuable single-seq code cuts (toward max MTP, not fake 100)
+
+Priority order for **D2** fires (never disable MTP):
+
+| ID | Cut | Why |
+|----|-----|-----|
+| **C5** | **Cheaper draft `lm_head`** — top-k / vocab slice / shared fused head path; keep argmax on device | Residual draft still tens of ms; full vocab each draft token |
+| **C6** | **Fewer host barriers** — collapse `eval`/`item` in draft+accept; keep one-behind async where safe | Hard barriers kill overlap on ROCm |
+| **C7** | **Draft MoE kernel path** — ensure quant gather_qmm / fused experts on all draft linears; avoid accidental dense | C1 partial; audit remaining dense_kept=7 |
+| **C8** | **Verify path polish** — keep sequential T=1 default; only re-open batch verify if β→1 measured | C2 already won; don’t regress |
+| **C9** | **Quality / Maxwell SAR** under C1+C2+C4 at temp 0 and 0.7 | Throughput without correctness is not product |
+
+**Rejected as “wins”:** auto-disable MTP (HARD BAN); LoopBrake; n_draft gaming; claiming prefetch win (measured 19.42 &lt; 20.64).
+
+### 0.6 Stop checklist (scheduler)
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | Measured MTP Generation t/s **≥ 100** on LemonMLXE 35B (or documented different measured target) with `--use-mtp` + head loaded; probe under this dir | **UNMET** (best **20.64**) |
+| 2 | Smoke green (no Stream(cpu)) | met on C1–C4 probes |
+| 3 | MICROBENCH / CRITICAL_ANALYSIS include the ≥100 result | **UNMET** |
+| 4 | Quintuple supervisors PASS on stop claim | N/A until (1) |
+
+If (1) is impossible on gfx1150 35B: **report ceiling**, continue real C5+ work or H1/H2 — **never invent numbers**.
 
 ---
 
@@ -14,44 +111,22 @@
 | Item | Detail |
 |------|--------|
 | PR | [ml-explore/mlx-lm#990](https://github.com/ml-explore/mlx-lm/pull/990) — “Native MTP speculative decoding (Qwen3.5/3.6)” |
-| CLI | `mlx_lm.generate --mtp` / `mlx_lm.server --mtp` (opt-in; mirrors separate-drafter style flags) |
-| Core API | `mtp_generate_step()` in `generate.py`: draft via MTP head, verify with backbone `[confirmed, draft]`, GDN `n_confirmed` snapshot + rollback on reject |
-| Head shape | One extra transformer layer: fuse `pre_fc_norm(h_t)` + `pre_fc_norm(embed(t+1))` → MTP layer → **shared `lm_head`** |
-| Checkpoint | Must **preserve** `mtp.*` weights; historical sanitize stripped them (`"mtp." not in k`) |
+| CLI | `mlx_lm.generate --mtp` / `mlx_lm.server --mtp` (opt-in) |
+| Core API | `mtp_generate_step()`: draft via MTP head, verify backbone `[confirmed, draft]`, GDN `n_confirmed` snapshot + rollback |
+| Head shape | Fuse norms + embed → MTP layer → **shared `lm_head`** |
 | Dense result | Qwen3.5/3.6-27B 4-bit M4 Pro: ~15.3 → ~23–24.6 t/s (**~1.5–1.57×**), accept ~80–88% (temp=0) |
-| MoE result | Qwen3.5-35B-A3B 4-bit M4 Pro: 85.3 → 87.9 t/s (**~1.04×**); M2 Ultra 8-bit ~1.11× — **marginal** |
-| Server | Dynamic MTP when solo request; batch path falls back / switches |
-| Follow-ups | Probabilistic accept `min(1, p_t/p_d)` for temp>0; residual sampling on reject; exclude `mtp.fc` (sometimes all `mtp.*`) from quant debates |
-
-Community notes on MoE:
-
-- Bandwidth model (PR discussion): `speedup ≈ (1+p) / (β+δ)` with `β = T_verify / T_eager`, `δ = T_mtp_head / T_eager`.
-- On MoE, multi-token **verify tends to touch different experts** → near-linear memory traffic (unlike dense, where K-token verify reuses the same weights).
-- Debate on “physically impossible for single-stream MoE MTP” vs measured small wins (~1.05–1.18× with good accept). Consensus: **dense wins big; MoE wins only when verify is cheap relative to baseline and accept is high**.
+| MoE result | Qwen3.5-35B-A3B 4-bit M4 Pro: ~85.3 → ~87.9 t/s (**~1.04×**); M2 Ultra 8-bit ~1.11× — **marginal** |
+| Bandwidth model | `speedup ≈ (1+p)/(β+δ)`; MoE multi-token verify ≈ linear expert traffic |
 
 Related:
 
-- [mlx-vlm#981](https://github.com/Blaizzy/mlx-vlm/issues/981): mlx-lm server also has **classic** speculative decode: `--draft-model` + `--num-draft-tokens`.
-- [EAGLE-3 prototype discussion](https://github.com/ml-explore/mlx-lm/discussions/890): hidden-state draft without separate full model (different path).
-- [mlx-serve](https://github.com/ml-explore/mlx/discussions/654) (community): claims native MTP heads for Qwen 3.6 ~1.1–2.1× depending on workload.
+- [mlx-vlm#981](https://github.com/Blaizzy/mlx-vlm/issues/981): classic `--draft-model` speculative decode on server
+- OptiQ MTP: γ=1 default/optimal; adaptive depth often −4–17%; skip MTP when base already fast (product policy — **not** our stop-bar “fix”)
+- Community: dense wins big; MoE wins only when verify cheap and accept high ([LocalLLaMA / PR discussion](https://www.reddit.com/r/LocalLLaMA/comments/1rzntv5/multitoken_prediction_mtp_for_qwen35_is_coming_to/))
 
-### 1.2 OptiQ / Apple Silicon practice
+### 1.2 Implication for 100 t/s
 
-Source: [mlx-optiq MTP docs](https://mlx-optiq.com/docs/mtp)
-
-| Finding | Implication for us |
-|---------|-------------------|
-| Enable with `--mtp` for bundled Qwen MTP head | Same product shape as our `--use-mtp` |
-| **γ (depth) = 1 default and optimal on Metal** | K-token verify scales ~linearly with K; γ≥2 often loses |
-| Adaptive depth (raise/lower K) **lost 4–17%** | Do not invest in fancy adaptive until base step is faster than eager |
-| Skip MTP when base already fast (0.8B/2B regress) | **Auto-disable / fallback** is first-class product behavior |
-| Qwen3.6-27B dense ~1.40× greedy | Ceiling for *dense*; our target is MoE 35B-A3B on ROCm |
-| MTP head in quants: 4-bit proj + BF16 final where needed | Align with quant policy; avoid accidental full dequant thrash |
-
-### 1.3 Broader MTP (context only)
-
-- Training-time multi-token targets vs inference drafter: [Raschka gallery](https://sebastianraschka.com/llm-architecture-gallery/mtp/), Nemotron / Gemma-4 assistant drafters (external small model).
-- Gemma-4 uses **separate `-assistant` drafter**, not bundled MTP head — different codepath (ignore for Qwen3.6 MoE bar).
+Reference stacks that already run **~85–90 t/s eager** on Apple Silicon MoE still only add **~1.05×** with MTP. Hitting **100** there is “slightly better metal + small MTP win,” not a 4× software miracle. Our gfx1150 eager is **26**, so the same relative MTP gains yield **~27–30 t/s**, not 100.
 
 ---
 
@@ -61,134 +136,103 @@ Source: [mlx-optiq MTP docs](https://mlx-optiq.com/docs/mtp)
 
 | Ours | mlx-lm / OptiQ |
 |------|----------------|
-| `MLX_LOAD_MTP_HEAD=1` (load/build head) | Weights present + `--mtp` |
-| `--use-mtp` (chat/server) | `--mtp` |
-| `--n-draft N` (chat, default **1**); server `--n-draft-tokens` default **3** | Implicit depth often **1** draft (+ confirm); OptiQ γ=1 |
-| `MTP_DEBUG=1`, `MTP_TIMING=1` | Engine counters `drafts_accepted/attempted` |
-| `StreamGuard` on `mtp_speculative_step` | N/A (Metal default stream) |
-| Quant fuse: `MLX_ENABLE_QUANT_FUSE` (+ `_GDN`) orthogonal | Weight quant fine with MTP |
+| `MLX_LOAD_MTP_HEAD=1` | Weights present + `--mtp` |
+| `--use-mtp` | `--mtp` |
+| `--n-draft N` (chat default **1**); server `--n-draft-tokens` default **3** | Often γ≈1 |
+| `MTP_DEBUG=1`, `MTP_TIMING=1` | Engine accept counters |
+| `StreamGuard` on `mtp_speculative_step` | Metal default stream |
+| Quant: runtime quant MTP head (C1); `MLX_MTP_KEEP_BF16` / `MLX_MTP_DEQUANT` escapes | quant_predicate debates |
 
-Semantics (our engine, from README): `n_draft_tokens` = block size = **d0** (already sampled trunk token, trusted) + **N−1** drafted tokens.  
-So `--n-draft 2` ⇒ **1** true draft slot (closest to OptiQ γ=1).  
-`--n-draft 4/6` ⇒ 3/5 draft slots (OptiQ-discouraged depth).
+Semantics: `n_draft_tokens` = block size = **d0** + **N−1** drafted tokens. `--n-draft 2` ⇒ **1** true draft slot (γ≈1).
 
 ### 2.2 Call chain (code)
 
-Primary implementation: `/home/antmi/lemon-mlx-engine/src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
+Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 
-1. **Draft (serial):** for `i = 1 .. n_draft-1`:  
-   `embed(prev)` → `MTPHead(hidden, embed, mtp_cache)` → `apply_output_norm` → **`apply_lm_head_fn` (full vocab)** → argmax → next prev.  
-   One host sync after the chain (`mx::eval` on draft token array).
-2. **Verify:** trunk `call_fn` on full draft sequence `[d0..d_{K-1}]` with **`capture_spec=true`** on all Mamba/GDN caches when present.
-3. **Accept:** host scan of trunk argmax vs drafts; stop at first mismatch; set next `y_`.
-4. **Commit:** prefer `rollback_spec` / position trim; else restore snapshot + re-run prefix if intermediates missing; clear `capture_spec`.
-5. **Adaptive:** `record_acceptance()` writes history; **`current_draft_count()` returns fixed `n_draft_tokens_` only** (stub).
+1. **Draft:** serial (or C4 side-stream) MTP MoE steps + full `lm_head` + device argmax  
+2. **Verify:** default **sequential T=1** (C2); optional batch via `MLX_MTP_BATCH_VERIFY=1`  
+3. **C4:** draft ‖ first d0 verify on side stream; join; continue sequential on accept  
+4. **Adaptive depth (C3):** `current_draft_count()` from accept history (min 2); `MLX_MTP_FIXED_DRAFT=1` disables  
+5. **Prefetch (opt-in):** `MLX_MTP_PREFETCH=1` — measured regression; default **off**
 
-Supporting:
+### 2.3 Gap list (updated)
 
-- Head: `include/mlx-lm/llm/models/mtp_head.h`, `src/llm/models/mtp_head.cpp`, MoE layer `mtp_moe.cpp`
-- Load: `qwen35_moe.cpp` / `qwen35.cpp` — **dequantizes MTP weights into dense-ish maps** (`[MTP] Dequantized N weights total`)
-- Fallback if no head fn / null head: plain `step()` (not TPS-based auto-disable)
-
-### 2.3 Field baseline (this branch experiments)
-
-From `docs/experiments/mtp-stream-p0/TPS_probe_*.txt` (256 gen tokens, Maxwell-style prompt, full fuse + MTP load where applicable):
-
-| Config | Generation t/s | Notes |
-|--------|----------------|-------|
-| no MTP (full fuse) | **26.13** | Target bar |
-| MTP `--n-draft 2` | **6.05** | ~4.3× slower |
-| MTP `--n-draft 4` | **6.76** | slightly better than 2; still ~3.9× slower |
-| MTP `--n-draft 6` | **5.38** | worse; deeper draft thrash |
-
-Per-step timing (`MTP_TIMING` / `[mtp-t]`), typical n_draft=2 steady state:
-
-- **draft ≈ 150–165 ms** (serial MoE MTP + full lm_head)
-- **verify ≈ 75–230 ms** (K-token GDN trunk + capture_spec; high variance)
-- **commit ≪ 1 ms**
-- **total ≈ 230–390 ms / speculative step** while often emitting only **1–2 tokens** → **~3–8 t/s** order-of-magnitude matches measured gen t/s
-
-Acceptance: many steps `accepted=0` or `1` of 1 draft slot; longer n_draft frequently wastes verify on rejected suffixes.
-
-### 2.4 Gap list (vs healthy mlx-lm / OptiQ path)
-
-| # | Gap | Severity |
-|---|-----|----------|
-| G1 | **No auto-disable** when MTP gen t/s ≪ eager | Product / P0 |
-| G2 | **Verify cost** multi-token hybrid GDN + `capture_spec` intermediates >> single-token eager step | P0 dominate |
-| G3 | **Draft cost**: serial MoE MTP steps + **full lm_head** each draft token | P0 dominate |
-| G4 | **MTP dequant at load** (dense head mats / dequant path) — bandwidth + memory; diverges from mlx-lm quant_predicate debates | P1 |
-| G5 | **Hard host `mx::eval` / `.item` barriers** in draft+verify | P1 |
-| G6 | **`current_draft_count` adaptive stubbed** (history recorded but unused) | P1 (after G2/G3) |
-| G7 | Default server `n_draft_tokens=3` may exceed OptiQ γ=1 sweet spot | P1 policy |
-| G8 | MoE structural bandwidth: multi-token verify ≠ free reuse of weights | P2 / physics ceiling |
-| G9 | No microbench table isolating verify(K) vs K×eager T=1 in `MICROBENCH.md` | Process (step B) |
-| G10 | Stream(cpu) class fixed via StreamGuard — **do not re-litigate** without new evidence | Done |
+| # | Gap | Severity | Status |
+|---|-----|----------|--------|
+| G1 | ~~Auto-disable when slow~~ | — | **HARD BAN** — not a throughput fix |
+| G2 | Multi-token verify cost | P0 | **Mitigated** via sequential T=1 (C2) |
+| G3 | Draft cost (MoE + full lm_head) | P0 | **Partial** C1 quant; residual → C5/C7 |
+| G4 | MTP dequant at load | P1 | **Done** C1 runtime quant |
+| G5 | Host eval/item barriers | P1 | Partial C3/C4; → C6 |
+| G6 | Adaptive draft stub | P1 | **Done** C3 |
+| G7 | Server n_draft default | P1 policy | open |
+| G8 | MoE structural ceiling | P2 | **Documented** §0 — blocks 100 on this device |
+| G9 | Microbench | Process | **Done** + C1–C4 ladder |
+| G10 | Stream(cpu) | Done | StreamGuard |
 
 ---
 
-## 3. Ranked fixes
+## 3. Ranked fixes (execution status)
 
-### P0 (do first; smallest changes that attack dominate cost or prevent user footgun)
+### Done (real cost cuts)
 
-| ID | Fix | Rationale | Done? |
-|----|-----|-----------|-------|
-| **P0-1** | **Auto-disable / fallback to eager** when MTP is slower (runtime window or documented policy + flag): e.g. after N steps if `(tokens/time) < eager_baseline * 0.9`, set `use_mtp_=false` and finish with plain `step()` | OptiQ “skip when base already fast”; our field is **4× regression** — must not ship as default win | **no** |
-| **P0-2** | **Document + enforce n_draft policy**: prefer `--n-draft 2` (γ≈1); warn or cap higher N until verify is sub-linear | OptiQ γ=1; our n_draft 6 is slowest | **no** |
-| **P0-3** | **Reduce verify / `capture_spec` cost**: avoid capture when n_draft==2 and accept path always uses simple trim; skip intermediate capture if rollback rare; measure `MTP_NO_INTERMEDIATES` vs default | capture_spec + multi-token GDN is named dominate | **no** |
-| **P0-4** | **Draft path: avoid unnecessary full lm_head work / sync** (shared head kernel, keep argmax on device longer, fuse draft steps if safe) | draft ~160 ms/step at n_draft=2 | **no** |
+| ID | Fix | Result |
+|----|-----|--------|
+| **C1 / P1-2** | Runtime quant MTP head + reshape shared_expert | 6.05 → **15.87** t/s |
+| **C2** | Sequential T=1 verify (not batch+capture re-run) | **19.72** t/s |
+| **C3** | Adaptive n_draft + deferred barriers | hold **~19.6** |
+| **C4** | Parallel draft ‖ first verify | **20.64** t/s |
 
-### P1
+### Failed / rejected experiments
 
-| ID | Fix | Done? |
-|----|-----|-------|
-| **P1-1** | Wire **`current_draft_count()`** from `accept_history_` (raise after full accept, lower on reject) **only after** P0 proves step cost can beat eager at γ=1 | **no** |
-| **P1-2** | **Keep MTP quantized** (match backbone) instead of full dequant at load if accept rate holds; or BF16-only `mtp.fc` like mlx-lm quant_predicate | **yes (C1)** — LemonMLXE ships BF16 `mtp.*`; runtime `mx::quantize`+registry (default); `MLX_MTP_KEEP_BF16` / `MLX_MTP_DEQUANT` escapes; warm draft 157→24 ms; 256-tok ~6→15.9 t/s |
-| **P1-3** | Collapse host barriers: fewer `eval`/`item` per step; align residual-sampling / accept with mlx-lm for temp>0 later | **no** |
-| **P1-4** | Align server default `--n-draft-tokens` with chat γ≈1 policy | **no** |
+| ID | Result |
+|----|--------|
+| C2 no-capture batch verify | **11.78** t/s regression |
+| C4 prefetch default | **19.42** t/s regression (flag remains opt-in off) |
+| Auto-disable / LoopBrake | **HARD BAN** |
 
-### P2
+### Next D2 candidates (see §0.5)
 
-| ID | Fix | Done? |
-|----|-----|-------|
-| **P2-1** | Accept MoE **structural ceiling** study: if β≈K and p≪1, MTP cannot win single-stream; publish “eager recommended on gfx1150 MoE” | **no** |
-| **P2-2** | Separate small dense draft model (classic `--draft-model` analog) if MTP head never wins | **no** |
-| **P2-3** | Batch / multi-request MTP skip (mlx-lm server pattern) | **no** |
+C5 cheaper draft lm_head → C6 barriers → C7 draft MoE audit → C9 Maxwell quality.
 
-**Hard constraints (all fires):** no LoopBrake; no dual 35B processes; no unrelated fuse/GDN thrash merges into MTP-only commits.
+### P0 product notes (non-stop)
 
----
-
-## 4. Microbench plan (step B — next fire)
-
-Create `docs/experiments/mtp-stream-p0/MICROBENCH.md` with at least:
-
-| Row | Metric | How |
-|-----|--------|-----|
-| **VERIFY_COST** | verify wall for K=2,4,6 vs K× eager T=1 | Extract `[mtp-t]` verify= from TPS probes + optional single-process micro; no full Maxwell SAR |
-| **DRAFT_COST** | draft µs / step and / draft token | same |
-| **ACCEPT_RATE** | accepted / proposed | count from `[mtp]` lines |
-| **GEN_TPS** | 256-token probe | already in TPS_probe_*.txt |
-
-Stop criterion for B: VERIFY_COST row present with numbers.
+- Prefer `--n-draft 2` (γ≈1) until draft≪T₁.  
+- Do **not** ship deeper n_draft as default win.  
+- Document that MTP may be slower than eager on gfx1150 MoE until C5+ land — without auto-disabling.
 
 ---
 
-## 5. Stop criteria (loop complete when all hold)
+## 4. Microbench
 
-1. **[met this fire]** `MTP_OPTIMALITY_PLAN.md` exists with online MLX MTP findings + ranked fixes.
-2. **[met 2026-08-01]** `MICROBENCH.md` has **VERIFY_COST** verify-vs-eager numbers (β_K≈1.5–1.7; draft δ≈4.1 at K=2).  
-3. **[met C1 2026-08-01]** Real cost cut (not auto-disable): runtime quant MTP head + quant matmul path.  
-   (a) 256-token MTP gen **15.87 t/s** vs prior ~6–7 (**≥2.3×**); warm draft_ms **23.7** vs **156.8** (**−85%**). Smoke green (`auto_quantized=13`, no Stream(cpu)).  
+See [`MICROBENCH.md`](./MICROBENCH.md): VERIFY_COST β_K≈1.5–1.7 pre-C2; draft δ≈4.1 pre-C1; post-C ladder tables; C4 **20.64** t/s.
 
-When 1–3 all met: report DONE + human next step; `scheduler_delete` this scheduled task.
+---
+
+## 5. Stop criteria
+
+### 5.1 Scheduler stop (user bar)
+
+ALL of: **MTP gen ≥ 100 t/s** (real log) + smoke green + docs updated + supervisors 5/5 PASS.  
+**Current: UNMET** — ceiling analysis §0 says **not reachable** on gfx1150 35B single-seq without H1/H2.
+
+### 5.2 Engineering plateau (local, not scheduler DONE)
+
+1. Plan includes path-to-100 + hardware ceiling (**this fire D1**).  
+2. MICROBENCH VERIFY_COST + C ladder present.  
+3. Real cost cuts C1–C4 landed; residual C5+ queued.  
+4. Best MTP still &lt; eager; gap ~21% — continue C5, do not declare product win.
+
+When 5.1 impossible: keep iterating real cuts; main agent / human must choose H1/H2 or bar change — field agent **does not** `scheduler_delete` on fake PASS.
 
 ---
 
 ## 6. Next fire recommendation
 
-1. ~~**Step B:** build `MICROBENCH.md`~~ **done** — see `MICROBENCH.md`.  
-2. **Step C:** implement **P0-1** (auto-fallback to eager when MTP slower) as smallest product-safe code change; microbench shows 0.23–0.26× with no plausible win until draft≪T₁.
+1. **D2 C5:** cheaper draft lm_head / reduce full-vocab cost on draft tokens (measure with MTP_TIMING).  
+2. **D3:** 256-tok probe after C5; update MICROBENCH + CRITICAL_ANALYSIS.  
+3. Do **not** implement auto-fallback.  
+4. If C5–C7 fail to approach eager: publish plateau (~20–26 t/s) and escalate hardware/model path for any ≥100 claim.
 
 ---
 
@@ -200,4 +244,4 @@ When 1–3 all met: report DONE + human next step; `scheduler_delete` this sched
 - https://www.reddit.com/r/LocalLLaMA/comments/1rzntv5/multitoken_prediction_mtp_for_qwen35_is_coming_to/  
 - https://github.com/ml-explore/mlx-lm/discussions/890  
 - https://sebastianraschka.com/llm-architecture-gallery/mtp/  
-- Local: `docs/experiments/mtp-stream-p0/README.md`, `TPS_probe_*.txt`, `src/common/generate.cpp` (`mtp_speculative_step`)
+- Local: `README.md`, `CRITICAL_ANALYSIS.md`, `MICROBENCH.md`, `C*_TPS_probe_*.txt`, `src/common/generate.cpp`

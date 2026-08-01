@@ -94,3 +94,16 @@ Changes: defer KV quant + hidden stash to end of sequential verify; `current_dra
 **mlx-lm PR#990 contrast:** mlx-lm verifies `[confirmed, draft]` in one multi-token backbone pass with GDN `n_confirmed` rollback. Our sequential T=1 won on gfx1150 MoE (batch verify β≈1.6). C4 keeps sequential accept/early-exit but hides draft latency behind the first T=1 verify. MoE reference gains remain small (mlx-lm ~1.03–1.11× on Metal MoE); we remain below eager until draft cost collapses further or multi-token verify becomes free.
 
 Log: `C4_TPS_probe_ndraft2_parallel.txt`.
+
+**Prefetch A/B:** `MLX_MTP_PREFETCH=1` → **19.42** gen t/s (`C4_TPS_probe_ndraft2_prefetch.txt`) — regression vs 20.64; remains default-off.
+
+## Path to 100 t/s (scheduler stop bar)
+
+User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **20.64**). Analysis:
+
+- Eager ceiling on this device/model: **~26 t/s** (8 CU gfx1150, ~22 GB resident).
+- Speculative form \((1+p)/(\beta+\delta)\) cannot deliver ~4× over that T₁ under MoE near-linear verify; free-draft ideal still ≲ **~2×** (~52 t/s) ≪ 100.
+- Real next cuts: cheaper draft lm_head, fewer barriers, MoE draft audit — close gap to eager, not invent 100.
+- Reaching 100 requires documented **H1** faster GPU, **H2** smaller model, or **H3** multi-seq aggregate (bar change) — see `MTP_OPTIMALITY_PLAN.md` §0.
+
+**HARD BAN reminder:** auto-disable / LoopBrake / silent eager fallback are not resolutions.

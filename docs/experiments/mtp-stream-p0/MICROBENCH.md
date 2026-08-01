@@ -186,4 +186,13 @@ C4 warm split (timer semantics changed): joint draft‖first-verify window ≈55
 
 Flags: default on; `MLX_MTP_NO_PARALLEL_DRAFT=1` serial; `MLX_MTP_PREFETCH=1` opt-in inter-step prefetch (default off).
 
-Log: `C4_TPS_probe_ndraft2_parallel.txt`.
+| Config | gen t/s | notes |
+|--------|---------|-------|
+| C4 parallel (default) | **20.64** | best MTP |
+| C4 + `MLX_MTP_PREFETCH=1` | **19.42** | regression; host emit too short to hide draft |
+
+Logs: `C4_TPS_probe_ndraft2_parallel.txt`, `C4_TPS_probe_ndraft2_prefetch.txt`.
+
+## Path to 100 t/s (see plan §0)
+
+Stop bar is MTP Generation ≥ **100** t/s. With eager T₁ ≈ 38.3 ms (26.13 t/s), even idealized free-draft p=1 β=1 single-stream speculative decoding caps near **~2×** (~52 t/s) — **below 100**. Best measured MTP **20.64**. Hardware ceiling and required paths (faster GPU, smaller model, or multi-seq aggregate) are documented in [`MTP_OPTIMALITY_PLAN.md`](./MTP_OPTIMALITY_PLAN.md) §0. **Do not claim ≥100 without a probe log.**
