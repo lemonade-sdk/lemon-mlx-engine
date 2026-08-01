@@ -107,3 +107,15 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **20.64**)
 - Reaching 100 requires documented **H1** faster GPU, **H2** smaller model, or **H3** multi-seq aggregate (bar change) — see `MTP_OPTIMALITY_PLAN.md` §0.
 
 **HARD BAN reminder:** auto-disable / LoopBrake / silent eager fallback are not resolutions.
+
+## C6 (barrier order + device draft feed; 2026-08-01)
+
+**Code** (`generate.cpp` parallel path):
+
+1. **`mx::eval(y_.tokens)` before** side-stream draft launch (C4 evaluated d0 *after* async draft start — can force a device join that kills overlap).
+2. Skip second `eval` inside host draft materialization after join already `eval(pred, drafts_dev)`.
+3. Sequential verify feeds **slice `drafts_dev`** instead of host `int` re-upload.
+
+**Smoke** (`C6_smoke_ndraft2_max32.txt`, 32-tok, n_draft=2): green, no Stream(cpu); warm joint `draft=` timer still **~53 ms** (not collapsed to ~38 ms T₁) — GPU contention on 8 CU likely dominates remaining gap; short-run Generation **~24 t/s** (27 tok) is **not** a 256-tok claim vs C4 **20.64**.
+
+**Next:** D3 256-tok measure for C6; if flat, C5 vocab/lm_head residual or H1/H2 for ≥100.

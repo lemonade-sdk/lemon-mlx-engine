@@ -182,6 +182,7 @@ Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 | **C2** | Sequential T=1 verify (not batch+capture re-run) | **19.72** t/s |
 | **C3** | Adaptive n_draft + deferred barriers | hold **~19.6** |
 | **C4** | Parallel draft ‖ first verify | **20.64** t/s |
+| **C6** | Eval d0 before draft launch; device draft slices; no double-eval fill | Smoke green; joint still ~53 ms (see CRITICAL C6); **256-tok TBD D3** |
 
 ### Failed / rejected experiments
 

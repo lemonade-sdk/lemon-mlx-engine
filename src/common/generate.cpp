@@ -873,37 +873,49 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             fill_draft_tokens_from_dev(*drafts_dev_pending);
             if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
         } else if (do_parallel) {
-            // Launch draft on side stream (async).
+            // C6: materialize d0 *before* launching the side-stream draft.
+            // C4 launched draft then mx::eval(y_.tokens) which can force a
+            // device-wide join on ROCm and destroy draft‖verify overlap
+            // (joint wall ~55ms vs expected max(~20 draft, ~38 T1)≈38ms).
+            mx::eval(y_.tokens);
+            auto d0_arr = mx::reshape(y_.tokens, {1, 1});
+            if (d0_arr.dtype() != mx::int32) {
+                d0_arr = mx::astype(d0_arr, mx::int32);
+            }
+
+            // Launch draft on side stream (async). y_/d0 already resident.
             std::optional<mx::array> drafts_dev;
             {
                 StreamGuard dsg(mtp_draft_stream);
                 drafts_dev = mtp_run_draft_chain(n_draft, /*async_launch=*/true);
             }
-            // Concurrent: trunk verify of d0 on generation stream.
+            // Concurrent: trunk verify of d0 on generation stream (no extra eval).
 #if defined(MLX_BUILD_ROCM)
             mlx::core::gpu_set_graph_decode_mode(true);
 #endif
-            // Ensure d0 is ready for the trunk feed.
-            mx::eval(y_.tokens);
-            auto tok_arr = mx::reshape(y_.tokens, {1, 1});
-            if (tok_arr.dtype() != mx::int32) {
-                tok_arr = mx::astype(tok_arr, mx::int32);
-            }
-            LMInput::Text tok_text(tok_arr);
+            LMInput::Text tok_text(d0_arr);
             auto result = context_.call_fn(
                 tok_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
             state_ = result.state;
             last_st = result.state;
             auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
 
-            // Join: materialise trunk pred and draft tokens together.
+            // Join: materialise trunk pred and draft tokens together (once).
             if (drafts_dev.has_value()) {
                 mx::eval(pred, *drafts_dev);
-                fill_draft_tokens_from_dev(*drafts_dev);
+                // Host draft ids for emit/debug only — drafts_dev already eval'd
+                // (do not re-eval inside fill; that was a second barrier).
+                draft_tokens.clear();
+                draft_tokens.push_back(static_cast<int>(y_.tokens.item<int32_t>()));
+                const int n_extra = static_cast<int>(drafts_dev->size());
+                const int32_t* dptr = drafts_dev->data<int32_t>();
+                for (int i = 0; i < n_extra; ++i) {
+                    draft_tokens.push_back(static_cast<int>(dptr[i]));
+                }
             } else {
                 mx::eval(pred);
                 draft_tokens.clear();
-                draft_tokens.push_back(y_.tokens.item<int32_t>());
+                draft_tokens.push_back(static_cast<int>(y_.tokens.item<int32_t>()));
             }
             if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
 
@@ -913,12 +925,22 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
                 if (trunk_next == static_cast<int32_t>(draft_tokens[1])) {
                     accepted = 1;
                     // Continue sequential verify from i=1 (feed d1..).
+                    // Prefer device slices of drafts_dev over host re-upload.
                     for (int i = 1; i < n_draft; ++i) {
 #if defined(MLX_BUILD_ROCM)
                         mlx::core::gpu_set_graph_decode_mode(true);
 #endif
-                        auto t2 = mx::array(
-                            {static_cast<int32_t>(draft_tokens[i])}, {1, 1}, mx::int32);
+                        // draft_tokens[i] == drafts_dev[i-1]; prefer device slice.
+                        mx::array t2 =
+                            drafts_dev.has_value()
+                                ? mx::reshape(
+                                      mx::slice(*drafts_dev, {i - 1}, {i}), {1, 1})
+                                : mx::array(
+                                      {static_cast<int32_t>(draft_tokens[i])},
+                                      {1, 1}, mx::int32);
+                        if (t2.dtype() != mx::int32) {
+                            t2 = mx::astype(t2, mx::int32);
+                        }
                         LMInput::Text t2_text(t2);
                         auto r2 = context_.call_fn(
                             t2_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
