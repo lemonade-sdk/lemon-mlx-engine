@@ -1,0 +1,74 @@
+Loading model: mlx-community/Qwen3.5-0.8B-MTP-4bit
+[MTP] Delta model detected via load_llm, redirecting to load_mtp_delta_model
+[MTP] Delta model: mlx-community/Qwen3.5-0.8B-MTP-4bit, base model: mlx-community/Qwen3.5-0.8B-4bit
+[MTP] Loaded base model weights: 847 tensors
+[MTP] Merged 15 MTP head weights with base model
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 15 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.k_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=8 (from o_proj attn_dim=2048)
+[MTP] Inferred config: hidden_size=1024 head_dim=256 num_attention_heads=8 num_key_value_heads=2 intermediate_size=3584 quant_bits=4 quant_group_size=64 (weight-derived)
+[MTP] RMSNorm +1 shift applied to 7 tensors (pre_fc_norm_hidden mean was 6.84058e-41; raw HF/guru87 style)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=8 dense_kept=7 dequantized=0 norm_shifted=7 bits=4 gs=64
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=909 MB, peak=909 MB, cache=2568 B
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp] step=1 n_draft=2 accepted=1 drafts=[760,2972]
+[mtp-t] step=1 n_draft=2 accepted=1 draft=121944us verify=2048us commit=32us total=124025us
+The **[mtp] step=2 n_draft=2 accepted=0 drafts=[26108,26108]
+[mtp-t] step=2 n_draft=2 accepted=0 draft=17473us verify=9us commit=13us total=17496us
+Four[mtp] step=3 n_draft=2 accepted=1 drafts=[1223,14782]
+[mtp-t] step=3 n_draft=2 accepted=1 draft=10445us verify=1244us commit=14us total=11704us
+ier Transform[mtp] step=4 n_draft=2 accepted=0 drafts=[332,318]
+[mtp-t] step=4 n_draft=2 accepted=0 draft=18192us verify=7us commit=11us total=18212us
+**[mtp] step=5 n_draft=2 accepted=1 drafts=[369,264]
+[mtp-t] step=5 n_draft=2 accepted=1 draft=10409us verify=1204us commit=11us total=11624us
+ is a[mtp] step=6 n_draft=2 accepted=1 drafts=[34780,5224]
+[mtp-t] step=6 n_draft=2 accepted=1 draft=17845us verify=1186us commit=7us total=19039us
+ mathematical tool[mtp] step=7 n_draft=2 accepted=0 drafts=[421,13640]
+[mtp-t] step=7 n_draft=2 accepted=0 draft=17895us verify=8us commit=9us total=17913us
+ that[mtp] step=8 n_draft=2 accepted=1 drafts=[5954,586]
+[mtp-t] step=8 n_draft=2 accepted=1 draft=10152us verify=1140us commit=8us total=11301us
+ allows us[mtp] step=9 n_draft=2 accepted=1 drafts=[310,22903]
+[mtp-t] step=9 n_draft=2 accepted=1 draft=17882us verify=1156us commit=7us total=19046us
+ to analyze[mtp] step=10 n_draft=2 accepted=0 drafts=[264,854]
+[mtp-t] step=10 n_draft=2 accepted=0 draft=17715us verify=8us commit=7us total=17731us
+ a[mtp] step=11 n_draft=2 accepted=0 drafts=[709,314]
+[mtp-t] step=11 n_draft=2 accepted=0 draft=10135us verify=8us commit=7us total=10151us
+ function[mtp] step=12 n_draft=2 accepted=0 drafts=[539,1141]
+[mtp-t] step=12 n_draft=2 accepted=0 draft=10296us verify=7us commit=9us total=10313us
+ by[mtp] step=13 n_draft=2 accepted=0 drafts=[14293,279]
+[mtp-t] step=13 n_draft=2 accepted=0 draft=10105us verify=7us commit=8us total=10121us
+ breaking[mtp] step=14 n_draft=2 accepted=1 drafts=[424,1441]
+[mtp-t] step=14 n_draft=2 accepted=1 draft=10136us verify=1234us commit=6us total=11377us
+ it down[mtp] step=15 n_draft=2 accepted=1 drafts=[1083,1141]
+[mtp-t] step=15 n_draft=2 accepted=1 draft=17806us verify=1150us commit=6us total=18964us
+ into its[mtp] step=16 n_draft=2 accepted=1 drafts=[71545,5306]
+[mtp-t] step=16 n_draft=2 accepted=1 draft=17832us verify=1185us commit=10us total=19028us
+ constituent parts[mtp] step=17 n_draft=2 accepted=0 drafts=[11,3750]
+[mtp-t] step=17 n_draft=2 accepted=0 draft=17957us verify=7us commit=9us total=17974us
+,[mtp] step=18 n_draft=2 accepted=0 drafts=[466,2107]
+[mtp-t] step=18 n_draft=2 accepted=0 draft=10130us verify=8us commit=9us total=10148us
+ or[mtp] step=19 n_draft=2 accepted=0 drafts=[328,328]
+[mtp-t] step=19 n_draft=2 accepted=0 draft=10283us verify=7us commit=9us total=10300us
+ "[mtp] step=20 n_draft=2 accepted=0 drafts=[82,472]
+[mtp-t] step=20 n_draft=2 accepted=0 draft=10161us verify=7us commit=11us total=10180us
+s[mtp] step=21 n_draft=2 accepted=0 drafts=[1489,1149]
+[mtp-t] step=21 n_draft=2 accepted=0 draft=10082us verify=7us commit=10us total=10100us
+ines[mtp] step=22 n_draft=2 accepted=0 drafts=[321,16382]
+[mtp-t] step=22 n_draft=2 accepted=0 draft=10199us verify=7us commit=7us total=10214us
+ and[mtp] step=23 n_draft=2 accepted=1 drafts=[7709,1489]
+[mtp-t] step=23 n_draft=2 accepted=1 draft=10171us verify=1145us commit=9us total=11325us
+ cos
+Prompt:     18 tokens, 30.0689 tokens/s, 0.598625s
+Generation: 32 tokens, 105.067 tokens/s, 0.304569s
+
+
+> 

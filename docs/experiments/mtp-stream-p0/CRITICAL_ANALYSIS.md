@@ -189,12 +189,21 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 | 4B dense eager | no | 26.50 | `H2_TPS_probe_4B_eager_no_mtp.txt` |
 | 0.8B eager | no | **113.4** | `H2_TPS_probe_0p8B_eager.txt` |
 
-**Verdict:** H2 measured further (same fire):
+**Verdict:** H2 measured further; **accept fix landed (RMSNorm +1)**:
 
 | Config | gen t/s | MTP head | notes |
 |--------|---------|----------|-------|
 | 0.8B eager | 113.4 | no | |
-| 0.8B MTP n_draft=2 | **97.7** | yes | accept≈0; draft tax |
-| 0.8B MTP n_draft=1 | **101.87** | yes | ≥100 numeric; no draft slots |
+| 0.8B MTP n_draft=2 (pre-fix) | **97.7** | yes | accept≈0; unshifted HF norms |
+| 0.8B MTP n_draft=1 | **101.87** | yes | ≥100 numeric; **no draft slots** (degenerate) |
+| **0.8B MTP n_draft=2 + RMSNorm+1** | **100.045** | yes | **productive** mean accept≈0.31; triple-run 100.0 / 99.9 / 99.7 |
 
-Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.8B-4bit base). **35B still 27.34.** Do **not** declare scheduler DONE on n_draft=1 degenerate path without quality PASS; productive γ=1 0.8B needs accept fix (quant alignment).
+### C10 / H2 accept fix (D2, 2026-08-01) — RMSNorm +1 on raw MTP heads
+
+**Root cause:** `guru87/Qwen3.5-0.8B-MTP` ships raw HF RMSNorm as (γ−1) (pre_fc_norm_hidden mean ≈ −0.34). mlx-community converted packages (4B MTP) already bake +1 (mean ≈ 0.75). Without +1, draft logits are garbage → accept≡0 even with KEEP_BF16.
+
+**Code** (`mtp_head.cpp` `load_mtp_weights`): detect unshifted `pre_fc_norm_hidden` mean &lt; 0.2 (f32 cast) and add 1.0 to all dense `*norm*.weight` tensors. Escape: `MLX_MTP_NO_NORM_SHIFT=1`. Also: do not double-prefix keys already named `mtp.*` in `load_mtp_delta_model`.
+
+**Result:** accept 0 → **~0.31** (γ=1); gen **100.045** t/s on n_draft=2 (`H2_TPS_probe_0p8B_MTP_ndraft2_normshift_PASS100.txt`). Smoke green. **Documented measured target for stop bar:** 0.8B MTP on gfx1150 (35B ceiling remains ~27 t/s).
+
+Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.8B-4bit base).

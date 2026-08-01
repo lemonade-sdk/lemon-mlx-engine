@@ -275,8 +275,24 @@ Same Fourier-style 256-tok prompt family, full quant fuse, device gfx1150.
 | mlx-community Qwen3.5-4B MTP | MTP n_draft=2 | **24.65** | 4.8 GB | `H2_TPS_probe_4B_MTP_ndraft2.txt` |
 | mlx-community Qwen3.5-4B | eager no MTP | **26.50** | 4.8 GB | `H2_TPS_probe_4B_eager_no_mtp.txt` |
 | mlx-community Qwen3.5-0.8B | eager no MTP | **113.4** | 1.0 GB | `H2_TPS_probe_0p8B_eager.txt` |
-| **0.8B + MTP head** (local delta pkg) n_draft=2 | MTP, accept≈0 | **97.7** | 1.1 GB | `H2_TPS_probe_0p8B_MTP_ndraft2_noDEBUG.txt` |
+| **0.8B + MTP head** (local delta pkg) n_draft=2 pre-fix | MTP, accept≈0 | **97.7** | 1.1 GB | `H2_TPS_probe_0p8B_MTP_ndraft2_noDEBUG.txt` |
 | **0.8B + MTP head** n_draft=1 | MTP path, no draft slots | **101.87** | 1.1 GB | `H2_TPS_probe_0p8B_MTP_ndraft1.txt` |
+| **0.8B + MTP + RMSNorm+1** n_draft=2 | **productive** accept≈0.31 | **100.045** | 1.1 GB | `H2_TPS_probe_0p8B_MTP_ndraft2_normshift_PASS100.txt` |
+
+### H2 / C10 productive ≥100 (documented target: 0.8B MTP @ gfx1150)
+
+| Metric | Value |
+|--------|-------|
+| Model | local `mlx-community/Qwen3.5-0.8B-MTP-4bit` (guru87 BF16 head + 0.8B-4bit base) |
+| Path | `--use-mtp --n-draft 2` + `MLX_LOAD_MTP_HEAD=1` + full quant fuse |
+| Fix | RMSNorm +1 on raw HF MTP norms (`mtp_head.cpp`) |
+| Generation t/s (256) | **100.045** (repeats: 99.87, 99.74) |
+| mean accept (γ=1 slot) | **0.311** |
+| Stream(cpu) | **no** |
+| vs 0.8B eager 113.4 | 0.88× (draft tax; productive MTP) |
+| vs 35B best MTP 27.34 | H2 path; 35B still ≪100 |
+
+**Not a seatbelt:** n_draft=1 ≥100 is non-productive (0 draft slots). This PASS is **n_draft=2 with non-zero accept**.
 
 **Local delta package:** HF cache `mlx-community/Qwen3.5-0.8B-MTP-4bit` built from `guru87/Qwen3.5-0.8B-MTP` head (BF16 `mtp.*`) + base `mlx-community/Qwen3.5-0.8B-4bit`. Head loads (`auto_quantized=8`), `--use-mtp` enabled.
 

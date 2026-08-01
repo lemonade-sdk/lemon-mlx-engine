@@ -331,6 +331,9 @@ void MTPHead::load_mtp_weights(
             w = mx::reshape(w, {1, w.shape(0), w.shape(1)});
         }
 
+        // Note: mlx-lm often keeps mtp.fc in BF16 for accuracy; on gfx1150 0.8B
+        // H2, quantizing fc with the other linears was slightly faster (~99.9
+        // vs ~99.0 gen t/s) at similar accept — leave fc eligible for auto-q.
         const bool try_auto_q =
             !force_dequant && !keep_bf16 && !is_norm_or_bias(key) &&
             can_quantize(w);
@@ -355,6 +358,58 @@ void MTPHead::load_mtp_weights(
         }
     }
 
+    // HF / guru87-style MTP heads store RMSNorm as (γ − 1). mlx-community
+    // converted packages (e.g. 4B-MTP-4bit) already bake +1 into the file.
+    // Without the shift, draft logits are garbage and accept rate sticks at 0
+    // (field: 0.8B H2 n_draft=2, KEEP_BF16 and runtime-quant both accept=0).
+    // Detect unshifted raw: pre_fc_norm_hidden mean is near 0 / negative
+    // (shifted packages sit ~0.5–1.0). Escape: MLX_MTP_NO_NORM_SHIFT=1.
+    int norm_shifted = 0;
+    static const bool kNoNormShift =
+        std::getenv("MLX_MTP_NO_NORM_SHIFT") != nullptr;
+    if (!kNoNormShift) {
+        auto pre_it = wmap.find("pre_fc_norm_hidden.weight");
+        if (pre_it != wmap.end() && pre_it->second != nullptr) {
+            // Cast to f32 before mean/item — bf16 item<float>() can read as ~0
+            // and falsely trigger a second +1 on already-shifted packages (4B).
+            auto mean_arr =
+                mx::mean(mx::astype(*pre_it->second, mx::float32));
+            mx::eval(mean_arr);
+            const float pre_mean = mean_arr.item<float>();
+            if (pre_mean < 0.2f) {
+                for (auto& [k, ptr] : wmap) {
+                    if (ptr == nullptr) continue;
+                    if (k.find("norm") == std::string::npos) continue;
+                    if (k.size() < 7 ||
+                        k.compare(k.size() - 7, 7, ".weight") != 0) {
+                        continue;
+                    }
+                    // Only shift dense float norms (not packed U32 linears).
+                    if (ptr->dtype() == mx::bfloat16 ||
+                        ptr->dtype() == mx::float16 ||
+                        ptr->dtype() == mx::float32) {
+                        *ptr = mx::add(*ptr, mx::array(1.0f, ptr->dtype()));
+                        ++norm_shifted;
+                    }
+                }
+                if (norm_shifted > 0) {
+                    std::vector<mx::array> shift_eval;
+                    shift_eval.reserve(static_cast<size_t>(norm_shifted));
+                    for (auto& [k, ptr] : wmap) {
+                        if (k.find("norm") != std::string::npos && ptr) {
+                            shift_eval.push_back(*ptr);
+                        }
+                    }
+                    if (!shift_eval.empty()) mx::eval(shift_eval);
+                    std::cerr << "[MTP] RMSNorm +1 shift applied to "
+                              << norm_shifted
+                              << " tensors (pre_fc_norm_hidden mean was "
+                              << pre_mean << "; raw HF/guru87 style)\n";
+                }
+            }
+        }
+    }
+
     if (auto_quantized > 0) {
         // Materialize packed weights + scales so load does not leave lazy graphs.
         std::vector<mx::array> eval_list;
@@ -376,6 +431,7 @@ void MTPHead::load_mtp_weights(
               << " auto_quantized=" << auto_quantized
               << " dense_kept=" << dense_kept
               << " dequantized=" << dequantized
+              << " norm_shifted=" << norm_shifted
               << " bits=" << args_.quant_bits
               << " gs=" << args_.quant_group_size
               << (force_dequant ? " (MLX_MTP_DEQUANT)" : "")

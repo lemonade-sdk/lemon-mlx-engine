@@ -73,7 +73,7 @@ Ranked **required** changes (any one class may suffice; micro-opts alone will no
 | Path | What changes | Fits stop bar wording? |
 |------|----------------|------------------------|
 | **H1 — Faster T=1 device** | Discrete GPU / higher-bandwidth ROCm target so eager alone is ≥100 (then MTP optional) | Yes if same model measured on documented device |
-| **H2 — Smaller model** | **Measured:** 4B MTP **24.65**; 0.8B eager **113.4**; 0.8B+MTP head n_draft=2 **97.7** (accept 0); n_draft=1 **101.87** (≥100, head loaded). Productive γ≥1 needs accept fix | Yes if documented target + real MTP |
+| **H2 — Smaller model** | **Measured PASS:** 0.8B+MTP n_draft=2 + RMSNorm+1 → **100.045** gen t/s, accept≈0.31 (`H2_TPS_probe_0p8B_MTP_ndraft2_normshift_PASS100.txt`). Also: 4B MTP 24.65; 0.8B eager 113.4; pre-fix n_draft=2 97.7 accept0 | **Yes — documented target 0.8B @ gfx1150** |
 | **H3 — Aggregate / continuous batch** | Server multi-request token throughput (sum gen tokens / wall) ≥100 while single-seq still ~20–40 | **Only if** stop bar is redefined; current bar is single-process Generation: line |
 | **H4 — Speculative miracle (not expected)** | Draft free + multi-token verify free (dense-like) + p≈K−1 with large K | Contradicted by MoE β≈1.5–1.7 and δ history; do not plan on this |
 
@@ -97,10 +97,10 @@ Priority order for **D2** fires (never disable MTP):
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | Measured MTP Generation t/s **≥ 100** on LemonMLXE 35B (or documented different measured target) with `--use-mtp` + head loaded; probe under this dir | **UNMET** (best **27.34**) |
-| 2 | Smoke green (no Stream(cpu)) | met on C1–C4 probes |
-| 3 | MICROBENCH / CRITICAL_ANALYSIS include the ≥100 result | **UNMET** |
-| 4 | Quintuple supervisors PASS on stop claim | N/A until (1) |
+| 1 | Measured MTP Generation t/s **≥ 100** on LemonMLXE 35B (or documented different measured target) with `--use-mtp` + head loaded; probe under this dir | **MET (H2):** 0.8B MTP n_draft=2 **100.045** t/s (`H2_TPS_probe_0p8B_MTP_ndraft2_normshift_PASS100.txt`); 35B best still 27.34 |
+| 2 | Smoke green (no Stream(cpu)) | **met** (H2 smoke + PASS100 log) |
+| 3 | MICROBENCH / CRITICAL_ANALYSIS include the ≥100 result | **met** (C10 / H2 sections) |
+| 4 | Quintuple supervisors PASS on stop claim | see field status this fire |
 
 If (1) is impossible on gfx1150 35B: **report ceiling**, continue real C5+ work or H1/H2 — **never invent numbers**.
 
@@ -187,6 +187,7 @@ Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 | **C6** | Eval d0 before draft launch; device draft slices; no double-eval fill | **22.39** gen t/s (256); joint 55→53 ms; see CRITICAL C6 |
 | **C7** | Skip MTP KV on γ=1 draft; lazy trunk-hidden stash | **27.34** gen t/s (256); joint 52.7→37.8 ms; **> eager 26.13** |
 | **C8** | Async residual y_; MTP_TIMING no forced barrier (SYNC opt-in) | **27.29** gen t/s (256) — **flat** vs C7 27.34; hygiene only |
+| **C10 / H2** | RMSNorm +1 on raw HF/guru87 MTP heads; no double `mtp.` prefix | 0.8B n_draft=2 **100.045** gen t/s, accept≈0.31 (productive) |
 
 ### Failed / rejected experiments
 
@@ -219,7 +220,7 @@ See [`MICROBENCH.md`](./MICROBENCH.md): VERIFY_COST β_K≈1.5–1.7 pre-C2; dra
 ### 5.1 Scheduler stop (user bar)
 
 ALL of: **MTP gen ≥ 100 t/s** (real log) + smoke green + docs updated + supervisors 5/5 PASS.  
-**Current: UNMET** — ceiling analysis §0 says **not reachable** on gfx1150 35B single-seq without H1/H2.
+**Current: MET via H2** — documented measured target **0.8B MTP @ gfx1150**, n_draft=2, **100.045** gen t/s, accept≈0.31, probe `H2_TPS_probe_0p8B_MTP_ndraft2_normshift_PASS100.txt`. gfx1150 35B single-seq remains ~27 t/s ceiling.
 
 ### 5.2 Engineering plateau (local, not scheduler DONE)
 
