@@ -186,7 +186,7 @@ Primary: `src/common/generate.cpp` → `TokenIterator::mtp_speculative_step()`
 | **C4** | Parallel draft ‖ first verify | **20.64** t/s |
 | **C6** | Eval d0 before draft launch; device draft slices; no double-eval fill | **22.39** gen t/s (256); joint 55→53 ms; see CRITICAL C6 |
 | **C7** | Skip MTP KV on γ=1 draft; lazy trunk-hidden stash | **27.34** gen t/s (256); joint 52.7→37.8 ms; **> eager 26.13** |
-| **C8** | Async residual y_; MTP_TIMING no forced barrier (SYNC opt-in) | Smoke ~29 t/s short; **256 TBD D3** |
+| **C8** | Async residual y_; MTP_TIMING no forced barrier (SYNC opt-in) | **27.29** gen t/s (256) — **flat** vs C7 27.34; hygiene only |
 
 ### Failed / rejected experiments
 
@@ -234,9 +234,9 @@ When 5.1 impossible: keep iterating real cuts; main agent / human must choose H1
 
 ## 6. Next fire recommendation
 
-1. **D3 C8:** 256-tok vs C7 27.34 (same prompt).  
-2. Further residual only if D3 shows headroom; else plateau ~27–30 on gfx1150 35B.  
-3. **Do not** implement auto-fallback. H1/H2 for ≥100.
+1. Software plateau **~27 t/s** (C7 best); C8 flat — prefer quality Maxwell or accept H1/H2 for ≥100.  
+2. Optional: measure without MTP_DEBUG host spam; unlikely to unlock 100.  
+3. **Do not** implement auto-fallback.
 
 ---
 

@@ -159,6 +159,14 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 1. After setting `y_` (accept residual / reject path), **`mx::async_eval(y_.tokens)` immediately** so residual T=1 can start before host metrics/emit.
 2. **`MTP_TIMING` no longer forces `mx::eval(y_)`** (that barrier serialized residual into every timed step and blocked hide-under-emit). Full barrier timing: **`MTP_TIMING_SYNC=1`**.
 
-**Smoke** (`C8_smoke_ndraft2_max32.txt`): green, no Stream(cpu). Short Generation **~29.1 t/s** (≈ C7 smoke) — **not** a 256 claim. mtp-t residual `verify=` drops (~4 ms) because timers no longer wait on residual; next-step joint can absorb spilled work if host emit is short.
+**Smoke** (`C8_smoke_ndraft2_max32.txt`): green, no Stream(cpu).
 
-**Next:** D3 256-tok C8 vs C7 27.34 (watch for contention regression).
+### D3 256-tok measure (same Fourier prompt as C7)
+
+| Config | gen t/s | notes | log |
+|--------|---------|-------|-----|
+| C7 | **27.34** | best | `C7_TPS_probe_ndraft2.txt` |
+| **C8** | **27.29** | **flat** (−0.05) | `C8_TPS_probe_ndraft2.txt` |
+| eager | 26.13 | | `TPS_probe_no_mtp.txt` |
+
+**Verdict:** C8 **does not raise** 256-tok gen t/s. Host emit cannot hide residual T=1; residual spills into next joint. Keep C8 as hygiene (no forced MTP_TIMING barrier; early async_eval). **Ladder best remains C7 27.34.** Stop bar 100 **UNMET**. Plateau: further micro-opts unlikely past ~28–40 without H1/H2.

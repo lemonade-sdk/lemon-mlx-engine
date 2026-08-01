@@ -192,8 +192,9 @@ Flags: default on; `MLX_MTP_NO_PARALLEL_DRAFT=1` serial; `MLX_MTP_PREFETCH=1` op
 | C4 + `MLX_MTP_PREFETCH=1` | 19.42 | regression |
 | C6 parallel + barrier order | 22.39 | |
 | **C7** skip γ=1 MTP KV + lazy hidden | **27.34** | **best; beats eager 26.13** |
+| C8 async residual / no MTP_TIMING barrier | **27.29** | **flat** vs C7 (noise) |
 
-Logs: `C4_TPS_probe_ndraft2_parallel.txt`, `C6_TPS_probe_ndraft2.txt`, `C7_TPS_probe_ndraft2.txt`.
+Logs: `C4_TPS_probe_ndraft2_parallel.txt`, `C6_TPS_probe_ndraft2.txt`, `C7_TPS_probe_ndraft2.txt`, `C8_TPS_probe_ndraft2.txt`.
 
 ## C6 256-tok measure (D3, 2026-08-01)
 
@@ -222,6 +223,21 @@ Log: `C6_TPS_probe_ndraft2.txt`.
 **Interpretation:** C7 is a **real cost cut** (joint 53→38 ms with comparable accept). Draft fully hidden behind first T=1 verify on γ=1. Reject ≈ T₁; accept ≈ T₁ + second verify. **Still ≪ 100** (27.3 / 100 ≈ 0.27× stop bar). Free-draft ideal ceiling ~52 t/s remains; software path continues toward that, not 100, on gfx1150 35B.
 
 Log: `C7_TPS_probe_ndraft2.txt`. Smoke: `C7_smoke_ndraft2_max32.txt`.
+
+## C8 256-tok measure (D3, 2026-08-01) — same Fourier prompt as C6/C7
+
+| Metric | C7 | **C8** | Δ |
+|--------|-----|--------|---|
+| Generation t/s (256) | **27.34** | **27.29** | **−0.05** (flat) |
+| warm mean joint draft= (ms) | 37.79 | ~68* | timer undercount residual (no SYNC) |
+| warm accept rate p | 0.854 | ~0.85 | similar |
+| Stream(cpu) | no | **no** | |
+
+\*Without `MTP_TIMING_SYNC`, residual T=1 is not waited in `verify=`; work often appears in the next step’s joint window — host emit is too short to hide a full T₁ on this stack.
+
+**Verdict:** C8 is **scheduling hygiene**, not a ladder win. Best remains **C7 27.34**. Software plateau ~27 t/s on gfx1150 35B single-seq; still **≪ 100**.
+
+Log: `C8_TPS_probe_ndraft2.txt`. Smoke: `C8_smoke_ndraft2_max32.txt`.
 
 ## Path to 100 t/s (see plan §0)
 
