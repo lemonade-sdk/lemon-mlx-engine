@@ -264,3 +264,18 @@ Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.
 | **C13** `MLX_MTP_QKV_FUSE=1` | **25.45** | 0.814 | **66.9** | `C13_TPS_probe_ndraft2_qkv_fuse.txt` |
 
 **Verdict:** **FAIL / REGRESS** (−1.9 t/s). Fuse log confirmed ON; joint **inflated** (38→67 ms) — larger fused GEMM + slice is slower than three small quant matmuls on this iGPU for MTP head shapes. Accept held (~0.81). Keep code opt-in only. Ladder best remains **C7 27.34**. Plateau: C11–C13 consecutive negatives on 35B micro-opts.
+
+## C14 skip shared expert on draft (2026-08-01 fire)
+
+**Hypothesis:** MTP MoE draft always pays routed experts **plus** shared-expert SwiGLU. C11 cut routed top_k; shared skip is a different routing shortcut that may cut draft bandwidth without changing top_k.
+
+**Code** (`mtp_moe.cpp`): `MLX_MTP_NO_SHARED=1` returns `h + combined` (routed only). Default off.
+
+### D3 256-tok measure (Fourier-style, n_draft=2, full quant fuse, gfx1150)
+
+| Config | gen t/s | warm mean accept | warm joint draft= ms | log |
+|--------|---------|------------------|----------------------|-----|
+| **C7** (shared ON) | **27.34** | **0.854** | **37.8** | `C7_TPS_probe_ndraft2.txt` |
+| **C14** `MLX_MTP_NO_SHARED=1` | **25.60** | **0.705** | **62.9** | `C14_TPS_probe_ndraft2_no_shared.txt` |
+
+**Verdict:** **FAIL / REGRESS** (−1.7 t/s). Accept dropped (0.85→0.71); joint inflated (38→63 ms) — shared expert is quality-critical for this head, not free overhead. Flag opt-in only. Ladder best remains **C7 27.34**. **C11–C14 all regressed** — stop thrashing 35B draft-path micro-opts; free-draft sequential verify ≈ eager ceiling.

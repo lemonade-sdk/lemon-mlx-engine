@@ -249,6 +249,20 @@ mx::array MTPDecoderLayerMoE::operator()(
         /*shapeless=*/true);
     auto combined = compiled_combine({expert_out, scores})[0];
 
+    // C14: optional skip of shared expert (always-on SwiGLU on every draft step).
+    // Routed experts still run. Opt-in: MLX_MTP_NO_SHARED=1. Measured A/B vs C7.
+    static const bool kNoShared =
+        std::getenv("MLX_MTP_NO_SHARED") != nullptr;
+    if (kNoShared) {
+        static bool logged = false;
+        if (!logged) {
+            std::cerr << "[MTP] C14 shared expert OFF on draft "
+                         "(MLX_MTP_NO_SHARED=1; routed experts only)\n";
+            logged = true;
+        }
+        return mx::add(h, combined);
+    }
+
     // Shared expert path: sigmoid(gate) * shared_output + combined.
     auto shared_gate = mx::sigmoid(linear_no_bias(post, shared_expert_gate_weight_));
     // Shared expert uses single "expert" (num_experts=1), so indices = [[0]].
