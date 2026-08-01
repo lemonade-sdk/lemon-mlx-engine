@@ -1,0 +1,27 @@
+START 2026-08-01T09:08:18-07:00 tip=0276d9a M1 chat MTP short temp0
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups
+[MTP] Dequantized 20 weights total
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.2 GB, peak=18.3 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=4
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp] step=1 n_draft=4 accepted=2 drafts=[12675,1017,11,1204]
+[mtp-t] step=1 n_draft=4 accepted=2 draft=9563050us verify=775532us commit=182us total=10338765us
+Hi there,[mtp] step=2 n_draft=4 accepted=2 drafts=[1204,513,488,3242]
+[mtp-t] step=2 n_draft=4 accepted=2 draft=172105us verify=288374us commit=194us total=460674us
+ how are you[mtp] step=3 n_draft=4 accepted=3 drafts=[3242,30,248046,198]
+[mtp-t] step=3 n_draft=4 accepted=3 draft=170314us verify=276289us commit=131us total=446736us
+ today?
+Prompt:     18 tokens, 1.56791 tokens/s, 11.4802s
+Generation: 9 tokens, 9.9139 tokens/s, 0.907816s
+
+
+> EXIT:0

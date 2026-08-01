@@ -71,15 +71,21 @@ static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
 // Dedicated generation stream (thread-local).
 
 mx::Stream& generation_stream() {
+    // Prefer a thread-owned stream so worker threads (server) and MTP draft
+    // never depend on a missing default Stream(cpu, 0) TLS binding.
+    // Opt out: MLX_GEN_OWN_STREAM=0 → device default stream (legacy).
 #ifdef __APPLE__
     static thread_local mx::Stream s = mx::new_stream(mx::default_device());
     return s;
 #else
-    if (std::getenv("MLX_GEN_OWN_STREAM")) {
-        static thread_local mx::Stream s = mx::new_stream(mx::default_device());
-        return s;
-    }
-    static thread_local mx::Stream s = mx::default_stream(mx::default_device());
+    static thread_local mx::Stream s = [] {
+        const char* v = std::getenv("MLX_GEN_OWN_STREAM");
+        // Default ON for non-Apple (ROCm/Linux): own stream. Explicit 0 disables.
+        if (v && v[0] == '0' && v[1] == '\0') {
+            return mx::default_stream(mx::default_device());
+        }
+        return mx::new_stream(mx::default_device());
+    }();
     return s;
 #endif
 }
@@ -696,6 +702,11 @@ TokenIterator::TokenIterator(
 // ---------------------------------------------------------------------------
 
 std::vector<int> TokenIterator::mtp_speculative_step() {
+    // Same stream discipline as step()/prepare(): MTP draft+verify must not
+    // run on an unbound thread default stream. On ROCm, that path historically
+    // threw "There is no Stream(cpu, 0) in current thread" under --use-mtp.
+    StreamGuard sg(generation_stream());
+
     // Fallback to plain decode if MTP is not available on this context.
     if (!use_mtp_ || context_.get_mtp_head_fn == nullptr || context_.embed_fn == nullptr
         || context_.apply_lm_head_fn == nullptr) {
