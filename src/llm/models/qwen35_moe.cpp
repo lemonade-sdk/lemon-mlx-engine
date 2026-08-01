@@ -394,13 +394,12 @@ Qwen35MoEGatedDeltaNet::Qwen35MoEGatedDeltaNet(const Qwen35MoEConfiguration& arg
       out_proj_weight_(mx::zeros({args.hidden_size, value_dim_}))
 {}
 
-void Qwen35MoEGatedDeltaNet::materialize_decode_constants() {
-    // Idempotent (first T=1 step can fill if load skipped this).
-    const auto dtype = a_log_.dtype();
-    if (!q_norm_w_.has_value()) {
+void Qwen35MoEGatedDeltaNet::materialize_decode_constants(mx::Dtype act_dtype) {
+    // q/k norm weights in activation dtype (match prefill).
+    if (!q_norm_w_.has_value() || q_norm_w_->dtype() != act_dtype) {
         float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
-        q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, dtype);
-        k_norm_w_ = mx::full({head_k_dim_}, inv_scale, dtype);
+        q_norm_w_ = mx::full({head_k_dim_}, inv_scale * inv_scale, act_dtype);
+        k_norm_w_ = mx::full({head_k_dim_}, inv_scale, act_dtype);
     }
     if (!a_log_f32_.has_value()) {
         a_log_f32_ = mx::astype(a_log_, mx::float32);
@@ -501,34 +500,44 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, 1, conv_dim_}),
                                   {B, 1, num_v_heads_, head_v_dim_});
 
-        // Prefer load-time materialize; fallback if skipped (e.g. unit tests).
-        if (!q_norm_w_.has_value() || !a_log_f32_.has_value()) {
-            materialize_decode_constants();
+        if (!q_norm_w_.has_value() || !a_log_f32_.has_value() ||
+            q_norm_w_->dtype() != dtype) {
+            materialize_decode_constants(dtype);
         }
-        // GDN decode step. MLX_GDN_NO_FUSED=1 -> inline mx::compile recurrence.
-        // MLX_GDN_NO_FUSED2=1 -> the per-op fused path (rms_norm + beta/g +
-        // gated_delta_step). Default: the FlashQLA-style gdn_fused_decode kernel
-        // that folds q/k-RMSNorm + beta/g + recurrence into one launch.
+        // gdn_fused_decode: auto ON (unset). Opt-in: MLX_GDN_FUSED2=1.
+        // Off: MLX_GDN_FUSED2=0 or MLX_GDN_NO_FUSED2=1.
         static const bool use_fused_gdn = std::getenv("MLX_GDN_NO_FUSED") == nullptr;
+        static const bool fused2_auto_or_on = [] {
+            const char* v = std::getenv("MLX_GDN_FUSED2");
+            if (!v) return true;
+            if (v[0] == '0' && v[1] == '\0') return false;
+            return true;
+        }();
+        static const bool fused2_force_off =
+            std::getenv("MLX_GDN_NO_FUSED2") != nullptr;
         const bool use_fused2 =
-            use_fused_gdn && std::getenv("MLX_GDN_NO_FUSED2") == nullptr;
+            use_fused_gdn && fused2_auto_or_on && !fused2_force_off;
 
-        // The fused kernel folds the q/k norm; only normalize here otherwise.
         if (!use_fused2) {
             q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
             k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
         }
 
+        // SSM state: float32 between tokens; y stays act dtype.
         mx::array ssm_state(0.0f);
         if ((*cache)[1].has_value()) {
             ssm_state = (*cache)[1].value();
+            if (ssm_state.dtype() != mx::float32) {
+                ssm_state = mx::astype(ssm_state, mx::float32);
+            }
         } else {
-            ssm_state = mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, dtype);
+            ssm_state =
+                mx::zeros({B, num_v_heads_, head_v_dim_, head_k_dim_}, mx::float32);
         }
 
         static const bool st_ck = std::getenv("MLX_STATE_CKSUM") != nullptr;
         if (st_ck) {
-            auto c = mx::sum(mx::abs(mx::astype(ssm_state, mx::float32)));
+            auto c = mx::sum(mx::abs(ssm_state));
             mx::eval(c);
             fprintf(stderr, "[st] read_ssm %.6e\n", c.item<float>());
         }
@@ -541,8 +550,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                     *q_norm_w_, *k_norm_w_, ssm_state, /*inplace=*/gdn_inplace);
             } else {
                 std::tie(o, ns) = gated_delta_update(
-                    q_out, k_out, v_out, a_val, b_val, *a_log_f32_, *dt_bias_f32_,
+                    q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_,
                     ssm_state, std::nullopt, /*inplace_state=*/gdn_inplace);
+            }
+            if (o.dtype() != dtype) {
+                o = mx::astype(o, dtype);
+            }
+            if (ns.dtype() != mx::float32) {
+                ns = mx::astype(ns, mx::float32);
             }
             (*cache)[1] = ns;
             auto normalized = norm_(o, z);
@@ -560,10 +575,12 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
                 int Hv_ = v.shape(2), Dv_ = v.shape(3);
                 int rep_ = Hv_ / Hk_;
 
-                // beta + g fused
+                // beta + g fused (stable softplus via logaddexp in f32)
                 auto beta = mx::sigmoid(b);
                 auto a_log_f32 = mx::astype(a_log, mx::float32);
-                auto sp = mx::log(mx::add(mx::exp(mx::add(a, dt_bias)), mx::array(1.0f)));
+                auto a_f = mx::astype(a, mx::float32);
+                auto db_f = mx::astype(dt_bias, mx::float32);
+                auto sp = mx::logaddexp(mx::add(a_f, db_f), mx::array(0.0f));
                 auto g = mx::exp(mx::negative(mx::multiply(mx::exp(a_log_f32), sp)));
                 g = mx::astype(g, a.dtype());
 
@@ -599,7 +616,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
         auto results = compiled_decode_step(
             {q_out, k_out, v_out, b_val, a_log_, a_val, dt_bias_, ssm_state});
         auto out = results[0];
-        (*cache)[1] = results[1];
+        auto ns = results[1];
+        if (out.dtype() != dtype) {
+            out = mx::astype(out, dtype);
+        }
+        if (ns.dtype() != mx::float32) {
+            ns = mx::astype(ns, mx::float32);
+        }
+        (*cache)[1] = ns;
 
         // Gated norm + output projection
         auto normalized = norm_(out, z);
@@ -626,15 +650,19 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
     auto v_out = mx::reshape(mx::slice(conv_out, {0, 0, 2 * key_dim_}, {B, S, conv_dim_}),
                               {B, S, num_v_heads_, head_v_dim_});
 
-    float inv_scale = std::pow(static_cast<float>(head_k_dim_), -0.5f);
-    auto q_norm_w = mx::full({head_k_dim_}, inv_scale * inv_scale, q_out.dtype());
-    auto k_norm_w = mx::full({head_k_dim_}, inv_scale, k_out.dtype());
-    q_out = mx::fast::rms_norm(q_out, q_norm_w, 1e-6f);
-    k_out = mx::fast::rms_norm(k_out, k_norm_w, 1e-6f);
+
+    if (!q_norm_w_.has_value() || q_norm_w_->dtype() != q_out.dtype()) {
+        materialize_decode_constants(q_out.dtype());
+    }
+    q_out = mx::fast::rms_norm(q_out, *q_norm_w_, 1e-6f);
+    k_out = mx::fast::rms_norm(k_out, *k_norm_w_, 1e-6f);
 
     std::optional<mx::array> ssm_state;
     if (cache && (*cache)[1].has_value()) {
         ssm_state = (*cache)[1].value();
+        if (ssm_state->dtype() != mx::float32) {
+            ssm_state = mx::astype(*ssm_state, mx::float32);
+        }
     }
 
     mx::array out = mx::array(0.0f);
@@ -652,6 +680,14 @@ mx::array Qwen35MoEGatedDeltaNet::operator()(
             q_out, k_out, v_out, a_val, b_val, a_log_, dt_bias_, ssm_state, mask);
         out = o;
         new_state = ns;
+    }
+
+    // y → act dtype; SSM stays float32.
+    if (out.dtype() != dtype) {
+        out = mx::astype(out, dtype);
+    }
+    if (new_state.dtype() != mx::float32) {
+        new_state = mx::astype(new_state, mx::float32);
     }
 
     if (cache) {

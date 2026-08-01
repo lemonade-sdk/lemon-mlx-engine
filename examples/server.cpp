@@ -131,13 +131,16 @@ static CliArgs parse_args(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     auto args = parse_args(argc, argv);
 
-    // Explicitly select the device to avoid ROCm fallback on non-GPU systems.
-    // MLX_BUILD_ROCM is only defined when the build targets ROCm (ubuntu-rocm).
+    // Device selection:
+    // - ROCm builds: leave MLX default (HIP GPU).
+    // - Apple: leave MLX default (Metal GPU) — do NOT force CPU (CI smoke
+    //   otherwise crawls at ~0.3 tok/s and times out under thinking).
+    // - Other non-ROCm (e.g. ubuntu-cpu): force CPU so ROCm/HIP is never used.
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
-    // ROCm backend — use default (GPU).
     std::cerr << "Device: ROCm GPU\n";
+#elif defined(__APPLE__)
+    std::cerr << "Device: Metal GPU\n";
 #else
-    // No ROCm backend — force CPU to prevent hip_kernel errors.
     std::cerr << "Device: CPU (ROCm disabled)\n";
     mx::set_default_device(mx::Device::cpu);
 #endif

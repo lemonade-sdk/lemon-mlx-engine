@@ -6,6 +6,7 @@
 #include <mlx/mlx.h>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -38,6 +39,34 @@ void decode_capture_destroy();
 namespace mlx_lm {
 
 namespace mx = mlx::core;
+
+// MLX_KV_OFFSET_LOG=1: stderr KV max offset every MLX_KV_OFFSET_EVERY (default 64).
+static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
+    static const bool enabled = [] {
+        const char* v = std::getenv("MLX_KV_OFFSET_LOG");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    if (!enabled || cache.empty()) return;
+
+    static const int every = [] {
+        const char* e = std::getenv("MLX_KV_OFFSET_EVERY");
+        int n = e ? std::atoi(e) : 64;
+        return n > 0 ? n : 64;
+    }();
+    static int prev_max_off = -1;
+
+    int max_off = 0;
+    for (auto& c : cache) max_off = std::max(max_off, c.offset());
+    const bool stall =
+        prev_max_off >= 0 && max_off <= prev_max_off && token_count > 0;
+    if (stall || (token_count % every) == 0) {
+        fprintf(stderr, "[kv] tok=%d max_offset=%d prev=%d layers=%zu%s\n",
+                token_count, max_off, prev_max_off, cache.size(),
+                stall ? " STALL" : "");
+        fflush(stderr);
+    }
+    prev_max_off = max_off;
+}
 
 // Dedicated generation stream (thread-local).
 
@@ -1034,12 +1063,14 @@ std::optional<int> TokenIterator::next() {
         token_count_++;
         measure_prefill_boundary_();
         mx::eval(previous_y.tokens);
+        maybe_log_kv_offset_(cache_, token_count_);
         return previous_y.tokens.item<int32_t>();
     }
     mx::async_eval(token);
     token_count_++;
     mx::eval(previous_y.tokens);
     measure_prefill_boundary_();
+    maybe_log_kv_offset_(cache_, token_count_);
     int32_t tid = previous_y.tokens.item<int32_t>();
     return tid;
 }
@@ -1154,8 +1185,8 @@ GenerateCompletionInfo generate_text(
                 return on_text(*text, token);
             }
             // No text this token (incomplete UTF-8, or it did not extend the
-            // segment). on_text is skipped, so cancellation rests entirely on
-            // should_cancel, which generate() polls every iteration.
+            // segment). Cancellation rests entirely on should_cancel, which
+            // generate() polls every iteration.
             return GenerateDisposition::more;
         },
         should_cancel);
