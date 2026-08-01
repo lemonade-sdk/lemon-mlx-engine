@@ -151,3 +151,14 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 | eager | 26.13 | — | — | `TPS_probe_no_mtp.txt` |
 
 **Verdict:** **REAL win.** C7 **beats full-fuse eager** (27.34 > 26.13, **~1.05×**) with joint collapsed to T₁. Accept rate similar to C6 on same prompt — Δ is not an accept confound. **Stop bar 100 still UNMET** (~3.7× short). Next toward max single-seq: residual second-verify cost / accept; toward 100: H1/H2/H3 only.
+
+## C8 (async residual y_ + no MTP_TIMING barrier; 2026-08-01)
+
+**Code** (`generate.cpp`):
+
+1. After setting `y_` (accept residual / reject path), **`mx::async_eval(y_.tokens)` immediately** so residual T=1 can start before host metrics/emit.
+2. **`MTP_TIMING` no longer forces `mx::eval(y_)`** (that barrier serialized residual into every timed step and blocked hide-under-emit). Full barrier timing: **`MTP_TIMING_SYNC=1`**.
+
+**Smoke** (`C8_smoke_ndraft2_max32.txt`): green, no Stream(cpu). Short Generation **~29.1 t/s** (≈ C7 smoke) — **not** a 256 claim. mtp-t residual `verify=` drops (~4 ms) because timers no longer wait on residual; next-step joint can absorb spilled work if host emit is short.
+
+**Next:** D3 256-tok C8 vs C7 27.34 (watch for contention regression).

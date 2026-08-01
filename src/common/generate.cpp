@@ -984,8 +984,15 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             maybe_quantize_kv_cache(
                 cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
             if (last_st.has_value()) stash_hidden_from(*last_st);
+            // C8: kick residual accept-path T=1 (y_/pred2) immediately so it can
+            // run under host emit of d0 (+ buffered drafts). Do not force a full
+            // mx::eval here — MTP_TIMING used to barrier-sync residual into the
+            // step wall and destroy hide-under-emit (opt-in: MTP_TIMING_SYNC=1).
+            mx::async_eval(y_.tokens);
             if (kMtpTiming) {
-                mx::eval(y_.tokens);
+                static const bool kTimingSync =
+                    std::getenv("MTP_TIMING_SYNC") != nullptr;
+                if (kTimingSync) mx::eval(y_.tokens);
                 t_verify = std::chrono::steady_clock::now();
             }
         } else {
@@ -1041,8 +1048,12 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             maybe_quantize_kv_cache(
                 cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
             if (last_st.has_value()) stash_hidden_from(*last_st);
+            // C8: async residual y_ (see parallel path).
+            mx::async_eval(y_.tokens);
             if (kMtpTiming) {
-                mx::eval(y_.tokens);
+                static const bool kTimingSync =
+                    std::getenv("MTP_TIMING_SYNC") != nullptr;
+                if (kTimingSync) mx::eval(y_.tokens);
                 t_verify = std::chrono::steady_clock::now();
             }
         }
@@ -1085,8 +1096,12 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             maybe_quantize_kv_cache(
                 cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
             if (last_st.has_value()) stash_hidden_from(*last_st);
+            // C8: async residual y_ (see parallel path).
+            mx::async_eval(y_.tokens);
             if (kMtpTiming) {
-                mx::eval(y_.tokens);
+                static const bool kTimingSync =
+                    std::getenv("MTP_TIMING_SYNC") != nullptr;
+                if (kTimingSync) mx::eval(y_.tokens);
                 t_verify = std::chrono::steady_clock::now();
             }
         }
@@ -1174,8 +1189,12 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
             y_ = LMInput::Text(
                 mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
         }
+        // C8: async residual y_ (batch path).
+        mx::async_eval(y_.tokens);
         if (kMtpTiming) {
-            mx::eval(y_.tokens);
+            static const bool kTimingSync =
+                std::getenv("MTP_TIMING_SYNC") != nullptr;
+            if (kTimingSync) mx::eval(y_.tokens);
             t_verify = std::chrono::steady_clock::now();
         }
 

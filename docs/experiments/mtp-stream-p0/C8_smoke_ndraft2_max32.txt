@@ -1,0 +1,52 @@
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled (scaffolding): n_draft=2
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp] step=1 n_draft=2 accepted=1 drafts=[760,85894]
+[mtp-t] step=1 n_draft=2 accepted=1 draft=407060us verify=4854us commit=16us total=411931us
+The Fourier[mtp] step=2 n_draft=2 accepted=1 drafts=[5000,369]
+[mtp-t] step=2 n_draft=2 accepted=1 draft=70255us verify=3914us commit=33us total=74203us
+ transform is[mtp] step=3 n_draft=2 accepted=1 drafts=[264,34780]
+[mtp-t] step=3 n_draft=2 accepted=1 draft=69515us verify=4929us commit=35us total=74480us
+ a mathematical[mtp] step=4 n_draft=2 accepted=1 drafts=[14334,421]
+[mtp-t] step=4 n_draft=2 accepted=1 draft=70451us verify=5220us commit=14us total=75686us
+ technique that[mtp] step=5 n_draft=2 accepted=1 drafts=[27572,8027]
+[mtp-t] step=5 n_draft=2 accepted=1 draft=69404us verify=3863us commit=30us total=73298us
+ decomposes[mtp] step=6 n_draft=2 accepted=1 drafts=[264,709]
+[mtp-t] step=6 n_draft=2 accepted=1 draft=69418us verify=3614us commit=10us total=73042us
+ a function[mtp] step=7 n_draft=2 accepted=1 drafts=[1083,1141]
+[mtp-t] step=7 n_draft=2 accepted=1 draft=69070us verify=3594us commit=12us total=72677us
+ into its[mtp] step=8 n_draft=2 accepted=1 drafts=[71545,32655]
+[mtp-t] step=8 n_draft=2 accepted=1 draft=69929us verify=4068us commit=13us total=74010us
+ constituent frequencies[mtp] step=9 n_draft=2 accepted=1 drafts=[11,29621]
+[mtp-t] step=9 n_draft=2 accepted=1 draft=69647us verify=4085us commit=16us total=73749us
+, revealing[mtp] step=10 n_draft=2 accepted=0 drafts=[279,16045]
+[mtp-t] step=10 n_draft=2 accepted=0 draft=68675us verify=12us commit=7us total=68695us
+ the[mtp] step=11 n_draft=2 accepted=1 drafts=[11304,19142]
+[mtp-t] step=11 n_draft=2 accepted=1 draft=37863us verify=3321us commit=7us total=41192us
+ frequency spectrum[mtp] step=12 n_draft=2 accepted=1 drafts=[7920,2785]
+[mtp-t] step=12 n_draft=2 accepted=1 draft=69269us verify=3740us commit=12us total=73023us
+ hidden within[mtp] step=13 n_draft=2 accepted=0 drafts=[264,854]
+[mtp-t] step=13 n_draft=2 accepted=0 draft=70652us verify=22us commit=24us total=70699us
+ a[mtp] step=14 n_draft=2 accepted=0 drafts=[8028,466]
+[mtp-t] step=14 n_draft=2 accepted=0 draft=38938us verify=15us commit=10us total=38964us
+ signal[mtp] step=15 n_draft=2 accepted=1 drafts=[13,248046]
+[mtp-t] step=15 n_draft=2 accepted=1 draft=38552us verify=3595us commit=11us total=42160us
+.
+Prompt:     19 tokens, 24.5194 tokens/s, 0.774896s
+Generation: 27 tokens, 29.1483 tokens/s, 0.926298s
+
+
+> 
