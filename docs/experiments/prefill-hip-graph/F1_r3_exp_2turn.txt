@@ -1,0 +1,26 @@
+START 2026-08-01T16:39:53-07:00 probe=r3_exp_2turn tip=09940a8
+ENV_BANNER: MLX_HIP_GRAPH_PREFILL=1 MLX_GRAPH_PREFILL_REPLAY=1, 2 turns, step=128
+---
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.3 GB, peak=20.8 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[prefill] prompt_tokens=1653 host_build=14.2583s gpu_exec=0.16139s total=14.4197s pp/s=114.635
+This is a comprehensive overview connecting fundamental electromagnetic
+Prompt:     1653 tokens, 114.635 tokens/s, 14.4197s
+Generation: 8 tokens, 31.813 tokens/s, 0.25147s
+
+
+> 
+Assistant: [prefill] prompt_tokens=3391 host_build=28.9101s gpu_exec=0.109383s total=29.0195s pp/s=116.853
+Here is a concise summary of the requested
+Prompt:     3391 tokens, 116.853 tokens/s, 29.0195s
+Generation: 8 tokens, 31.1024 tokens/s, 0.257215s
+
+
+> EXIT:0

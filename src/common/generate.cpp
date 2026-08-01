@@ -573,6 +573,25 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
     // Prefill: large multi-token intermediates — keep the per-graph caps active
     // (decode-mode off) so peak graph memory stays bounded.
     mlx::core::gpu_set_graph_decode_mode(false);
+    // One-shot banner for prefill HIP-graph experiments (mlx use_hip_graphs
+    // opt-in via MLX_HIP_GRAPH_PREFILL; ExecUpdate via MLX_GRAPH_PREFILL_REPLAY).
+    // See docs/experiments/prefill-hip-graph/.
+    if (std::getenv("MLX_PROFILE_PREFILL") || std::getenv("MLX_HIP_GRAPH_PREFILL")
+        || std::getenv("MLX_GRAPH_PREFILL_REPLAY")) {
+        static bool logged = false;
+        if (!logged) {
+            const char* hp = std::getenv("MLX_HIP_GRAPH_PREFILL");
+            const char* pr = std::getenv("MLX_GRAPH_PREFILL_REPLAY");
+            const char* ps = std::getenv("MLX_PREFILL_STEP");
+            std::cerr << "[prefill-graph] MLX_HIP_GRAPH_PREFILL="
+                      << (hp ? hp : "<unset>")
+                      << " MLX_GRAPH_PREFILL_REPLAY=" << (pr ? pr : "<unset>")
+                      << " MLX_PREFILL_STEP=" << (ps ? ps : "<default>")
+                      << " prompt_tokens=" << input.text.tokens.size()
+                      << " window=" << window_size << "\n";
+            logged = true;
+        }
+    }
 #endif
 
     if (processor_.has_value()) {

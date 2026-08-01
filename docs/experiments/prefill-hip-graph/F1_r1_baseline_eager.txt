@@ -1,0 +1,22 @@
+START 2026-08-01T16:37:26-07:00 probe=r1_baseline_eager tip=09940a8
+ENV_BANNER:
+  MLX_HIP_GRAPH_PREFILL=<unset> MLX_GRAPH_PREFILL_REPLAY=<unset>
+  MLX_PREFILL_STEP=128 MLX_PROFILE_PREFILL=1 warmup=ON pure=OFF mtp=OFF
+  model=LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit tip=09940a8
+---
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.2 GB, peak=18.3 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[prefill] prompt_tokens=1653 host_build=14.1573s gpu_exec=0.88745s total=15.0448s pp/s=109.872
+This is a comprehensive overview connecting fundamental electromagnetic theory, signal processing mathematics, and their
+Prompt:     1653 tokens, 109.872 tokens/s, 15.0448s
+Generation: 16 tokens, 30.0668 tokens/s, 0.532149s
+
+
+> EXIT:0
