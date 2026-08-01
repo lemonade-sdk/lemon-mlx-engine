@@ -1,0 +1,20 @@
+START 2026-08-01T16:51:43-07:00 probe=s512_absorb_one_graph tip=56d131b
+ENV_BANNER: ABSORB_TAIL=1 ONE_GRAPH=1 USE_HIP_GRAPHS=1 PREFILL_REPLAY=1 STEP=512
+---
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.3 GB, peak=20.8 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [prefill-graph] ONE_GRAPH=1 ABSORB_TAIL=1 HIP_GRAPH_PREFILL=<unset> HIP_GRAPH_DECODE=<unset> USE_HIP_GRAPHS=1 PREFILL_REPLAY=1 PREFILL_STEP=512 prompt_tokens=1653 window=512
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[prefill] prompt_tokens=1653 host_build=12.5883s gpu_exec=0.00838021s total=12.5967s pp/s=131.225
+It appears you have pasted the same prompt multiple times. Below is a comprehensive
+Prompt:     1653 tokens, 131.225 tokens/s, 12.5967s
+Generation: 16 tokens, 29.7808 tokens/s, 0.537259s
+
+
+> EXIT:0

@@ -114,12 +114,30 @@ Engine opt-in: during `prepare()` only, set `gpu_set_graph_decode_mode(true)` so
 
 ---
 
-## Next fires (prefill-only; no pure-decode thrash)
+## F3: absorb tail + step 128/512 (FINAL)
 
-1. **Pad-to-step prefill** in `llm_default_prepare` (opt-in) so every chunk is topology-identical; remeasure with graph — only if remainder fraction is large.  
-2. **PrefillArena sketch** in mlx (deterministic temps for fixed `T=step`) + stream capture slot keyed by step — true build-once.  
-3. **Server multi-request same-step** A/B once build-once exists.  
-4. After **3 consecutive honest negatives** (F1, F2, …) without a path to ≥10%, stop schedule per fire contract.  
+`MLX_PREFILL_ABSORB_TAIL=1` runs all T>1 prefill inside prepare (leave 1 tok for step). Best graph stack still **flat/slightly worse** on long prompt:
+
+| | step128 pp/s | step512 pp/s |
+|--|--------------|--------------|
+| eager | 112.0 | **132.3** |
+| absorb+ONE_GRAPH+USE+REPLAY | 111.3 | 131.2 |
+
+**Schedule STOP:** three consecutive fires fail ≥10% long-prompt bar. Design: `PREFILL_ARENA_DESIGN.md`. Product: **keep prefill eager**.
+
+## Schedule status
+
+| Fire | Δ long pp/s | Outcome |
+|------|-------------|---------|
+| F1 split+replay | ~+2.7% | FAIL |
+| F2 ONE_GRAPH | ~+3.6% | FAIL |
+| F3 absorb+ONE_GRAPH | ~−0.7% | FAIL → **stop** |
+
+## Next (only if mlx PrefillArena lands)
+
+1. Implement PrefillArena + stream capture in mlx `rocm-support`.  
+2. Re-run F1 long-prompt recipe; require ≥10% before any product opt-in.  
+3. Prefer `MLX_PREFILL_STEP=512` for prefill throughput (eager already wins vs 128) — orthogonal to graphs.  
 
 
 ---

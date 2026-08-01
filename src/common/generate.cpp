@@ -597,8 +597,10 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
             const char* ug = std::getenv("MLX_USE_HIP_GRAPHS");
             const char* pr = std::getenv("MLX_GRAPH_PREFILL_REPLAY");
             const char* og = std::getenv("MLX_PREFILL_ONE_GRAPH");
+            const char* at = std::getenv("MLX_PREFILL_ABSORB_TAIL");
             const char* ps = std::getenv("MLX_PREFILL_STEP");
             std::cerr << "[prefill-graph] ONE_GRAPH=" << (og ? og : "<unset>")
+                      << " ABSORB_TAIL=" << (at ? at : "<unset>")
                       << " HIP_GRAPH_PREFILL=" << (hp ? hp : "<unset>")
                       << " HIP_GRAPH_DECODE=" << (hd ? hd : "<unset>")
                       << " USE_HIP_GRAPHS=" << (ug ? ug : "<unset>")

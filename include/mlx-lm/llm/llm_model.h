@@ -5,6 +5,8 @@
 #include <mlx-lm/common/language_model.h>
 #include <mlx-lm/common/types.h>
 #include <mlx/mlx.h>
+#include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 namespace mlx_lm {
@@ -15,6 +17,12 @@ namespace mlx_lm {
 //
 // This is a free function that any LLM model can call from its
 // prepare_impl.
+//
+// MLX_PREFILL_ABSORB_TAIL=1 (opt-in, experiment only): keep chunking while
+// more than one token remains, taking min(step, n-1) each time so all T>1
+// multi-token prefill runs inside prepare (under any prepare-time HIP graph
+// mode). Leaves a single token for TokenIterator::step first-token sample.
+// Default OFF — product keeps classic "leave remainder ≤ step for step()".
 template <typename Model>
 PrepareResult llm_default_prepare(
     Model& model,
@@ -25,13 +33,31 @@ PrepareResult llm_default_prepare(
     int prefill_step_size = (window_size > 0) ? window_size : 512;
     auto text = input.text;
 
+    static const bool absorb_tail = [] {
+        const char* e = std::getenv("MLX_PREFILL_ABSORB_TAIL");
+        return e && e[0] == '1' && e[1] == '\0';
+    }();
+    // Classic: stop when remaining ≤ step (remainder may still be multi-token).
+    // Absorb: stop only when a single token remains for first-token sampling.
+    const int stop_above = absorb_tail ? 1 : prefill_step_size;
+
     // Prepare the prompt in chunks if larger than the prefill size.
     // Tokens are 1D [seq_len]; add batch dim [1, seq_len] for model calls.
-    while (text.tokens.shape(0) > prefill_step_size) {
+    while (text.tokens.shape(0) > stop_above) {
+        const int n = text.tokens.shape(0);
+        int take = prefill_step_size;
+        if (absorb_tail) {
+            // Never consume the final token here — leave it for step().
+            take = std::min(prefill_step_size, n - 1);
+            if (take <= 0) {
+                break;
+            }
+        }
+
         auto chunk_tokens = mlx::core::slice(
             text.tokens,
             {0},
-            {prefill_step_size});
+            {take});
 
         // Add batch dimension for model call (matches Swift's newAxis)
         LMInput::Text chunk_text(mlx::core::expand_dims(chunk_tokens, 0));
@@ -52,7 +78,7 @@ PrepareResult llm_default_prepare(
 
         text.tokens = mlx::core::slice(
             text.tokens,
-            {prefill_step_size},
+            {take},
             {text.tokens.shape(0)});
     }
 
