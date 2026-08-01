@@ -170,3 +170,12 @@ User bar is MTP Generation ≥ **100** t/s. This is **not met** (best **27.34** 
 | eager | 26.13 | | `TPS_probe_no_mtp.txt` |
 
 **Verdict:** C8 **does not raise** 256-tok gen t/s. Host emit cannot hide residual T=1; residual spills into next joint. Keep C8 as hygiene (no forced MTP_TIMING barrier; early async_eval). **Ladder best remains C7 27.34.** Stop bar 100 **UNMET**. Plateau: further micro-opts unlikely past ~28–40 without H1/H2.
+
+## C9 n_draft=3 A/B (D3 measure only)
+
+| Config | gen t/s | log |
+|--------|---------|-----|
+| C7 n_draft=2 | **27.34** | `C7_TPS_probe_ndraft2.txt` |
+| C9 n_draft=3 fixed | **22.71** | `C9_TPS_probe_ndraft3_fixed.txt` |
+
+**Verdict:** Deeper draft **regresses**. Keep default γ≈1 (`--n-draft 2`). **Software plateau confirmed** at ~27 t/s on this device/model; **100 t/s single-seq is not a realistic target** (needs H1 discrete GPU / H2 smaller model / H3 multi-seq aggregate).

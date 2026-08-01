@@ -239,6 +239,28 @@ Log: `C7_TPS_probe_ndraft2.txt`. Smoke: `C7_smoke_ndraft2_max32.txt`.
 
 Log: `C8_TPS_probe_ndraft2.txt`. Smoke: `C8_smoke_ndraft2_max32.txt`.
 
+## C9 n_draft=3 fixed (D3, 2026-08-01) — same Fourier prompt
+
+| Config | gen t/s | warm accept mean | notes |
+|--------|---------|------------------|-------|
+| C7 n_draft=2 | **27.34** | 0.85 (of 1 slot) | best |
+| **C9 n_draft=3 fixed** | **22.71** | ~1.3 (of 2 slots) | **regression** (−17%) |
+| eager | 26.13 | — | |
+
+`MLX_MTP_FIXED_DRAFT=1 --n-draft 3`. Deeper draft is not free (joint draft window rises; extra verify tokens). Confirms OptiQ γ=1 / plan: **do not raise n_draft** on this MoE stack.
+
+Log: `C9_TPS_probe_ndraft3_fixed.txt`.
+
+## Software plateau (post C1–C9)
+
+| Layer | Value |
+|-------|-------|
+| Best MTP single-seq | **27.34 t/s** (C7, n_draft=2) |
+| Eager | 26.13 t/s |
+| MTP / eager | **~1.05×** |
+| Free-draft γ=1 theory | ≈ eager (every token still pays ~T₁ verify) |
+| Stop bar 100 | **3.7× above best**; **not reachable** on gfx1150 35B single-seq |
+
 ## Path to 100 t/s (see plan §0)
 
 Stop bar is MTP Generation ≥ **100** t/s. Eager T₁ ≈ 38.3 ms (26.13 t/s); free-draft p=1 β=1 caps ~**2×** (~52 t/s) ≪ 100. Best measured MTP **27.34**. Paths to 100: H1 faster GPU, H2 smaller model, H3 multi-seq aggregate — see plan §0. **Do not claim ≥100 without a probe log.**
