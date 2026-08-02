@@ -14,7 +14,7 @@
 | # | Lever | Status | Notes |
 |---|--------|--------|-------|
 | **2** | Batch-verify re-probe (06 §4) | **LEVER2_CLOSED / KILL** | Confirmed from `exp/mtp-tps-ceiling` S4 — **do not re-run** |
-| **3** | lm_head traffic cut (T₁) | **OPEN for implement** | 4-bit tax **~3.87 ms ~11.5% T₁**; design done — **C1 next** if we keep improving ([`FURTHER_IMPROVE.md`](FURTHER_IMPROVE.md)) |
+| **3** | lm_head traffic cut (T₁) | **FUND_STAGE2 / C1 OPEN** | 4-bit tax **~4.0 ms ~11.5% T₁**; stage2 take+qmm **≪ fund bar** ([`B_stage2_K_sweep.txt`](B_stage2_K_sweep.txt)); **C1 stage-1 implement next** |
 | **4** | Graph decode MoE+GDN 35B | **LEVER4_KILL** | HIP −3.6%; pure VOID; prefill-only stance [`HIP_GRAPH_STANCE.md`](HIP_GRAPH_STANCE.md) |
 
 ---
@@ -59,19 +59,36 @@ See [`RESULTS.md`](RESULTS.md). Headline:
 
 **Theoretical free-head ceiling** (if head→0 and T₁ drops by mean qmm only): 33.69−3.87=29.82 ms → **~33.5 t/s** (~**+13%** vs 29.68). **Not measured**; upper-bound sketch only.
 
-### Design C (2026-08-02) — complete, implement parked
+### Design C (2026-08-02) — complete; stage-2 **FUNDED**
 
 See [`DESIGN_C.md`](DESIGN_C.md). Summary:
 
 - **Not** “quantize to 4-bit” (void). Residual is algorithmic (two-stage / hierarchical) or kernel-only qmm.
 - **Ship gate:** temp=0 argmax match 100% vs full head; MTP RS stays full head.
-- **Fund implement** only if stage1+stage2 ≤ ~0.5×3.87 ms **or** e2e ≥+5% gen t/s (same-session logs).
-- **Honest cap:** cannot claim &gt; free-head ~+13% from head work alone.
-- **Next program step:** Lever 4 **KILL** (field). Residual optional C1 implement or C4 close.
+- **Stage-2 gate (measured 2026-08-02T02:47Z):** full qmm **4.026 ms**; take+qmm K=8192 **0.561 ms** (~14% of full); stage1 budget to 0.5×full ≈ **1.45 ms** — **BUDGET_OK** all K≤16384. Log: `B_stage2_K_sweep.txt`.
+- **Still unmeasured:** stage-1 shortlist cost + argmax quality.
+- **Honest cap:** cannot claim &gt; free-head ~+13% from head work alone; no e2e +Δ yet.
+- **Next:** dedicated C1 temp=0 implement (stage-1 + wire stage-2) **or** stage-1-only microbench.
 
 ---
 
 ## Fire log
+
+### Fire 2026-08-02T02:47Z — PROGRESS (stage-2 K-sweep FUND)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** (FUND_STAGE2) |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **GPU** | ~2–3% → `bench_lm_head` only |
+| **Lever work** | #3 stage-2 take+K-row qmm microbench |
+| **Key** | Full **4.026** ms; K8192 stage2 **0.561** ms; all K BUDGET_OK vs 0.5×full |
+| **Verdict** | Stage-2 **not kill**; implement risk = **stage-1** |
+| **Next** | C1 temp=0 implement day; no L4 re-probe |
+
+Clear Thought: sequentialthinking + decisionframework (bench over C4) + scientificmethod (H-s2-cheap supported) + metacognitivemonitoring (no e2e claim).
+
+Log: [`B_stage2_K_sweep.txt`](B_stage2_K_sweep.txt).
 
 ### Fire 2026-08-02T02:41Z — PROGRESS (LEVER4_KILL field probe)
 
@@ -151,4 +168,4 @@ Clear Thought: sequentialthinking + metacognitivemonitoring + decisionframework 
 
 - STOPPED if lever 3 CLOSED **and** lever 4 KILL/impossible **and** lever 2 already KILL.
 - Or three consecutive fires with no implement/measure.
-- **Now:** L2 KILL · L4 KILL · L3 implement still **PARKED** (not CLOSED) → loop **not** STOPPED until residual head accepted as C4 or C1/C2 lands.
+- **Now:** L2 KILL · L4 KILL · L3 **FUND_STAGE2** (stage-1 implement still open) → loop **not** STOPPED.

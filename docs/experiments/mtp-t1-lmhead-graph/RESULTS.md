@@ -177,7 +177,7 @@ Generation: 128 tokens, 29.68 tokens/s, 4.31267s
 
 ---
 
-## 5b. Design C (no new GPU numbers)
+## 5b. Design C (no new GPU numbers at design fire)
 
 Full plan: [`DESIGN_C.md`](DESIGN_C.md).
 
@@ -185,9 +185,40 @@ Full plan: [`DESIGN_C.md`](DESIGN_C.md).
 |----------|--|
 | Primary design | Two-stage shortlist + exact K-row head (temp=0 first); embed-as-proxy **rejected** (BF16 dequant embed ~1GB worse than 4-bit head) |
 | Secondary | Kernel-only faster full qmm (quality-neutral) |
-| Implement this fire | **No** |
+| Implement at design fire | **No** |
 | Upside claim | Cap narrative at free-head sketch **~+13%**; **no** +15–25% |
-| Next | Lever 4 graph inventory; implement C only if gates in DESIGN_C §3 met later |
+| Later | Lever 4 **KILL**; stage-2 microbench §5c |
+
+---
+
+## 5c. Design C stage-2 K-sweep (MEASURED 2026-08-02T02:47Z)
+
+**Tool:** `examples/bench_lm_head.cpp` with `BENCH_STAGE2=1`  
+**Op stage2:** `take` packed `lm_head.{weight,scales,biases}` rows for `arange(0,K)` then `quantized_matmul` → `[1,K]`  
+**Stage-1:** **not** included (shortlist algorithm unmeasured)  
+**Full log:** [`B_stage2_K_sweep.txt`](B_stage2_K_sweep.txt)  
+**Device:** gfx1150 · real LemonMLXE 4-bit lm_head
+
+| Cell | take+qmm mean ms | % of full | gather mean | qmm-only mean | stage1 budget to 0.5×full |
+|------|------------------|-----------|-------------|---------------|---------------------------|
+| Full vocab qmm | **4.02642** | 100% | — | — | fund_half **2.013** |
+| K=256 | **0.0657** | 1.6% | 0.057 | 0.037 | **+1.95** BUDGET_OK |
+| K=1024 | **0.0788** | 2.0% | 0.064 | 0.043 | **+1.93** BUDGET_OK |
+| K=4096 | **0.321** | 8.0% | 0.248 | 0.095 | **+1.69** BUDGET_OK |
+| K=8192 | **0.561** | 13.9% | 0.364 | 0.158 | **+1.45** BUDGET_OK |
+| K=16384 | **1.048** | 26.0% | 0.800 | 0.306 | **+0.97** BUDGET_OK |
+
+### Verdict
+
+| Gate | Outcome |
+|------|---------|
+| Stage-2 alone ≥ fund_half? | **No** — all K tested leave stage1 budget |
+| **FUND_STAGE2** | **Yes** — exact K-row path is cheap enough that two-stage is latency-plausible |
+| e2e gen +Δ | **Not measured** |
+| Quality / argmax match | **Not measured** |
+| Contiguous gather vs random ids | **Best-case** (arange); random may be slower |
+
+**Notable (not e2e):** stage2 @ K8192 is only **~14% of full head ms** — if stage1 ≤ ~1.45 ms, Design C §3 latency bar can be hit. **Do not claim product win until e2e.**
 
 ---
 

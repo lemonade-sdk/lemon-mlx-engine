@@ -40,21 +40,23 @@ We’re still willing to improve performance. This is the **honest map** of what
 
 ### A. Residual lm_head cut — Design C (**best on-box multi-ms lever left**)
 
-| Fact | Value |
-|------|--------|
-| Full 4-bit head qmm | **~3.87 ms** |
-| Share of T₁ | **~11.5%** |
-| Free-head ceiling (sketch) | **~+13%** gen t/s if head→0 |
+| Fact | Value | Source |
+|------|--------|--------|
+| Full 4-bit head qmm | **~3.87–4.03 ms** | B + stage2 same-session |
+| Share of T₁ | **~11.5%** | B + T₁ ref |
+| Free-head ceiling (sketch) | **~+13%** gen t/s if head→0 | arithmetic only |
+| **Stage-2 take+qmm K=8192** | **0.561 ms** (~14% of full) | `B_stage2_K_sweep.txt` **FUND_STAGE2** |
+| Stage-1 budget to 0.5×full @ K8192 | **~1.45 ms** | same log |
 
 **Today:** every token still does **full vocab** `quantized_matmul` then sampler. Even **temp=0 ArgMax** only *uses* argmax after full logits exist (`generate.cpp` + `call_impl`).
 
-| Path | Scope | Risk | Effort |
-|------|--------|------|--------|
-| **C1 two-stage / shortlist @ temp=0** | Greedy + MTP greedy only | Argmax match must be 100% | 2–4 d |
-| **C2 kernel faster full qmm** | All modes | Quality-neutral | mlx-rocm / 3–5 d |
-| **C3 two-stage @ temp=0.7 / RS** | Product sample + think | Distribution / RS bias | 5+ d after C1 |
+| Path | Scope | Risk | Effort | Gate |
+|------|--------|------|--------|------|
+| **C1 two-stage / shortlist @ temp=0** | Greedy + MTP greedy only | Argmax match must be 100%; **stage1 ms** | 2–4 d | stage2 **FUNDED**; stage1 open |
+| **C2 kernel faster full qmm** | All modes | Quality-neutral | mlx-rocm / 3–5 d | open off-repo |
+| **C3 two-stage @ temp=0.7 / RS** | Product sample + think | Distribution / RS bias | 5+ d after C1 | after C1 |
 
-**Recommended next implement:** env-gated **C1 temp=0 only**, measure e2e vs `T_E0` / `B_t1_eager_ref`. Any +Δ is **notable**; multi-% is fundable.
+**Recommended next implement:** env-gated **C1 temp=0 only** (stage-1 shortlist + existing cheap stage-2), measure e2e vs `T_E0` / `B_t1_eager_ref`. Any +Δ is **notable**; multi-% is fundable.
 
 ### B. Prefill HIP only (not decode)
 
@@ -88,8 +90,8 @@ We’re still willing to improve performance. This is the **honest map** of what
 
 ## 5. Suggested work order (if we keep going)
 
-1. **Now:** C1 design freeze + optional `bench` for row-gather stage2 feasibility (code spike).  
-2. **Implement day:** `MLX_LM_HEAD_TWOSTAGE=1` temp=0 path → e2e A/B (notable any +Δ).  
+1. ~~C1 design freeze + stage2 bench~~ **DONE** — FUND_STAGE2 (`B_stage2_K_sweep.txt`).  
+2. **Implement day:** stage-1 shortlist + `MLX_LM_HEAD_TWOSTAGE=1` temp=0 → e2e A/B (notable any +Δ).  
 3. **If C1 wins:** try MTP greedy; leave RS full-head.  
 4. **Parallel:** product PR hygiene for fuse + HIP stance.  
 5. **Strategic:** H1/H2 when hardware/product surface allows.

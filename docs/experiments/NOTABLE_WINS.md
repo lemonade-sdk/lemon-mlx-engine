@@ -39,6 +39,7 @@ All numbers log-backed. Small positives are **notable**, not “round to zero.�
 | HIP graph **decode** vs ctrl | **28.73 vs 29.81 (−3.6%)** | lever4 hope | **NOTABLE REGRESS** — leave decode HIP **off** |
 | Pure decode graph | 829 t/s + garble | — | **VOID** (not a win; quality fail) |
 | Prefill HIP F1–F3 | ~+2–4% pp/s | miss 10% bar | **NOTABLE micro** if logged; opt-in only |
+| Design C stage-2 @ K8192 vs full head | **0.561 vs 4.026 ms** (~**−86%** of head-op only) | — | **NOTABLE microbench** (isolated); e2e **unproven**; log `B_stage2_K_sweep.txt` |
 
 ---
 

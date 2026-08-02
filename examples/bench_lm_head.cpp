@@ -4,10 +4,13 @@
 //
 // Usage:
 //   ./bench_lm_head [path/to/lm_head_only.safetensors|model_dir]
-//   Optional env: BENCH_ITERS=10  BENCH_WARM=3
+//   Optional env: BENCH_ITERS=10  BENCH_WARM=3  BENCH_STAGE2=1
 //
 // Measures wall time of mx::quantized_matmul only (eval-to-eval). Does NOT
 // claim full T₁ or gen t/s — those need a separate decode run.
+//
+// With BENCH_STAGE2=1 (default on): also times Design-C stage-2 for K-row
+// subsets (take packed rows + qmm). Stage-1 algorithm cost is NOT included.
 
 #include <mlx/mlx.h>
 
@@ -31,6 +34,27 @@ static double ms_since(std::chrono::steady_clock::time_point t0) {
     return duration<double, std::milli>(steady_clock::now() - t0).count();
 }
 
+struct Stats {
+    double mean = 0, mn = 0, mx = 0;
+    int n = 0;
+};
+
+static Stats summarize(const std::vector<double>& samples) {
+    Stats s;
+    if (samples.empty()) return s;
+    s.n = static_cast<int>(samples.size());
+    s.mn = samples[0];
+    s.mx = samples[0];
+    double sum = 0;
+    for (double v : samples) {
+        sum += v;
+        if (v < s.mn) s.mn = v;
+        if (v > s.mx) s.mx = v;
+    }
+    s.mean = sum / samples.size();
+    return s;
+}
+
 int main(int argc, char** argv) {
     const int vocab = 248320;
     const int hidden = 2048;
@@ -38,12 +62,15 @@ int main(int argc, char** argv) {
     const int group_size = 64;
     const int warm = env_int("BENCH_WARM", 3);
     const int iters = env_int("BENCH_ITERS", 10);
+    // Default ON: stage-2 K sweep is the Design C fund gate this fire.
+    const int do_stage2 = env_int("BENCH_STAGE2", 1);
 
     std::cout << "=== bench_lm_head ===\n";
     std::cout << "device_default note: MLX default device\n";
     std::cout << "geometry vocab=" << vocab << " hidden=" << hidden
               << " bits=" << bits << " group_size=" << group_size << "\n";
-    std::cout << "warm=" << warm << " timed_iters=" << iters << "\n";
+    std::cout << "warm=" << warm << " timed_iters=" << iters
+              << " BENCH_STAGE2=" << do_stage2 << "\n";
 
     mx::array w_u32 = mx::zeros({1}, mx::uint32);
     mx::array scales = mx::zeros({1}, mx::bfloat16);
@@ -107,42 +134,35 @@ int main(int argc, char** argv) {
     auto x = mx::astype(mx::random::normal({1, hidden}, mx::float32), mx::bfloat16);
     mx::eval(x);
 
-    auto run_once = [&]() {
+    auto run_full = [&]() {
         auto y = mx::quantized_matmul(
             x, w_u32, scales, biases, /*transpose=*/true, group_size, bits);
         mx::eval(y);
         return y;
     };
 
-    // Warm
+    // Warm full
     for (int i = 0; i < warm; ++i) {
         auto t0 = std::chrono::steady_clock::now();
-        auto y = run_once();
+        auto y = run_full();
         double ms = ms_since(t0);
-        std::cout << "warm[" << i << "] wall_ms=" << ms
+        std::cout << "full_warm[" << i << "] wall_ms=" << ms
                   << " out_shape=" << y.shape() << "\n";
     }
 
-    // Timed
-    std::vector<double> samples;
-    samples.reserve(iters);
+    // Timed full
+    std::vector<double> full_samples;
+    full_samples.reserve(iters);
     for (int i = 0; i < iters; ++i) {
         auto t0 = std::chrono::steady_clock::now();
-        auto y = run_once();
+        auto y = run_full();
         double ms = ms_since(t0);
-        samples.push_back(ms);
-        // touch result so optimizer cannot DCE (already eval'd)
+        full_samples.push_back(ms);
         (void)y.size();
-        std::cout << "iter[" << i << "] wall_ms=" << ms << "\n";
+        std::cout << "full_iter[" << i << "] wall_ms=" << ms << "\n";
     }
 
-    double sum = 0, mn = samples[0], mxv = samples[0];
-    for (double v : samples) {
-        sum += v;
-        if (v < mn) mn = v;
-        if (v > mxv) mxv = v;
-    }
-    double mean = sum / samples.size();
+    Stats full = summarize(full_samples);
 
     // Store bytes for traffic class note (not a bandwidth claim without time).
     const double store_mb =
@@ -150,13 +170,118 @@ int main(int argc, char** argv) {
                  vocab * (hidden / group_size) * 2 * 2) /  // scales+biases bf16
         (1024.0 * 1024.0);
 
-    std::cout << "\n=== SUMMARY ===\n";
+    std::cout << "\n=== SUMMARY FULL ===\n";
     std::cout << "source=" << source << "\n";
-    std::cout << "qmm_mean_ms=" << mean << "\n";
-    std::cout << "qmm_min_ms=" << mn << "\n";
-    std::cout << "qmm_max_ms=" << mxv << "\n";
-    std::cout << "n_timed=" << samples.size() << "\n";
+    std::cout << "qmm_mean_ms=" << full.mean << "\n";
+    std::cout << "qmm_min_ms=" << full.mn << "\n";
+    std::cout << "qmm_max_ms=" << full.mx << "\n";
+    std::cout << "n_timed=" << full.n << "\n";
     std::cout << "approx_store_MiB_formula=" << store_mb << "\n";
     std::cout << "NOTE: isolated qmm only; T1 fraction requires decode gen t/s log.\n";
+
+    // Design C stage-2: take K packed rows then qmm → [1,K] logits.
+    // Indices are fixed arange(0,K) so we measure gather+qmm traffic, not
+    // quality of shortlist. Stage-1 cost is NOT included.
+    if (do_stage2) {
+        // Product-plausible K values + extremes for scaling curve.
+        const std::vector<int> ks = {256, 1024, 4096, 8192, 16384};
+        const double fund_half = 0.5 * full.mean;  // Design C ≤0.5× full bar
+
+        std::cout << "\n=== STAGE2 take+qmm (Design C gate; stage1 NOT included) ===\n";
+        std::cout << "fund_half_ms=" << fund_half
+                  << " (0.5 * full_mean; total stage1+stage2 must beat this)\n";
+
+        for (int K : ks) {
+            if (K > vocab) continue;
+            // Contiguous first-K rows: best-case gather locality.
+            auto idx = mx::arange(0, K, mx::int32);
+            mx::eval(idx);
+
+            auto run_s2 = [&]() {
+                auto w_k = mx::take(w_u32, idx, /*axis=*/0);
+                auto s_k = mx::take(scales, idx, /*axis=*/0);
+                auto b_k = mx::take(biases, idx, /*axis=*/0);
+                auto y = mx::quantized_matmul(
+                    x, w_k, s_k, b_k, /*transpose=*/true, group_size, bits);
+                mx::eval(y);
+                return y;
+            };
+
+            // gather-only (no qmm) — host/device take cost
+            auto run_gather = [&]() {
+                auto w_k = mx::take(w_u32, idx, /*axis=*/0);
+                auto s_k = mx::take(scales, idx, /*axis=*/0);
+                auto b_k = mx::take(biases, idx, /*axis=*/0);
+                mx::eval({w_k, s_k, b_k});
+            };
+
+            // Pre-warmed resident subset for qmm-only (after one gather)
+            auto w_res = mx::take(w_u32, idx, 0);
+            auto s_res = mx::take(scales, idx, 0);
+            auto b_res = mx::take(biases, idx, 0);
+            mx::eval({w_res, s_res, b_res});
+            auto run_qmm_only = [&]() {
+                auto y = mx::quantized_matmul(
+                    x, w_res, s_res, b_res, /*transpose=*/true, group_size, bits);
+                mx::eval(y);
+                return y;
+            };
+
+            for (int i = 0; i < warm; ++i) {
+                auto t0 = std::chrono::steady_clock::now();
+                auto y = run_s2();
+                std::cout << "s2_K" << K << "_warm[" << i << "] wall_ms="
+                          << ms_since(t0) << " out_shape=" << y.shape() << "\n";
+            }
+
+            std::vector<double> s2_all, s2_g, s2_q;
+            s2_all.reserve(iters);
+            s2_g.reserve(iters);
+            s2_q.reserve(iters);
+            for (int i = 0; i < iters; ++i) {
+                auto t0 = std::chrono::steady_clock::now();
+                auto y = run_s2();
+                double ms = ms_since(t0);
+                s2_all.push_back(ms);
+                (void)y.size();
+                std::cout << "s2_K" << K << "_iter[" << i << "] take_qmm_ms="
+                          << ms << "\n";
+
+                t0 = std::chrono::steady_clock::now();
+                run_gather();
+                double gms = ms_since(t0);
+                s2_g.push_back(gms);
+
+                t0 = std::chrono::steady_clock::now();
+                auto yq = run_qmm_only();
+                double qms = ms_since(t0);
+                s2_q.push_back(qms);
+                (void)yq.size();
+                std::cout << "s2_K" << K << "_iter[" << i << "] gather_only_ms="
+                          << gms << " qmm_only_ms=" << qms << "\n";
+            }
+
+            Stats a = summarize(s2_all);
+            Stats g = summarize(s2_g);
+            Stats q = summarize(s2_q);
+            double vs_full = (full.mean > 0) ? (100.0 * a.mean / full.mean) : 0;
+            double stage1_budget = fund_half - a.mean;
+
+            std::cout << "s2_K" << K << "_SUMMARY take_qmm_mean_ms=" << a.mean
+                      << " min=" << a.mn << " max=" << a.mx
+                      << " pct_of_full=" << vs_full
+                      << " gather_mean_ms=" << g.mean
+                      << " qmm_only_mean_ms=" << q.mean
+                      << " stage1_budget_to_half_ms=" << stage1_budget
+                      << (stage1_budget > 0 ? " BUDGET_OK" : " BUDGET_NEG")
+                      << "\n";
+        }
+
+        std::cout << "\nNOTE: stage2 only; if take+qmm already ≥ fund_half, "
+                     "two-stage cannot fund without faster gather/qmm.\n";
+        std::cout << "NOTE: stage1 (shortlist) cost is unmeasured; real total > stage2.\n";
+        std::cout << "NOTE: no gen t/s claimed; no quality claim.\n";
+    }
+
     return 0;
 }

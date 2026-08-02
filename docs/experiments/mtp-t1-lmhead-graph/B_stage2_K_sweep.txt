@@ -1,0 +1,180 @@
+=== RUN bench_lm_head stage2 K sweep ===
+date=2026-08-01T19:47:01-07:00 tip=169ff3d branch=exp/mtp-t1-lmhead-graph
+gpu_before:
+
+
+============================ ROCm System Management Interface ============================
+=================================== % time GPU is busy ===================================
+GPU[0]		: GPU use (%): 3
+==========================================================================================
+================================== End of ROCm SMI Log ===================================
+
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+=== bench_lm_head ===
+device_default note: MLX default device
+geometry vocab=248320 hidden=2048 bits=4 group_size=64
+warm=3 timed_iters=10 BENCH_STAGE2=1
+loading "/home/antmi/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4bit/snapshots/5f638dff286ea1a97a6a0b673f50acc9b3c9aa4b/model.safetensors" ...
+load wall_ms=2.38566 n_tensors=1777
+lm_head.weight shape=(248320,256) dtype=uint32
+lm_head.scales shape=(248320,32) dtype=bfloat16
+lm_head.biases shape=(248320,32) dtype=bfloat16
+full_warm[0] wall_ms=42.2818 out_shape=(1,248320)
+full_warm[1] wall_ms=3.9063 out_shape=(1,248320)
+full_warm[2] wall_ms=4.31995 out_shape=(1,248320)
+full_iter[0] wall_ms=3.98916
+full_iter[1] wall_ms=4.07607
+full_iter[2] wall_ms=3.90736
+full_iter[3] wall_ms=3.91758
+full_iter[4] wall_ms=3.91202
+full_iter[5] wall_ms=4.01244
+full_iter[6] wall_ms=4.292
+full_iter[7] wall_ms=4.30279
+full_iter[8] wall_ms=3.92141
+full_iter[9] wall_ms=3.93336
+
+=== SUMMARY FULL ===
+source=/home/antmi/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4bit/snapshots/5f638dff286ea1a97a6a0b673f50acc9b3c9aa4b/model.safetensors
+qmm_mean_ms=4.02642
+qmm_min_ms=3.90736
+qmm_max_ms=4.30279
+n_timed=10
+approx_store_MiB_formula=272.812
+NOTE: isolated qmm only; T1 fraction requires decode gen t/s log.
+
+=== STAGE2 take+qmm (Design C gate; stage1 NOT included) ===
+fund_half_ms=2.01321 (0.5 * full_mean; total stage1+stage2 must beat this)
+s2_K256_warm[0] wall_ms=0.146725 out_shape=(1,256)
+s2_K256_warm[1] wall_ms=0.136376 out_shape=(1,256)
+s2_K256_warm[2] wall_ms=0.115246 out_shape=(1,256)
+s2_K256_iter[0] take_qmm_ms=0.123291
+s2_K256_iter[0] gather_only_ms=0.099177 qmm_only_ms=0.067436
+s2_K256_iter[1] take_qmm_ms=0.113954
+s2_K256_iter[1] gather_only_ms=0.112431 qmm_only_ms=0.065203
+s2_K256_iter[2] take_qmm_ms=0.113854
+s2_K256_iter[2] gather_only_ms=0.084779 qmm_only_ms=0.028153
+s2_K256_iter[3] take_qmm_ms=0.048071
+s2_K256_iter[3] gather_only_ms=0.036348 qmm_only_ms=0.028534
+s2_K256_iter[4] take_qmm_ms=0.04793
+s2_K256_iter[4] gather_only_ms=0.034675 qmm_only_ms=0.028844
+s2_K256_iter[5] take_qmm_ms=0.040005
+s2_K256_iter[5] gather_only_ms=0.035296 qmm_only_ms=0.028714
+s2_K256_iter[6] take_qmm_ms=0.040286
+s2_K256_iter[6] gather_only_ms=0.041778 qmm_only_ms=0.038863
+s2_K256_iter[7] take_qmm_ms=0.040406
+s2_K256_iter[7] gather_only_ms=0.035848 qmm_only_ms=0.028023
+s2_K256_iter[8] take_qmm_ms=0.049232
+s2_K256_iter[8] gather_only_ms=0.043822 qmm_only_ms=0.028634
+s2_K256_iter[9] take_qmm_ms=0.040395
+s2_K256_iter[9] gather_only_ms=0.04261 qmm_only_ms=0.028884
+s2_K256_SUMMARY take_qmm_mean_ms=0.0657424 min=0.040005 max=0.123291 pct_of_full=1.63278 gather_mean_ms=0.0566764 qmm_only_mean_ms=0.0371288 stage1_budget_to_half_ms=1.94747 BUDGET_OK
+s2_K1024_warm[0] wall_ms=0.102582 out_shape=(1,1024)
+s2_K1024_warm[1] wall_ms=0.083527 out_shape=(1,1024)
+s2_K1024_warm[2] wall_ms=0.075382 out_shape=(1,1024)
+s2_K1024_iter[0] take_qmm_ms=0.078748
+s2_K1024_iter[0] gather_only_ms=0.063639 qmm_only_ms=0.044434
+s2_K1024_iter[1] take_qmm_ms=0.08515
+s2_K1024_iter[1] gather_only_ms=0.062648 qmm_only_ms=0.040967
+s2_K1024_iter[2] take_qmm_ms=0.075763
+s2_K1024_iter[2] gather_only_ms=0.062638 qmm_only_ms=0.043051
+s2_K1024_iter[3] take_qmm_ms=0.079149
+s2_K1024_iter[3] gather_only_ms=0.065523 qmm_only_ms=0.04255
+s2_K1024_iter[4] take_qmm_ms=0.079069
+s2_K1024_iter[4] gather_only_ms=0.062427 qmm_only_ms=0.04274
+s2_K1024_iter[5] take_qmm_ms=0.077125
+s2_K1024_iter[5] gather_only_ms=0.067657 qmm_only_ms=0.046017
+s2_K1024_iter[6] take_qmm_ms=0.076715
+s2_K1024_iter[6] gather_only_ms=0.065654 qmm_only_ms=0.041958
+s2_K1024_iter[7] take_qmm_ms=0.075842
+s2_K1024_iter[7] gather_only_ms=0.062668 qmm_only_ms=0.043522
+s2_K1024_iter[8] take_qmm_ms=0.085401
+s2_K1024_iter[8] gather_only_ms=0.062548 qmm_only_ms=0.043311
+s2_K1024_iter[9] take_qmm_ms=0.07493
+s2_K1024_iter[9] gather_only_ms=0.068929 qmm_only_ms=0.045685
+s2_K1024_SUMMARY take_qmm_mean_ms=0.0787892 min=0.07493 max=0.085401 pct_of_full=1.95681 gather_mean_ms=0.0644331 qmm_only_mean_ms=0.0434235 stage1_budget_to_half_ms=1.93442 BUDGET_OK
+s2_K4096_warm[0] wall_ms=0.576844 out_shape=(1,4096)
+s2_K4096_warm[1] wall_ms=0.294133 out_shape=(1,4096)
+s2_K4096_warm[2] wall_ms=0.278543 out_shape=(1,4096)
+s2_K4096_iter[0] take_qmm_ms=0.301156
+s2_K4096_iter[0] gather_only_ms=0.188524 qmm_only_ms=0.094979
+s2_K4096_iter[1] take_qmm_ms=0.313759
+s2_K4096_iter[1] gather_only_ms=0.222067 qmm_only_ms=0.09545
+s2_K4096_iter[2] take_qmm_ms=0.30326
+s2_K4096_iter[2] gather_only_ms=0.43118 qmm_only_ms=0.110278
+s2_K4096_iter[3] take_qmm_ms=0.316124
+s2_K4096_iter[3] gather_only_ms=0.231155 qmm_only_ms=0.091872
+s2_K4096_iter[4] take_qmm_ms=0.322667
+s2_K4096_iter[4] gather_only_ms=0.223039 qmm_only_ms=0.100078
+s2_K4096_iter[5] take_qmm_ms=0.343896
+s2_K4096_iter[5] gather_only_ms=0.251513 qmm_only_ms=0.091632
+s2_K4096_iter[6] take_qmm_ms=0.29304
+s2_K4096_iter[6] gather_only_ms=0.212509 qmm_only_ms=0.089989
+s2_K4096_iter[7] take_qmm_ms=0.405021
+s2_K4096_iter[7] gather_only_ms=0.277642 qmm_only_ms=0.090159
+s2_K4096_iter[8] take_qmm_ms=0.303731
+s2_K4096_iter[8] gather_only_ms=0.212148 qmm_only_ms=0.09544
+s2_K4096_iter[9] take_qmm_ms=0.307428
+s2_K4096_iter[9] gather_only_ms=0.225955 qmm_only_ms=0.093335
+s2_K4096_SUMMARY take_qmm_mean_ms=0.321008 min=0.29304 max=0.405021 pct_of_full=7.97255 gather_mean_ms=0.247573 qmm_only_mean_ms=0.0953212 stage1_budget_to_half_ms=1.6922 BUDGET_OK
+s2_K8192_warm[0] wall_ms=0.975833 out_shape=(1,8192)
+s2_K8192_warm[1] wall_ms=0.563819 out_shape=(1,8192)
+s2_K8192_warm[2] wall_ms=0.515649 out_shape=(1,8192)
+s2_K8192_iter[0] take_qmm_ms=0.52691
+s2_K8192_iter[0] gather_only_ms=0.363733 qmm_only_ms=0.161073
+s2_K8192_iter[1] take_qmm_ms=0.563428
+s2_K8192_iter[1] gather_only_ms=0.367731 qmm_only_ms=0.160101
+s2_K8192_iter[2] take_qmm_ms=0.572676
+s2_K8192_iter[2] gather_only_ms=0.350519 qmm_only_ms=0.151735
+s2_K8192_iter[3] take_qmm_ms=0.560193
+s2_K8192_iter[3] gather_only_ms=0.344788 qmm_only_ms=0.15433
+s2_K8192_iter[4] take_qmm_ms=0.552759
+s2_K8192_iter[4] gather_only_ms=0.361098 qmm_only_ms=0.154591
+s2_K8192_iter[5] take_qmm_ms=0.565703
+s2_K8192_iter[5] gather_only_ms=0.368221 qmm_only_ms=0.157526
+s2_K8192_iter[6] take_qmm_ms=0.556104
+s2_K8192_iter[6] gather_only_ms=0.3616 qmm_only_ms=0.1597
+s2_K8192_iter[7] take_qmm_ms=0.570663
+s2_K8192_iter[7] gather_only_ms=0.384593 qmm_only_ms=0.164219
+s2_K8192_iter[8] take_qmm_ms=0.570192
+s2_K8192_iter[8] gather_only_ms=0.373041 qmm_only_ms=0.158919
+s2_K8192_iter[9] take_qmm_ms=0.572416
+s2_K8192_iter[9] gather_only_ms=0.365336 qmm_only_ms=0.155963
+s2_K8192_SUMMARY take_qmm_mean_ms=0.561104 min=0.52691 max=0.572676 pct_of_full=13.9356 gather_mean_ms=0.364066 qmm_only_mean_ms=0.157816 stage1_budget_to_half_ms=1.45211 BUDGET_OK
+s2_K16384_warm[0] wall_ms=1.58386 out_shape=(1,16384)
+s2_K16384_warm[1] wall_ms=1.11114 out_shape=(1,16384)
+s2_K16384_warm[2] wall_ms=1.47432 out_shape=(1,16384)
+s2_K16384_iter[0] take_qmm_ms=1.03562
+s2_K16384_iter[0] gather_only_ms=0.796757 qmm_only_ms=0.285576
+s2_K16384_iter[1] take_qmm_ms=1.01967
+s2_K16384_iter[1] gather_only_ms=0.786979 qmm_only_ms=0.281449
+s2_K16384_iter[2] take_qmm_ms=1.03374
+s2_K16384_iter[2] gather_only_ms=0.787921 qmm_only_ms=0.276319
+s2_K16384_iter[3] take_qmm_ms=1.044
+s2_K16384_iter[3] gather_only_ms=0.797799 qmm_only_ms=0.284765
+s2_K16384_iter[4] take_qmm_ms=1.05529
+s2_K16384_iter[4] gather_only_ms=0.858794 qmm_only_ms=0.299653
+s2_K16384_iter[5] take_qmm_ms=1.06193
+s2_K16384_iter[5] gather_only_ms=0.786958 qmm_only_ms=0.275448
+s2_K16384_iter[6] take_qmm_ms=1.11394
+s2_K16384_iter[6] gather_only_ms=0.809481 qmm_only_ms=0.454634
+s2_K16384_iter[7] take_qmm_ms=1.05197
+s2_K16384_iter[7] gather_only_ms=0.795655 qmm_only_ms=0.315212
+s2_K16384_iter[8] take_qmm_ms=1.02519
+s2_K16384_iter[8] gather_only_ms=0.788622 qmm_only_ms=0.292069
+s2_K16384_iter[9] take_qmm_ms=1.03851
+s2_K16384_iter[9] gather_only_ms=0.788722 qmm_only_ms=0.29273
+s2_K16384_SUMMARY take_qmm_mean_ms=1.04799 min=1.01967 max=1.11394 pct_of_full=26.0277 gather_mean_ms=0.799769 qmm_only_mean_ms=0.305785 stage1_budget_to_half_ms=0.965225 BUDGET_OK
+
+NOTE: stage2 only; if take+qmm already ≥ fund_half, two-stage cannot fund without faster gather/qmm.
+NOTE: stage1 (shortlist) cost is unmeasured; real total > stage2.
+NOTE: no gen t/s claimed; no quality claim.
+
+gpu_after:
+
+
+============================ ROCm System Management Interface ============================
+=================================== % time GPU is busy ===================================
+GPU[0]		: GPU use (%): 11
+==========================================================================================
+================================== End of ROCm SMI Log ===================================

@@ -133,15 +133,29 @@ Valid after design: free-head only ~13%; two-stage overhead may erase gains. Pre
 
 ---
 
-## 5. Decision this fire
+## 5. Decision this fire (design-only)
 
 | Item | Decision |
 |------|----------|
 | Design C complete? | **Yes** (this document) |
-| Implement C this fire? | **No** |
-| Lever 3 status | **DESIGN_C_DONE**; implement **parked** behind gates in §3 |
-| Preferred next program work | **Lever 4** graph-decode code inventory (`MLX_DECODE_GRAPH`, `graph_decode.cpp`, pure path) |
-| Optional later implement | C1 temp=0 opt-in **or** C2 kernel work in mlx |
+| Implement C at design fire? | **No** |
+| Lever 3 status then | **DESIGN_C_DONE**; implement parked behind gates in §3 |
+
+## 5b. Stage-2 gate update (2026-08-02T02:47Z) — **FUND_STAGE2**
+
+Log: [`B_stage2_K_sweep.txt`](B_stage2_K_sweep.txt). Same-session full qmm mean **4.026 ms** (fund_half **2.013 ms**).
+
+| K | take+qmm mean | stage1 budget to half |
+|---|----------------|------------------------|
+| 256 | 0.066 ms | +1.95 ms |
+| 1024 | 0.079 ms | +1.93 ms |
+| 4096 | 0.321 ms | +1.69 ms |
+| 8192 | 0.561 ms | +1.45 ms |
+| 16384 | 1.048 ms | +0.97 ms |
+
+**Verdict:** Stage-2 **passes** the “not already dead” test. Residual risk is **stage-1 shortlist** (ms + argmax match).  
+**Lever 3 status now:** **FUND_STAGE2** — C1 temp=0 implement is the open fundable step (not C4-close on latency alone).  
+**Still forbidden:** claim e2e +% or free-head +13% without logs; product temp0.7/RS stays full head until redesigned.
 
 ---
 

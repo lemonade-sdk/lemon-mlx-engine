@@ -14,12 +14,67 @@ Program state (high level):
 | S4 batch verify + n_draft=3 | **LEVER2_CLOSED / KILL** (`exp/mtp-tps-ceiling`) |
 | C11–C15 draft fuses | **Dead** (`exp/mtp-c11-topk-close`) — do not reopen |
 | T1 fuse / KV@256 / dense_kept / long-ctx KV | **Closed** (`exp/mtp-t1-attack`) — do not reopen |
-| **Lever 3 lm_head traffic** | **A+B+C done** — implement **PARKED** (`DESIGN_C.md`); free-head ceiling ~+13% sketch |
+| **Lever 3 lm_head traffic** | **A+B+C + stage2 gate** — **FUND_STAGE2**; C1 implement next (`DESIGN_C.md`); free-head ~+13% sketch |
 | **Lever 4 graph decode 35B** | **LEVER4_KILL** — HIP −3.6% vs eager; pure garble/fake TPS |
-| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` (L3 residual still open) |
+| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` (L3 C1 implement still open) |
 
 ---
 
+
+## Fire 2026-08-02T02:47Z — PROGRESS (Design C stage-2 microbench FUND)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **GPU** | ~2–3% idle → bench_lm_head only (no full chat gen) |
+| **Lever worked** | #3 gated micro-opt: **stage-2** take+K-row qmm vs full head |
+| **Code** | `examples/bench_lm_head.cpp` (`BENCH_STAGE2=1` K-sweep) |
+| **Log** | `mtp-t1-lmhead-graph/B_stage2_K_sweep.txt` |
+
+### Clear Thought
+
+- `sequentialthinking` — one step = stage2 fund gate; not C1 full implement; not L4 thrash
+- `decisionframework` — stage2 bench over premature C4 close
+- `scientificmethod` — H-s2-cheap **supported**
+- `metacognitivemonitoring` — no e2e gen t/s; stage1 unmeasured; contiguous gather best-case
+
+### Tested (isolated, real lm_head weights)
+
+| Cell | mean ms | vs full | stage1 budget to 0.5×full |
+|------|---------|---------|---------------------------|
+| Full qmm | **4.026** | 100% | fund_half **2.013** |
+| stage2 K=256 | **0.066** | 1.6% | **+1.95** BUDGET_OK |
+| stage2 K=1024 | **0.079** | 2.0% | **+1.93** BUDGET_OK |
+| stage2 K=4096 | **0.321** | 8.0% | **+1.69** BUDGET_OK |
+| stage2 K=8192 | **0.561** | 13.9% | **+1.45** BUDGET_OK |
+| stage2 K=16384 | **1.048** | 26.0% | **+0.97** BUDGET_OK |
+
+### Decision
+
+1. **FUND_STAGE2** — row-gather stage-2 is **not** the kill; two-stage latency gate remains open.
+2. Stage-1 shortlist is now the **critical path** (unmeasured; quality + ms).
+3. Not STOPPED: next = dedicated **C1 temp=0** implement day **or** stage-1 microbench; **no** decode HIP.
+4. Do **not** claim product gen +Δ until e2e logs.
+
+### Insight
+
+Exact K-row head is cheap on gfx1150 (≪1 ms for K≤8k). Residual risk is inventing a stage-1 that scores shortlist in ≲1.5 ms **and** matches argmax.
+
+### Confidence
+
+**0.92** on stage2 wall ms (logged). **0.0** on stage1 or e2e win.
+
+### Supervisor honesty
+
+| Claim | Verdict | Path |
+|-------|---------|------|
+| full 4.026 ms | **OK** | `B_stage2_K_sweep.txt` |
+| K8192 take+qmm 0.561 ms | **OK** | same |
+| e2e gen +% | **NOT claimed** | — |
+| stage1 free | **NOT claimed** | unmeasured |
+
+---
 
 ## Fire 2026-08-02T02:41Z — PROGRESS (LEVER4_KILL)
 
