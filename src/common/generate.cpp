@@ -200,8 +200,10 @@ AnySampler AnySampler::from_params(const GenerateParameters& params) {
 
 bool mtp_uses_greedy_spec(const GenerateParameters& params) {
     // Fast argmax draft/verify when sampling contract is greedy-neutral.
+    // temperature==0 → AnySampler is ArgMax (top_p is inert: TopPSampler has
+    // nucleus filtering disabled, and temp=0 never constructs TopPSampler).
+    // Do not force the slow RS path solely because top_p∈(0,1) at temp=0.
     if (params.temperature != 0.0f) return false;
-    if (params.top_p > 0.0f && params.top_p < 1.0f) return false;
     if (params.repetition_penalty.has_value() &&
         params.repetition_penalty.value() != 1.0f) {
         return false;
@@ -326,7 +328,9 @@ mx::array TokenIterator::mtp_residual_logits(
     const mx::array& draft_logits,
     int rejected_token,
     float temperature) {
-    // Leviathan residual: r = max(0, q - p); sample from r (via log(r+eps)).
+    // Leviathan residual: r = max(0, q - p). Returns logits for bare
+    // categorical(sample) — do NOT pass through sampler_.sample() which would
+    // divide by temperature again (R-1 double-scale bug → samples r^(1/t)).
     float t = temperature > 0.0f ? temperature : 1.0f;
     auto q_logits = mtp_last_row_logits(target_logits);
     auto p_logits = mtp_last_row_logits(draft_logits);
@@ -341,15 +345,19 @@ mx::array TokenIterator::mtp_residual_logits(
     mx::eval(mass);
     float m = mass.item<float>();
     if (!(m > 1e-8f)) {
-        // Residual mass collapsed — sample from target with rejected token masked.
+        // Residual mass collapsed — sample from target with rejected token
+        // masked; apply temperature once here (bare categorical after).
         auto masked = mtp_last_row_logits(target_logits);
-        // Set rejected index to large negative via where on arange mask.
+        if (t != 1.0f) {
+            masked = mx::multiply(masked, mx::array(1.0f / t));
+        }
         auto idx = mx::arange(0, masked.shape(0), mx::int32);
         auto is_rej = mx::equal(idx, mx::array(rejected_token, mx::int32));
         float ninf = -1.0e9f;
         masked = mx::where(is_rej, mx::array(ninf), masked);
         return mx::reshape(masked, {1, masked.shape(0)});
     }
+    // log(r) as categorical logits (distribution is already temperatured via q,p).
     auto log_r = mx::log(mx::add(r, mx::array(1e-10f)));
     return mx::reshape(log_r, {1, log_r.shape(0)});
 }
@@ -1140,15 +1148,18 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
                 note_sample(mx::array(draft_tok, mx::int32));
                 continue;
             }
-            // Reject: sample from Leviathan residual max(0,q-p) when draft
-            // logits available; else mask rejected token on target.
-            mx::array sample_logits = logits;
+            // Reject: sample from Leviathan residual max(0,q-p) with bare
+            // categorical (R-1: no sampler_ temp re-scale on already-temp'd r).
+            mx::array tok(0, mx::int32);
             if (static_cast<size_t>(i) < draft_logit_rows.size()) {
-                sample_logits = mtp_residual_logits(
+                auto resid = mtp_residual_logits(
                     logits, draft_logit_rows[static_cast<size_t>(i)], draft_tok,
                     temp);
+                tok = mx::random::categorical(resid);
+            } else {
+                // No draft logits — fall back to target sampler (temp applied once).
+                tok = sampler_.sample(logits);
             }
-            auto tok = sampler_.sample(sample_logits);
             mx::eval(tok);
             note_sample(tok);
             y_ = LMInput::Text(mx::reshape(mx::astype(tok, mx::int32), {1}));

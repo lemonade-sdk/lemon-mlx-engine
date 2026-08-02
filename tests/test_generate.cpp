@@ -62,10 +62,12 @@ TEST_CASE("mtp_uses_greedy_spec", "[generate][mtp]") {
     REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(temp));
     REQUIRE_FALSE(mlx_lm::mtp_greedy_only_violation(temp).empty());
 
+    // R-6: top_p alone at temp=0 must NOT force the slow RS path (nucleus
+    // filtering is disabled engine-wide; ArgMaxSampler is selected).
     mlx_lm::GenerateParameters topp;
     topp.temperature = 0.0f;
     topp.top_p = 0.9f;
-    REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(topp));
+    REQUIRE(mlx_lm::mtp_uses_greedy_spec(topp));
 
     mlx_lm::GenerateParameters rep;
     rep.temperature = 0.0f;
@@ -78,6 +80,28 @@ TEST_CASE("mtp_uses_greedy_spec", "[generate][mtp]") {
     rep_one.top_p = 1.0f;
     rep_one.repetition_penalty = 1.0f;
     REQUIRE(mlx_lm::mtp_uses_greedy_spec(rep_one));
+}
+
+// R-5 / P0-B: multi-draft (n_draft≥3) uses MTP KV; emit plan covers γ>1.
+TEST_CASE("mtp_draft_uses_kv and n_draft=3 emit plan (P0-B)",
+          "[generate][mtp][golden]") {
+    REQUIRE_FALSE(mlx_lm::mtp_draft_uses_kv(1));
+    REQUIRE_FALSE(mlx_lm::mtp_draft_uses_kv(2));  // C7 γ≈1: no MTP-KV
+    REQUIRE(mlx_lm::mtp_draft_uses_kv(3));
+    REQUIRE(mlx_lm::mtp_draft_uses_kv(4));
+
+    // n_draft=3 → tokens [d0,d1,d2]; accept 0..2 must buffer correctly.
+    std::vector<int> drafts = {10, 20, 30};
+    auto a0 = mlx_lm::mtp_make_emit_plan(drafts, 0);
+    REQUIRE(a0.d0 == 10);
+    REQUIRE(a0.buffered.empty());
+    auto a1 = mlx_lm::mtp_make_emit_plan(drafts, 1);
+    REQUIRE(a1.buffered.size() == 1);
+    REQUIRE(a1.buffered[0] == 20);
+    auto a2 = mlx_lm::mtp_make_emit_plan(drafts, 2);
+    REQUIRE(a2.buffered.size() == 2);
+    REQUIRE(a2.buffered[0] == 20);
+    REQUIRE(a2.buffered[1] == 30);
 }
 
 // ===== Golden MTP protocol logic (no model load) =====

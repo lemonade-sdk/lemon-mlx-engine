@@ -96,9 +96,14 @@ private:
     SamplerVariant impl_;
 };
 
-// True when MTP can use the fast argmax draft/verify path (temp==0, no nucleus,
-// no active repetition penalty). False ⇒ use rejection-sampling MTP (temp>0 etc.).
+// True when MTP can use the fast argmax draft/verify path (temp==0 and no
+// active repetition penalty). top_p alone does not force RS (nucleus filter is
+// disabled engine-wide). False ⇒ rejection-sampling MTP (temp>0 etc.).
 bool mtp_uses_greedy_spec(const GenerateParameters& params);
+
+// P0-B contract: multi-draft chains (n_draft≥3) use MTP-layer KV on every
+// draft step including the final one. Pure helper for golden tests.
+inline bool mtp_draft_uses_kv(int n_draft) { return n_draft > 2; }
 
 // Empty when greedy-spec is OK; otherwise a short note (for logs / older callers).
 // Does NOT mean "refuse MTP" — sampled MTP is supported when this is non-empty.

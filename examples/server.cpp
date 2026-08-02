@@ -97,7 +97,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --max-tokens N          Default max tokens (default: 4096)\n"
                       << "  --temperature T         Default temperature (default: 0.6; works with --use-mtp)\n"
                       << "  --top-p P               Default top-p (default: 1.0)\n"
-                      << "  --repetition-penalty F  Default repetition penalty (off; disallowed with --use-mtp)\n"
+                      << "  --repetition-penalty F  Default repetition penalty (off; applied on trunk under --use-mtp)\n"
                       << "  --memory-limit MB       GPU wired memory limit\n"
                       << "  --no-think              Disable thinking/reasoning\n"
                       << "  --no-download           Don't auto-download models from HF Hub\n"

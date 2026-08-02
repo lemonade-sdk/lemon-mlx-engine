@@ -92,3 +92,12 @@
   - Mean gen **~25.4 t/s**, total gen **6351** tokens
 - Verdict: **PASS** (matches pre-residual full Maxwell quality; residual dist did not break multi-turn).
 
+## 2026-08-01 P2 residual close (R-1…R-6)
+- **R-1:** residual sample uses bare `categorical(log_r)` — no second temp scale via `sampler_`.
+- **R-2:** `QuantizedWeightRegistry` guarded by mutex on register/find/unregister/clear.
+- **R-3:** refcount per pointer — shared base/delta packs unregister safely (erase only at 0).
+- **R-4:** server help text: rep-penalty no longer "disallowed with --use-mtp".
+- **R-5:** golden `mtp_draft_uses_kv` + n_draft=3 emit plans.
+- **R-6:** temp=0 + top_p∈(0,1) stays greedy-spec (top_p inert, do not force RS).
+- **R-8:** RS TPS ~25.4 vs C7 27.34 (−7%) **ratified** as cost of sampling+thinking quality; not a stop-bar failure.
+
