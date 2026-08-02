@@ -190,11 +190,11 @@ Create with: `git checkout -b exp/<name> origin/main` **or** from `fix/mtp-strea
 | ~~**`exp/mtp-batch-verify-reprobe`**~~ | → **`exp/mtp-tps-ceiling` S4** | Post-fuse amortize batch T=2 | **KILL:** batch n2 **20.890** t/s vs seq **27.216**; verify-on-accept mean **77.1 ms** > 67.7 ms | **closed (S4)** |
 | ~~**`exp/mtp-ndraft3-p0b`**~~ | → S4 | n_draft=3 post-P0-B | **KILL:** seq n3 **18.290** still < n2; batch n3 **10.152** | **closed (S4)** |
 | ~~**`exp/mtp-rs-batch-verify`**~~ | N/A | RS reclaim via batch | Batch dead → N/A | **closed** |
-| **`exp/mtp-h1-dgpu`** | product or tip | MTP relative win scales on launch-bound dGPU vs 890M 8 CU | Hardware day; A/B eager vs MTP batch/seq; decide product surface | **P1 strategic (needs dGPU)** |
+| **`exp/mtp-h1-dgpu`** | product or tip | MTP relative win scales on launch-bound dGPU vs 890M 8 CU | Hardware day; protocol: `mtp-h1-dgpu/PROTOCOL.md` | **P1 strategic (needs dGPU; protocol ready)** |
 | **`exp/mtp-h2-small-model`** | docs formalize (logs on tip) | 0.8B ~100 t/s is the real MTP home if 35B plateaus | n≥5 Fourier formalize **done** in `mtp-h2-small-model/`; product surface claim optional | **P2 — formalize MET; product optional** |
 | **`exp/mtp-h3-batching`** | main | Multi-stream throughput ≠ single-stream t/s | Server concurrency matrix; do not credit as “gen t/s” | P2 |
 | ~~**`exp/mtp-dense-kept-audit`**~~ | → **`exp/mtp-t1-attack`** | — | **CLOSED**: 7 keys all RMSNorm | closed |
-| ~~**`exp/mtp-kv-quant`**~~ | → same | — | **flat @ 256 tok**; park for long-ctx | parked |
+| ~~**`exp/mtp-kv-quant`**~~ | → **`exp/mtp-t1-attack` T1L r2** | long-ctx ~2k | **KILL**: fuse 28.627 / kv8 29.037 (+1.4%) / kv4 28.914 (+1.0%) ≪5% (`T1L_eager_*.txt`) | **closed** |
 | **`exp/mtp-tsan-registry`** | `fix/mtp-product` or tip | Registry mutex/refcount under unload race | TSAN clean load/unload×generate; or document single-model invariant | P2 robustness |
 | **`exp/prefill-arena`** | **stash@{0}** → new branch off tip | PrefillArena fixed-address `[1,T]` reduces OOM/hang history | Isolate from MTP product; kill if hang/OOM returns or <10% pp/s | P2 (WIP ready) |
 | **`exp/mlx-hip-graph-upstream`** | **mlx tree**, not engine | Local `use_hip_graphs` opt-in patch (see prefill docs) | PR to MLX/ROCm host only if maintainers want; engine keeps env gate | P3 external |

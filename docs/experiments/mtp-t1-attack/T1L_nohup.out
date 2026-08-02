@@ -1,0 +1,33 @@
+T1L start date=2026-08-01T19:19:01-07:00 tip=419c428 branch=exp/mtp-t1-attack
+model=LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit chat=/home/antmi/lemon-mlx-engine/build/chat prompt_file=/home/antmi/lemon-mlx-engine/docs/experiments/mtp-t1-attack/longctx_prompt.txt
+kill_bar: ≥5% gen t/s vs T1L_eager_safe_fuse within-session
+=== RUN T1L_eager_safe_fuse env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos] ===
+date=2026-08-01T19:19:01-07:00 tip=419c428
+=== DONE T1L_eager_safe_fuse ===
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+Prompt:     2039 tokens, 131.511 tokens/s, 15.5044s
+Generation: 256 tokens, 28.6272 tokens/s, 8.94253s
+=== RUN T1L_eager_safe_kv8 env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos --kv-bits 8] ===
+date=2026-08-01T19:19:30-07:00 tip=8266513
+=== DONE T1L_eager_safe_kv8 ===
+=== RUN T1L_eager_safe_kv8 env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos --kv-bits 8] ===
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+Prompt:     2039 tokens, 134.812 tokens/s, 15.1248s
+Generation: 256 tokens, 29.0367 tokens/s, 8.81643s
+> === DONE T1L_eager_safe_kv8 ===
+=== RUN T1L_eager_safe_kv4 env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos --kv-bits 4] ===
+date=2026-08-01T19:19:59-07:00 tip=8266513
+=== DONE T1L_eager_safe_kv4 ===
+=== RUN T1L_eager_safe_kv4 env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos --kv-bits 4] ===
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+Prompt:     2039 tokens, 134.108 tokens/s, 15.2041s
+Generation: 256 tokens, 28.9138 tokens/s, 8.85391s
+> === DONE T1L_eager_safe_kv4 ===
+==== T1L SUMMARY ===
+T1L_eager_safe_fuse: Generation: 256 tokens, 28.6272 tokens/s, 8.94253s
+T1L_eager_safe_kv8: Generation: 256 tokens, 29.0367 tokens/s, 8.81643s
+T1L_eager_safe_kv4: Generation: 256 tokens, 28.9138 tokens/s, 8.85391s
+T1L complete date=2026-08-01T19:20:28-07:00

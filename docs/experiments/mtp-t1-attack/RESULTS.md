@@ -54,7 +54,7 @@ Code: list keys when `MLX_MTP_LOG_DENSE=1` or `MTP_DEBUG=1` (`mtp_head.cpp`).
 |-------|--------|---------|
 | **Quant fuse SAFE** | ~**+2%** eager vs nofuse (this day) | Keep opt-in `MLX_ENABLE_QUANT_FUSE=1` |
 | **Quant fuse + GDN in_proj** | ~**+1%** more at **temp=0** | Opt-in `MLX_ENABLE_QUANT_FUSE_GDN=1` only where quality allows (temp0.7 thrash history) |
-| **KV quant 4/8** | **Flat** on 256-tok decode (no ≥5% bar) | Not a short-context win; **long-ctx retest in flight** — see `LONGCTX_KV.md` + `run_t1_longctx_kv.sh` |
+| **KV quant 4/8** | **Flat** @256 **and** @~2k prefill (r2: +1.0–1.4% ≪5%) | **KILL/park** — see `LONGCTX_KV.md` + `T1L_eager_*.txt` |
 | **dense_kept** | **No linears left** | Closed |
 | **MTP vs eager** | MTP still ≈ eager − few % on this stack | Plateau story unchanged; don’t credit MTP for fuse |
 
@@ -77,7 +77,7 @@ Kill / fund rules used:
 
 1. Ship/keep **SAFE quant fuse** as the default TPS knob for decode when quality-approved.  
 2. **GDN in_proj fuse** remains double-gated; enable only after quality bar at target temp.  
-3. **KV quant** — park until long-context probes.  
+3. **KV quant** — **parked** after long-ctx r2 KILL (`LONGCTX_KV.md`).  
 4. **dense_kept** — no further work.  
 5. Further absolute t/s: **kernel/ROCm T₁**, **H1 dGPU**, **H2 small model** — not more MTP draft thrash.
 

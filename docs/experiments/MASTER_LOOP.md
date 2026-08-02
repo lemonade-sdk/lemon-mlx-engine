@@ -15,7 +15,70 @@ Program state (high level):
 | T1 fuse / KV@256 / dense_kept | **Closed** (`exp/mtp-t1-attack`) |
 | Quality Maxwell temp0.7 (35B) | Log EXIT:0 post-residual (cite path; not re-run every fire) |
 | H2 0.8B formalize | **Docs MET with caveats** (`mtp-h2-small-model/`) |
-| Remaining funded | **Long-ctx KV r2 IN FLIGHT** (r1 VOID multi-turn); H1 dGPU; product hygiene |
+| Remaining funded | **H1 dGPU hardware day** (protocol ready); optional product hygiene / #77 |
+| Long-ctx KV | **KILL** T1L r2 @~2k prefill (+1.0–1.4% ≪5%) |
+
+---
+
+## Fire 2026-08-02T02:21Z — PROGRESS (T1L r2 harvest KILL + H1 protocol)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** — long-ctx KV **KILL**; H1 protocol notes landed; not STOPPED |
+| **Branch** | `exp/mtp-t1-attack` @ tip after this commit |
+| **GPU** | use **3%** at harvest (matrix already complete) |
+| **Product tip** | `fix/mtp-product` @ `777f398` (#77) |
+
+### Clear Thought
+
+- `sequentialthinking` — harvest r2 vs ≥5% bar  
+- `metacognitivemonitoring` — log-only numbers  
+- `scientificmethod` — H-T1L-KV **refuted**  
+- `collaborativereasoning` (qa/perf) — park KV; fund H1 hardware later  
+
+### Reviewed
+
+- `T1L_STATUS.txt` complete + three `T1L_eager_*.txt`  
+- Single-turn validity: Prompt **2039**, Generation **256** each cell  
+- r1 remains VOID under `void_multiturn_r1/`  
+
+### Tested
+
+- **Harvest only** (no new GPU load)  
+- Quality: not re-run  
+
+| Cell | gen t/s | Δ vs fuse | Log |
+|------|---------|-----------|-----|
+| safe_fuse | **28.6272** | baseline | `T1L_eager_safe_fuse.txt` |
+| kv8 | **29.0367** | **+1.43%** | `T1L_eager_safe_kv8.txt` |
+| kv4 | **28.9138** | **+1.00%** | `T1L_eager_safe_kv4.txt` |
+
+Kill bar ≥5% → need ≥**30.059** t/s; **max 29.037** → **KILL/park**.
+
+### Decision
+
+1. Close long-ctx KV lever on this stack (`LONGCTX_KV.md`, `RESULTS.md`, `BRANCH_MAP`).  
+2. Advance one residual: **`docs/experiments/mtp-h1-dgpu/PROTOCOL.md`** (notes only).  
+3. Remaining: H1 hardware day, optional #77 hygiene.  
+4. Not plateau-STOPPED (H1 still funded).  
+
+### Next step
+
+- H1 dGPU measure when hardware present **or** product cherry-pick hygiene on #77.  
+- Do **not** re-open S4/C11/KV without new evidence.  
+
+### Confidence
+
+**0.93** — clean three-cell single-turn logs; arithmetic kill clear.
+
+### Supervisor honesty
+
+| Claim | Verdict | Path |
+|-------|---------|------|
+| fuse 28.6272 / kv8 29.0367 / kv4 28.9138 | **OK** | `T1L_eager_*.txt` |
+| ≥5% long-ctx KV win | **FAIL / KILL** | same |
+| r1 multi-turn numbers | **VOID** | `void_multiturn_r1/` |
+| 35B ≥100 | **NEVER** | — |
 
 ---
 

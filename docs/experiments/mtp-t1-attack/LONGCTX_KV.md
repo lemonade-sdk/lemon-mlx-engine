@@ -37,15 +37,22 @@
 
 **Honesty:** Within-session deltas only. Do not compare to short-ctx T1_*.txt absolutes as “win.”
 
-## Results (fill after matrix completes)
+## Results — r2 (valid single-turn) 2026-08-01 local / fire harvest 2026-08-02
 
-| Cell | Prompt tok | gen t/s | Δ vs fuse | Log |
-|------|------------|---------|-----------|-----|
-| T1L_eager_safe_fuse | TBD | TBD | baseline | `T1L_eager_safe_fuse.txt` |
-| T1L_eager_safe_kv8 | TBD | TBD | TBD | `T1L_eager_safe_kv8.txt` |
-| T1L_eager_safe_kv4 | TBD | TBD | TBD | `T1L_eager_safe_kv4.txt` |
+Session: `T1L_STATUS.txt` complete `2026-08-01T19:20:28-07:00` · tip at run `419c428` · model 35B-A3B-MTP-mlx-4bit gfx1150.
 
-**Verdict:** _pending matrix_
+| Cell | Prompt tok | gen tok | gen t/s | Δ vs fuse | Log |
+|------|------------|---------|---------|-----------|-----|
+| T1L_eager_safe_fuse | **2039** | **256** | **28.6272** | baseline | `T1L_eager_safe_fuse.txt` |
+| T1L_eager_safe_kv8 | **2039** | **256** | **29.0367** | **+1.43%** | `T1L_eager_safe_kv8.txt` |
+| T1L_eager_safe_kv4 | **2039** | **256** | **28.9138** | **+1.00%** | `T1L_eager_safe_kv4.txt` |
+
+Pass threshold: baseline × 1.05 = **30.059** t/s.  
+max(kv4, kv8) = **29.037** ≪ 30.059.
+
+**Verdict:** **KILL / park** long-ctx KV on this stack at ~2k prefill. H-T1L-KV **refuted** under pre-committed ≥5% bar.  
+Do **not** productize `--kv-bits` as a decode t/s win on gfx1150 35B from this evidence.  
+Optional future: only if new evidence (e.g. dGPU bandwidth-bound 8k+) — not auto-reopen.
 
 ## Related
 
