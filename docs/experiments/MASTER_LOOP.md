@@ -15,8 +15,62 @@ Program state (high level):
 | T1 fuse / KV@256 / dense_kept | **Closed** (`exp/mtp-t1-attack`) |
 | Quality Maxwell temp0.7 (35B) | Log EXIT:0 post-residual (cite path; not re-run every fire) |
 | H2 0.8B formalize | **Docs MET with caveats** (`mtp-h2-small-model/`) |
-| Remaining funded | **H1 dGPU hardware day** (protocol ready); optional product hygiene / #77 |
+| Remaining funded | **None on this iGPU field loop** — H1 is **external** dGPU day only |
 | Long-ctx KV | **KILL** T1L r2 @~2k prefill (+1.0–1.4% ≪5%) |
+| Field scheduler | **STOPPED** (plateau-complete for local levers) |
+
+---
+
+## Fire 2026-08-02T02:23Z — STOPPED (plateau complete + product hygiene)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **STOPPED** — local field levers exhausted; product claim hygiene landed |
+| **Branch** | `exp/mtp-t1-attack` @ tip after this commit |
+| **GPU** | use **~6%** idle; **no probe** (nothing fundable) |
+| **Product tip** | `fix/mtp-product` @ `777f398` (#77 OPEN, mergeable) |
+| **Scheduler** | `scheduler_delete` task **019fc039e578** |
+
+### Clear Thought
+
+- `sequentialthinking` — only residual was #77 hygiene or blocked H1 hardware  
+- `metacognitivemonitoring` — do not thrash empty fires on dGPU absence  
+- `decisionframework` — hygiene-stop vs keep scheduler thrash → **stop**  
+- `collaborativereasoning` (pm/qa) — claim bounds doc; stop loop  
+
+### Reviewed
+
+- Closed: S4, C11–C15, T1 fuse/dense, T1L KV, H2 formalize, H1 protocol notes  
+- #77: lean product OPEN; experiment bulk correctly off PR  
+- No concurrent chat probe  
+
+### Tested
+
+- **Skipped all probes** — no open local hypothesis; re-litigating kills banned  
+- Quality: not re-run; bounds cite existing Maxwell EXIT:0 path  
+
+### Decision
+
+1. **Product hygiene:** `docs/experiments/PRODUCT_CLAIM_BOUNDS.md` (ship-safe vs banned claims + log paths).  
+2. **Program:** field research loop on this machine is **plateau-complete**.  
+3. **H1** remains a human/hardware-day item (`mtp-h1-dgpu/PROTOCOL.md`), **not** a 2-minute auto fire.  
+4. **STOPPED** + delete scheduled task.  
+
+### Next step
+
+- **None for this scheduler.** Human: merge/review #77; optional H1 on dGPU later.  
+
+### Confidence
+
+**0.91** — lever inventory closed; stop avoids empty thrash.
+
+### Supervisor honesty
+
+| Claim | Verdict |
+|-------|---------|
+| Local measure levers remain | **No** (H1 external only) |
+| New TPS this fire | **None** |
+| Product hygiene invents wins | **No** — bounds + anti-claims only |
 
 ---
 
