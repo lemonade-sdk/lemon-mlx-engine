@@ -66,6 +66,7 @@ origin/main  ──┬── fix/mtp-product          (#77 OPEN)     lean produc
 | **`fix/mtp-stream-p0`** | `6a59066` | **+45** (diverged base) | **Full WIP tip:** StreamGuard → C1–C15 ladder → RS → residuals → Maxwell → review docs; **all probe .txt** | No — use #77 for review |
 | **`exp/mtp-stream-full`** | `6a59066` (same as above) | +45 | Explicit **experiment archive alias** of full tip | No |
 | **`exp/prefill-hip-graph`** | `b99cb2f` | +1 | Prefill F1–F3 docs/A-B only (missed ≥10% pp/s bar); mlx `use_hip_graphs` opt-in patch note | Optional draft docs PR only |
+| **`exp/mtp-t1-attack`** | sibling / parent `875a39d` | T₁ A/B | quant fuse / KV / dense_kept — fuse ~+2–3% eager; KV flat; dense_kept=norms only | evidence; optional dense log cherry-pick |
 
 ### Experiment doc trees on full tip
 

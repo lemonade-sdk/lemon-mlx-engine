@@ -263,6 +263,10 @@ void MTPHead::load_mtp_weights(
     int dequantized = 0;
     int auto_quantized = 0;
     int dense_kept = 0;
+    // T1 / W3.3 audit: which MTP weights stay dense (usually norms/biases only).
+    // Logged at end of load when MLX_MTP_LOG_DENSE=1 or MTP_DEBUG is set.
+    std::vector<std::string> dense_kept_keys;
+    dense_kept_keys.reserve(16);
 
     // Path A: checkpoint already has packed + scales.
     for (const auto& prefix : quant_prefixes) {
@@ -356,6 +360,7 @@ void MTPHead::load_mtp_weights(
         } else {
             *it->second = std::move(w);
             ++dense_kept;
+            dense_kept_keys.push_back(key);
         }
     }
 
@@ -450,6 +455,15 @@ void MTPHead::load_mtp_weights(
               << (force_dequant ? " (MLX_MTP_DEQUANT)" : "")
               << (keep_bf16 ? " (MLX_MTP_KEEP_BF16)" : "")
               << "\n";
+    // W3.3 / T1 audit: list dense-kept keys (typically norms/biases — not FLOP).
+    static const bool kLogDense =
+        std::getenv("MLX_MTP_LOG_DENSE") != nullptr ||
+        std::getenv("MTP_DEBUG") != nullptr;
+    if (kLogDense && !dense_kept_keys.empty()) {
+        std::cerr << "[MTP] dense_kept keys (" << dense_kept_keys.size() << "):";
+        for (const auto& k : dense_kept_keys) std::cerr << " " << k;
+        std::cerr << "\n";
+    }
 }
 
 }  // namespace mlx_lm
