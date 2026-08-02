@@ -7,6 +7,7 @@
 #include <mlx-lm/common/wired_limit_guard.h>
 #include <mlx/mlx.h>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -102,6 +103,35 @@ bool mtp_uses_greedy_spec(const GenerateParameters& params);
 // Empty when greedy-spec is OK; otherwise a short note (for logs / older callers).
 // Does NOT mean "refuse MTP" — sampled MTP is supported when this is non-empty.
 std::string mtp_greedy_only_violation(const GenerateParameters& params);
+
+// ---------------------------------------------------------------------------
+// Pure MTP protocol helpers — golden-testable without loading a model.
+// ---------------------------------------------------------------------------
+
+// Emit contract shared by greedy and sampled speculative steps:
+// next() returns only d0; d1..d_accepted are drained from draft_buffer_.
+// y_ (residual on reject / bonus on full accept) is the *next* step's d0.
+struct MtpEmitPlan {
+    int d0 = 0;
+    std::vector<int> buffered;  // d1..d_accepted (empty if accepted==0)
+};
+
+// draft_tokens[0] = d0; accepted = count of following drafts accepted.
+// Clamps accepted into [0, draft_tokens.size()-1]. Empty draft → d0=0, empty buf.
+MtpEmitPlan mtp_make_emit_plan(const std::vector<int>& draft_tokens, int accepted);
+
+// Leviathan accept probability: min(1, q/p) = min(1, exp(log_q - log_p)).
+// Non-finite → 0. Used by rejection-sampling MTP (temp>0).
+float mtp_accept_ratio(float log_q, float log_p);
+
+// Adaptive n_draft (C3) pure form. min 2 when n_draft_tokens>=2; max cap.
+// history[i] = accepted draft count for recent step i (0..n_draft-1).
+// fixed=true → always n_draft_tokens (MLX_MTP_FIXED_DRAFT).
+int mtp_adaptive_n_draft(
+    int n_draft_tokens,
+    const uint8_t* accept_history,
+    int history_len,
+    bool fixed);
 
 // ---------------------------------------------------------------------------
 // LogitProcessor — interface for modifying logits before sampling.

@@ -222,6 +222,76 @@ std::string mtp_greedy_only_violation(const GenerateParameters& params) {
     return oss.str();
 }
 
+MtpEmitPlan mtp_make_emit_plan(const std::vector<int>& draft_tokens, int accepted) {
+    MtpEmitPlan plan;
+    if (draft_tokens.empty()) {
+        return plan;
+    }
+    plan.d0 = draft_tokens[0];
+    const int max_acc = static_cast<int>(draft_tokens.size()) - 1;
+    if (accepted < 0) {
+        accepted = 0;
+    }
+    if (accepted > max_acc) {
+        accepted = max_acc;
+    }
+    plan.buffered.reserve(static_cast<size_t>(accepted));
+    for (int a = 0; a < accepted; ++a) {
+        plan.buffered.push_back(draft_tokens[static_cast<size_t>(a + 1)]);
+    }
+    return plan;
+}
+
+float mtp_accept_ratio(float log_q, float log_p) {
+    // min(1, exp(log_q - log_p)); reject non-finite inputs before min/exp
+    // (std::min with NaN is implementation-defined and can yield 1 via exp(0)).
+    if (!std::isfinite(log_q) || !std::isfinite(log_p)) {
+        return 0.0f;
+    }
+    const float diff = log_q - log_p;
+    if (diff >= 0.0f) {
+        return 1.0f;
+    }
+    float ratio = std::exp(diff);
+    if (!std::isfinite(ratio) || ratio < 0.0f) {
+        return 0.0f;
+    }
+    if (ratio > 1.0f) {
+        ratio = 1.0f;
+    }
+    return ratio;
+}
+
+int mtp_adaptive_n_draft(
+    int n_draft_tokens,
+    const uint8_t* accept_history,
+    int history_len,
+    bool fixed) {
+    if (n_draft_tokens <= 2) {
+        return n_draft_tokens;
+    }
+    if (fixed) {
+        return n_draft_tokens;
+    }
+    if (history_len <= 0 || accept_history == nullptr) {
+        return n_draft_tokens;
+    }
+    int sum = 0;
+    for (int i = 0; i < history_len; ++i) {
+        sum += static_cast<int>(accept_history[i]);
+    }
+    const float mean_acc =
+        static_cast<float>(sum) / static_cast<float>(history_len);
+    int want = static_cast<int>(mean_acc + 2.0f);  // d0 + drafts slack
+    if (want < 2) {
+        want = 2;
+    }
+    if (want > n_draft_tokens) {
+        want = n_draft_tokens;
+    }
+    return want;
+}
+
 float TokenIterator::mtp_token_logprob(
     const mx::array& logits, int token, float temperature) {
     mx::array last = logits;
@@ -1017,9 +1087,8 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
                 (static_cast<size_t>(i) < draft_lps.size())
                     ? draft_lps[static_cast<size_t>(i)]
                     : log_q;
-            // Accept with min(1, q/p) = min(1, exp(log_q - log_p))
-            float ratio = std::exp(std::min(0.0f, log_q - log_p));
-            if (ratio > 1.0f) ratio = 1.0f;
+            // Accept with min(1, q/p) via pure helper (golden-tested).
+            float ratio = mtp_accept_ratio(log_q, log_p);
             auto uarr = mx::random::uniform(0.0f, 1.0f, {}, mx::float32);
             mx::eval(uarr);
             const float u = uarr.item<float>();
@@ -1058,22 +1127,19 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
         }
     }
 
-    // Emit protocol must match greedy mtp_speculative_step:
-    // next() returns only d0 and drains draft_buffer_ for d1..d_accepted.
-    // y_ holds residual (reject) or bonus (full accept) as the *next* step's d0.
-    // Returning [d0, d1, ...] here without filling draft_buffer_ dropped every
-    // accepted draft under temp>0 (Maxwell garble: missing function words).
-    draft_buffer_.clear();
-    for (int a = 0; a < accepted; ++a) {
-        draft_buffer_.push_back(draft_tokens[static_cast<size_t>(a + 1)]);
-    }
+    // Emit protocol (shared pure helper): next() returns only d0; buffer
+    // holds d1..d_accepted. y_ is residual/bonus for the next step's d0.
+    // Fire-1 bug: returning [d0,d1,…] without filling draft_buffer_ dropped
+    // every accepted draft under temp>0 (Maxwell word-garble).
+    auto plan = mtp_make_emit_plan(draft_tokens, accepted);
+    draft_buffer_ = std::move(plan.buffered);
     draft_buffer_idx_ = 0;
 
     record_acceptance(n_draft, accepted);
     mtp_draft_proposed_ += std::max(0, n_draft - 1);
     mtp_draft_accepted_ += accepted;
     mtp_speculative_steps_++;
-    return {draft_tokens[0]};
+    return {plan.d0};
 }
 
 std::vector<int> TokenIterator::mtp_speculative_step() {
@@ -1649,11 +1715,12 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
 
     // Emit the accepted prefix [d0..d_accepted]: d0 now, d1..d_accepted buffered.
     // y_ holds the following token, emitted as d0 of the next step (not here).
-    draft_buffer_.clear();
-    for (size_t i = 1; i < draft_tokens.size() && static_cast<int>(i) <= accepted; ++i) {
-        draft_buffer_.push_back(draft_tokens[i]);
+    {
+        auto plan = mtp_make_emit_plan(draft_tokens, accepted);
+        draft_buffer_ = std::move(plan.buffered);
+        draft_buffer_idx_ = 0;
+        // plan.d0 == draft_tokens[0] when non-empty (return below).
     }
-    draft_buffer_idx_ = 0;
 
     // Optional inter-step draft prefetch (MLX_MTP_PREFETCH=1 only).
     if (kPrefetch && mtp_trunk_hidden_.has_value()) {
@@ -1720,25 +1787,17 @@ void TokenIterator::record_acceptance(int proposed, int accepted) {
 }
 
 int TokenIterator::current_draft_count() const {
-    // Adaptive block size from recent accepts (C3). Never collapses to "MTP
-    // off": when the user asked for n_draft>=2 we always keep at least 2 so
-    // speculation still runs. Caps at n_draft_tokens_.
+    // Adaptive block size from recent accepts (C3). Pure helper is golden-tested.
+    // Never collapses to "MTP off": min 2 when n_draft_tokens>=2.
     // Disable: MLX_MTP_FIXED_DRAFT=1 → always n_draft_tokens_.
-    if (n_draft_tokens_ <= 2) return n_draft_tokens_;
-    if (std::getenv("MLX_MTP_FIXED_DRAFT") != nullptr) return n_draft_tokens_;
-
+    const bool fixed = (std::getenv("MLX_MTP_FIXED_DRAFT") != nullptr);
     const int n = static_cast<int>(
         std::min(accept_history_idx_, static_cast<size_t>(kAcceptHistorySize)));
-    if (n <= 0) return n_draft_tokens_;
-
-    int sum = 0;
-    for (int i = 0; i < n; ++i) sum += static_cast<int>(accept_history_[i]);
-    // accepted ∈ [0, n_draft-1]; want block ≈ 1 (d0) + mean_accepted + small slack
-    const float mean_acc = static_cast<float>(sum) / static_cast<float>(n);
-    int want = static_cast<int>(mean_acc + 2.0f);  // d0 + drafts
-    if (want < 2) want = 2;
-    if (want > n_draft_tokens_) want = n_draft_tokens_;
-    return want;
+    return mtp_adaptive_n_draft(
+        n_draft_tokens_,
+        accept_history_.data(),
+        n,
+        fixed);
 }
 
 // ---------------------------------------------------------------------------

@@ -41,3 +41,20 @@
   2. Optional longer Maxwell with max_tokens≥2048 or thinking budget for post-think T1 answer.
   3. Residual approx residual distribution / registry unload after goldens.
 
+## 2026-08-01 fire 2
+- Goal: Land golden MTP logic tests (stop-bar half b); no 35B dual-load.
+- Tried: Clear Thought decision → goldens over longer Maxwell / registry. Domain spawns flaked; roles via Clear Thought collab.
+- Implemented (paths/SHA):
+  - `include/mlx-lm/common/generate.h` + `src/common/generate.cpp`: pure `mtp_make_emit_plan`, `mtp_accept_ratio`, `mtp_adaptive_n_draft`; wired sampled+greedy emit and accept path.
+  - `tests/test_generate.cpp`: 11 `[golden]` cases (emit reject/accept/partial/full/clamp, accept_ratio equal/gt/lt/nan, adaptive, acceptance_rate).
+  - `./tests/test_generate "[mtp]"` → **15 cases / 68 asserts PASS**.
+- Quality measure: skipped (no field remeasure); fire1 v3 remains Maxwell coherent multi-turn evidence.
+- Subagent votes: quality-reviewer AGREE ship goldens; PM AGREE schedule stop (a+b met). Spawns not_found → Clear Thought collab.
+- Clear Thought conclusion: Goldens lock fire-1 buffer drop; stop bar (a Maxwell PASS log) + (b goldens) both satisfied → stop schedule.
+- Next (post-schedule residuals, not stop-bar): longer Maxwell max_tokens≥2048 T1 post-think; residual dist; registry unload; env/doc debt.
+
+## STOP SCHEDULE
+- (a) Maxwell temp=0.7 thinking coherent multi-turn: **PASS** (`FIELD_MAXWELL_RS_ndraft2_temp07_think_v3.txt`, fire1).
+- (b) Golden MTP logic tests: **PASS** (fire2, `test_generate "[mtp]"`).
+- Action: scheduler_delete task `019fbff3379c`.
+
