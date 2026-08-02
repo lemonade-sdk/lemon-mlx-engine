@@ -305,12 +305,12 @@ class Qwen35MoEModel
     std::optional<mlx::core::array> lm_head_weight_;
     std::vector<int> kv_heads_;
 
-    // Design C1: MLX_LM_HEAD_TWOSTAGE=1 — low-rank stage-1 shortlist + exact
-    // quant stage-2 on top-K. Decode T=1 only. Experiment for temp=0 greedy.
+    // Design C1 v2: MLX_LM_HEAD_TWOSTAGE=1 — range-finder W≈Q@Bh + exact top-K.
+    // Decode T=1 only; experiment (temp=0). Not product default.
     bool lm_twostage_ready_ = false;
     bool lm_twostage_failed_ = false;
-    std::optional<mlx::core::array> lm_stage1_R_; // [H, r]
-    std::optional<mlx::core::array> lm_stage1_B_; // [r, V]
+    std::optional<mlx::core::array> lm_stage1_Q_;  // [V, r]
+    std::optional<mlx::core::array> lm_stage1_Bh_; // [r, H]
     void ensure_lm_head_twostage();
     std::optional<mlx::core::array> try_lm_head_twostage(const mlx::core::array& post_norm);
 

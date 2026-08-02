@@ -72,6 +72,18 @@ See [`DESIGN_C.md`](DESIGN_C.md) + [`C1_IMPLEMENT.md`](C1_IMPLEMENT.md).
 
 ## Fire log
 
+### Fire 2026-08-02 — C1v2 range-finder (partial resolve)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Algo** | W≈Q@Bh randomized range-finder + power=1; QR on CPU; K=8192 r=128 |
+| **Quality** | Coherent Fourier; CHECK mismatch **2.34%** / 128 steps |
+| **Perf** | ctrl **29.215** → v2 **29.880** (**+2.28% NOTABLE**) without CHECK |
+| **Ship** | Still **opt-in** only |
+| **Docs** | `C1v2_RESULTS.md` |
+
+
 ### Fire 2026-08-02T02:55Z — PROGRESS → **LEVER3_CLOSED / STOPPED**
 
 | Field | Value |

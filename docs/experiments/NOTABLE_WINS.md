@@ -62,3 +62,4 @@ Always: “&lt;5% still **notable**; fund decision separate.”
 - **Ship cheap notables** when quality-safe (e.g. SAFE quant fuse already product-shaped).  
 - **Park expensive micro-notables** (KV path complexity for +1%) unless free.  
 - **Still pursue** residual lm_head / graph if they can recover multi-ms T₁ — even +2–4% e2e is **notable**.
+| C1v2 two-stage range-finder | **+2.28%** gen t/s (temp0) | quality fail v1 | **NOTABLE** win; opt-in; ~2% argmax mismatch |

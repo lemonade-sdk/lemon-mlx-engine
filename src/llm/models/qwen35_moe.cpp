@@ -8,6 +8,7 @@
 // - MoE sanitize splits fused gate_up_proj into gate_proj + up_proj
 
 #include <cstdlib>
+#include <string>
 #include <limits>
 #include <mlx-lm/llm/models/qwen35_moe.h>
 #include <mlx-lm/llm/models/mtp_head.h>
@@ -1070,15 +1071,12 @@ PrepareResult Qwen35MoEModel::prepare_impl(const LMInput& input, std::vector<KVC
 
 void Qwen35MoEModel::ensure_lm_head_twostage() {
     if (lm_twostage_ready_ || lm_twostage_failed_) return;
-    static const bool enabled = std::getenv("MLX_LM_HEAD_TWOSTAGE") != nullptr;
-    if (!enabled) {
-        lm_twostage_failed_ = true;
-        return;
-    }
-    if (!lm_head_weight_.has_value()) {
-        lm_twostage_failed_ = true;
-        return;
-    }
+    static const bool enabled = [] {
+        const char* e = std::getenv("MLX_LM_HEAD_TWOSTAGE");
+        return e != nullptr && e[0] != '\0' && std::string(e) != "0";
+    }();
+    if (!enabled) { lm_twostage_failed_ = true; return; }
+    if (!lm_head_weight_.has_value()) { lm_twostage_failed_ = true; return; }
     auto* qi = QuantizedWeightRegistry::instance().find(&lm_head_weight_.value());
     if (!qi) {
         std::cerr << "[lm-head-twostage] lm_head not quantized — disabled\n";
@@ -1088,109 +1086,162 @@ void Qwen35MoEModel::ensure_lm_head_twostage() {
 
     const int V = config_.vocab_size;
     const int H = config_.hidden_size;
-    int r = 64;
+    int r = 128;
     if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_R")) {
         int v = std::atoi(e);
         if (v >= 8 && v <= 256) r = v;
+    }
+    int power_iters = 1;
+    if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_POWER")) {
+        int v = std::atoi(e);
+        if (v >= 0 && v <= 3) power_iters = v;
     }
     const int gs = qi->group_size;
     const int bits = qi->bits;
     const auto& W = lm_head_weight_.value();
     const auto& scales = qi->scales;
-    const auto biases =
-        qi->biases.has_value() ? qi->biases.value()
-                               : mx::zeros(scales.shape(), scales.dtype());
+    const auto biases = qi->biases.has_value() ? qi->biases.value()
+                          : mx::zeros(scales.shape(), scales.dtype());
 
-    std::cerr << "[lm-head-twostage] building stage-1 factors V=" << V
-              << " H=" << H << " r=" << r << " (one-time; may take a bit)\n";
+    std::cerr << "[lm-head-twostage] v2 range-finder V=" << V << " H=" << H
+              << " r=" << r << " power=" << power_iters << " (W≈Q@Bh, QR on CPU)\n";
 
-    // R ~ N(0,1/sqrt(H)) : [H, r] float32 then bf16 for matmuls.
-    auto R = mx::divide(
-        mx::random::normal({H, r}, /*dtype=*/mx::float32),
-        mx::array(std::sqrt(static_cast<float>(H)), mx::float32));
-    R = mx::astype(R, mx::bfloat16);
-    mx::eval(R);
-
-    // B [r, V]: stream dequant tiles → tile @ R → write columns of B.
     const int tile = 4096;
-    std::vector<mx::array> cols;
-    cols.reserve((V + tile - 1) / tile);
-    for (int i = 0; i < V; i += tile) {
-        const int n = std::min(tile, V - i);
+    auto dequant_tile = [&](int i, int n) {
         auto idx = mx::arange(i, i + n, mx::int32);
-        auto w_t = mx::take(W, idx, /*axis=*/0);
-        auto s_t = mx::take(scales, idx, /*axis=*/0);
-        auto b_t = mx::take(biases, idx, /*axis=*/0);
-        auto deq = mx::dequantize(w_t, s_t, b_t, gs, bits); // [n, H]
-        // Bt [n, r] = deq @ R → transpose to [r, n] for column blocks of B
-        auto Bt = mx::transpose(mx::matmul(deq, R));
-        cols.push_back(Bt);
-    }
-    auto B = mx::concatenate(cols, /*axis=*/1); // [r, V]
-    B = mx::astype(B, mx::bfloat16);
-    mx::eval(B);
+        auto w_t = mx::take(W, idx, 0);
+        auto s_t = mx::take(scales, idx, 0);
+        auto b_t = mx::take(biases, idx, 0);
+        return mx::dequantize(w_t, s_t, b_t, gs, bits);
+    };
+    auto mul_W = [&](const mx::array& M) {
+        std::vector<mx::array> parts;
+        for (int i = 0; i < V; i += tile) {
+            int n = std::min(tile, V - i);
+            auto deq = mx::astype(dequant_tile(i, n), mx::float32);
+            parts.push_back(mx::matmul(deq, M));
+        }
+        return mx::concatenate(parts, 0);
+    };
 
-    lm_stage1_R_ = std::move(R);
-    lm_stage1_B_ = std::move(B);
+    auto cpu = mx::new_stream(mx::Device::cpu);
+    auto Omega = mx::random::normal({H, r}, mx::float32);
+    mx::eval(Omega);
+    auto Y = mul_W(Omega);
+    mx::eval(Y);
+
+    auto Q = mx::linalg::qr(Y, cpu).first;
+    if (Q.shape(1) > r) Q = mx::slice(Q, {0, 0}, {V, r});
+    mx::eval(Q);
+
+    for (int p = 0; p < power_iters; ++p) {
+        auto Z = mx::zeros({H, r}, mx::float32);
+        for (int i = 0; i < V; i += tile) {
+            int n = std::min(tile, V - i);
+            auto deq = mx::astype(dequant_tile(i, n), mx::float32);
+            auto Qt = mx::slice(Q, {i, 0}, {i + n, r});
+            Z = mx::add(Z, mx::matmul(mx::transpose(deq), Qt));
+        }
+        mx::eval(Z);
+        Y = mul_W(Z);
+        mx::eval(Y);
+        Q = mx::linalg::qr(Y, cpu).first;
+        if (Q.shape(1) > r) Q = mx::slice(Q, {0, 0}, {V, r});
+        mx::eval(Q);
+    }
+
+    auto Bh = mx::zeros({r, H}, mx::float32);
+    for (int i = 0; i < V; i += tile) {
+        int n = std::min(tile, V - i);
+        auto deq = mx::astype(dequant_tile(i, n), mx::float32);
+        auto Qt = mx::slice(Q, {i, 0}, {i + n, r});
+        Bh = mx::add(Bh, mx::matmul(mx::transpose(Qt), deq));
+    }
+    Q = mx::astype(Q, mx::bfloat16);
+    Bh = mx::astype(Bh, mx::bfloat16);
+    mx::eval(Q);
+    mx::eval(Bh);
+
+    lm_stage1_Q_ = std::move(Q);
+    lm_stage1_Bh_ = std::move(Bh);
     lm_twostage_ready_ = true;
-    std::cerr << "[lm-head-twostage] stage-1 ready (R=[" << H << "," << r
-              << "] B=[" << r << "," << V << "])\n";
+    std::cerr << "[lm-head-twostage] v2 ready Q=[" << V << "," << r << "] Bh=["
+              << r << "," << H << "]\n";
 }
 
 std::optional<mx::array> Qwen35MoEModel::try_lm_head_twostage(
     const mx::array& post_norm) {
-    static const bool enabled = std::getenv("MLX_LM_HEAD_TWOSTAGE") != nullptr;
+    static const bool enabled = [] {
+        const char* e = std::getenv("MLX_LM_HEAD_TWOSTAGE");
+        return e != nullptr && e[0] != '\0' && std::string(e) != "0";
+    }();
     if (!enabled) return std::nullopt;
 
-    // Decode only: last-token [1,1,H] or [1,H]. Prefill multi-token keeps full head.
     mx::array h = post_norm;
     if (h.ndim() == 3) {
         if (h.shape(0) != 1 || h.shape(1) != 1) return std::nullopt;
         h = mx::reshape(h, {1, h.shape(2)});
     } else if (h.ndim() == 2) {
         if (h.shape(0) != 1) return std::nullopt;
-    } else {
-        return std::nullopt;
-    }
+    } else return std::nullopt;
 
     ensure_lm_head_twostage();
-    if (!lm_twostage_ready_ || !lm_stage1_R_ || !lm_stage1_B_ ||
-        !lm_head_weight_.has_value()) {
+    if (!lm_twostage_ready_ || !lm_stage1_Q_ || !lm_stage1_Bh_ ||
+        !lm_head_weight_.has_value())
         return std::nullopt;
-    }
 
     auto* qi = QuantizedWeightRegistry::instance().find(&lm_head_weight_.value());
     if (!qi) return std::nullopt;
 
     const int V = config_.vocab_size;
-    int K = 4096;
+    int K = 8192;
     if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_K")) {
         int v = std::atoi(e);
         if (v >= 64 && v <= V) K = v;
     }
 
-    // Stage-1: h [1,H] @ R [H,r] → [1,r] @ B [r,V] → [1,V] approx scores
-    auto hR = mx::matmul(mx::astype(h, mx::bfloat16), *lm_stage1_R_);
-    auto s1 = mx::matmul(hR, *lm_stage1_B_); // [1, V]
-    // Top-K indices (largest scores)
-    auto order = mx::argsort(-s1, /*axis=*/-1); // desc
-    auto idx = mx::slice(order, {0, 0}, {1, K}); // [1, K]
+    auto h_bf = mx::astype(h, mx::bfloat16);
+    auto hB = mx::matmul(h_bf, mx::transpose(*lm_stage1_Bh_));
+    auto s1 = mx::matmul(hB, mx::transpose(*lm_stage1_Q_));
+
+    const int kth = V - K;
+    auto part = mx::argpartition(s1, kth, -1);
+    auto idx = mx::slice(part, {0, kth}, {1, V});
     mx::eval(idx);
 
-    // Stage-2: exact quant head on K rows
     auto idx1 = mx::reshape(idx, {K});
-    auto w_k = mx::take(lm_head_weight_.value(), idx1, /*axis=*/0);
-    auto s_k = mx::take(qi->scales, idx1, /*axis=*/0);
-    auto b_k = qi->biases.has_value() ? mx::take(*qi->biases, idx1, /*axis=*/0)
+    auto w_k = mx::take(lm_head_weight_.value(), idx1, 0);
+    auto s_k = mx::take(qi->scales, idx1, 0);
+    auto b_k = qi->biases.has_value() ? mx::take(*qi->biases, idx1, 0)
                                       : mx::zeros(s_k.shape(), s_k.dtype());
     auto logits_k = mx::quantized_matmul(
-        mx::astype(h, mx::bfloat16), w_k, s_k, b_k,
-        /*transpose=*/true, qi->group_size, qi->bits); // [1, K]
+        h_bf, w_k, s_k, b_k, true, qi->group_size, qi->bits);
 
-    // Scatter into full vocab (non-candidates very negative for argmax/sample)
-    auto full = mx::full({1, V}, -1.0e4f, mx::float32);
+    auto full_ts = mx::full({1, V}, -1.0e4f, mx::float32);
     auto out = mx::put_along_axis(
-        full, mx::astype(idx, mx::int32), mx::astype(logits_k, mx::float32), -1);
+        full_ts, mx::astype(idx, mx::int32), mx::astype(logits_k, mx::float32), -1);
+
+    static const bool check = [] {
+        const char* e = std::getenv("MLX_LM_HEAD_TWOSTAGE_CHECK");
+        return e != nullptr && e[0] != '\0' && std::string(e) != "0";
+    }();
+    if (check) {
+        static int n_check = 0, n_mismatch = 0;
+        auto full_logits = linear_fwd(post_norm, lm_head_weight_.value());
+        auto a_full = mx::argmax(full_logits, -1);
+        auto a_ts = mx::argmax(out, -1);
+        mx::eval(a_full);
+        mx::eval(a_ts);
+        auto neq = mx::sum(mx::not_equal(mx::reshape(a_full, {-1}),
+                                         mx::reshape(a_ts, {-1})));
+        mx::eval(neq);
+        n_check++;
+        if (neq.item<int32_t>() != 0) n_mismatch++;
+        if (n_check <= 8 || n_check % 32 == 0)
+            std::cerr << "[lm-head-twostage] CHECK v2 step=" << n_check
+                      << " mismatch_total=" << n_mismatch << " rate="
+                      << (100.0 * n_mismatch / std::max(1, n_check)) << "%\n";
+    }
     return out;
 }
 

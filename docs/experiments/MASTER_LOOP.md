@@ -426,3 +426,15 @@ On the field 35B MTP mlx-4bit model, **lm_head is already quantized (U32 pack + 
 | **Closed** | L2 batch, L4 decode HIP, C11–C15, pure graph, “quantize head” |
 | **Next if continue** | C1 temp=0 two-stage / shortlist implement + e2e measure (any +Δ notable) |
 
+
+## Fire 2026-08-02 — C1v2 continue resolve (partial win)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **Change** | Range-finder stage-1 (not random proj); QR on CPU |
+| **Notable** | **+2.28%** gen t/s vs full head (temp0, 128 tok) |
+| **Quality** | Coherent; ~2.3% argmax mismatch under CHECK |
+| **Status** | Partial resolve; flag opt-in; not product default |
+
