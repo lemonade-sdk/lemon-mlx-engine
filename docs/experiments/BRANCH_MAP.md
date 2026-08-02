@@ -1,9 +1,10 @@
 # lemonade-sdk/lemon-mlx-engine — Complete Branch Map
 
 **Repo:** https://github.com/lemonade-sdk/lemon-mlx-engine  
-**As of:** 2026-08-02  
-**Working tip (this document lives on):** `fix/mtp-stream-p0` @ `6a59066`  
+**As of:** 2026-08-02 (MASTER_LOOP fire; S4/T1/C11 closed)  
+**Working tip (this document lives on):** `fix/mtp-stream-p0` / experiment siblings off `875a39d`  
 **Canonical product PR for MTP stream work:** [#77](https://github.com/lemonade-sdk/lemon-mlx-engine/pull/77) (`fix/mtp-product`)  
+**Master research loop:** [`docs/experiments/MASTER_LOOP.md`](MASTER_LOOP.md)  
 **Method:** full `git branch -r` / local inventory + open/merged PR scan + Clear Thought (sequentialthinking, first-principles, decisionframework, visualreasoning, metacognitivemonitoring).
 
 ---
@@ -37,8 +38,9 @@ geramy/|ochafik/ → collaborator remotes (not our day-to-day tip)
 origin/main  ──┬── fix/mtp-product          (#77 OPEN)     lean product
                ├── fix/quant-fuse-selective-gdn (#76 OPEN)
                ├── exp/prefill-hip-graph    (docs F1–F3)
-               ├── fix/mtp-stream-p0        FULL tip + probes  ──► exp/mtp-stream-full (same SHA)
-               └── [potential] exp/mtp-batch-verify-reprobe, exp/mtp-ndraft3-p0b, …
+               ├── fix/mtp-stream-p0        FULL tip + probes  ──► exp/mtp-stream-full
+               └── siblings @ 875a39d: exp/mtp-tps-ceiling (S4 KILL), exp/mtp-c11-topk-close,
+                   exp/mtp-t1-attack (fuse/KV/dense closed), docs H2 formalize
 ```
 
 ---
@@ -63,16 +65,22 @@ origin/main  ──┬── fix/mtp-product          (#77 OPEN)     lean produc
 
 | Branch | Tip | vs `origin/main` | Role | Product PR? |
 |--------|-----|------------------|------|-------------|
-| **`fix/mtp-stream-p0`** | `6a59066` | **+45** (diverged base) | **Full WIP tip:** StreamGuard → C1–C15 ladder → RS → residuals → Maxwell → review docs; **all probe .txt** | No — use #77 for review |
-| **`exp/mtp-stream-full`** | `6a59066` (same as above) | +45 | Explicit **experiment archive alias** of full tip | No |
+| **`fix/mtp-stream-p0`** | `875a39d` (+ docs) | **+45** (diverged base) | **Full WIP tip:** StreamGuard → C1–C15 ladder → RS → residuals → Maxwell → review docs; **all probe .txt** | No — use #77 for review |
+| **`exp/mtp-stream-full`** | same lineage | +45 | Explicit **experiment archive alias** of full tip | No |
 | **`exp/prefill-hip-graph`** | `b99cb2f` | +1 | Prefill F1–F3 docs/A-B only (missed ≥10% pp/s bar); mlx `use_hip_graphs` opt-in patch note | Optional draft docs PR only |
-| **`exp/mtp-t1-attack`** | sibling / parent `875a39d` | T₁ A/B | quant fuse / KV / dense_kept — fuse ~+2–3% eager; KV flat; dense_kept=norms only | evidence; optional dense log cherry-pick |
+| **`exp/mtp-tps-ceiling`** | `1396ab6` | S4 | **Batch verify KILL**; n_draft=3 still loses; plateau ~27 t/s | No |
+| **`exp/mtp-c11-topk-close`** | `fbd90bf` | C11 | Draft top_k close + map; C11–C15 dead | No |
+| **`exp/mtp-t1-attack`** | `e6a5eab` | T₁ | fuse ~+2–3% eager; KV flat@256; dense_kept=norms only | evidence; optional dense log cherry-pick |
 
-### Experiment doc trees on full tip
+### Experiment doc trees on full tip / siblings
 
 | Path | Content |
 |------|---------|
+| `docs/experiments/MASTER_LOOP.md` | Scheduled research-loop fire log (canonical progress) |
 | `docs/experiments/mtp-stream-p0/` | MASTER_WORKLOG, CRITICAL_ANALYSIS, C*/H* probes, Maxwell SAR, P0 gates |
+| `docs/experiments/mtp-tps-ceiling/` | S4 RESULTS + batch/seq logs (on `exp/mtp-tps-ceiling`) |
+| `docs/experiments/mtp-t1-attack/` | T1 fuse/KV/dense matrix + RESULTS |
+| `docs/experiments/mtp-h2-small-model/` | H2 formalize (n≥5 protocol from existing 0.8B logs) |
 | `docs/experiments/prefill-hip-graph/` | F1–F3 RESULTS, PREFILL_ARENA_DESIGN, mlx patch |
 | `docs/experiments/rocm-decode-degeneration/` | Fuse thrash isolation notes/logs (partial on tip) |
 | `docs/analysis/mtp-review/` | Review series 01–06 (+ this map pointer as 07) |
@@ -179,14 +187,14 @@ Create with: `git checkout -b exp/<name> origin/main` **or** from `fix/mtp-strea
 
 | Proposed branch | Create-from | Hypothesis | Kill / exit criteria | Priority |
 |-----------------|-------------|------------|----------------------|----------|
-| **`exp/mtp-batch-verify-reprobe`** | `fix/mtp-stream-p0` | Post-fuse stack may amortize batch T=2 verify (C1-era was 86 ms = 2.26×T₁) | `MLX_MTP_BATCH_VERIFY=1`, n≥3 pinned Fourier; **kill if T₂ > 67.7 ms**; reopen WS if ≤60 ms | **P0 — next probe day** |
-| **`exp/mtp-ndraft3-p0b`** | `fix/mtp-stream-p0` | Pre-P0-B n_draft=3 22.71 t/s is **invalid** (final-draft KV starve) | Measure n_draft=3 greedy + RS after P0-B; kill deep-draft if still < C7 | **P0 — same day as batch** |
-| **`exp/mtp-rs-batch-verify`** | after batch probe if live | RS −7% vs greedy is serial T=1 structure; batch verify reclaims | Only if batch probe reopens WS; else N/A | P1 |
-| **`exp/mtp-h1-dgpu`** | product or tip | MTP relative win scales on launch-bound dGPU vs 890M 8 CU | Hardware day; A/B eager vs MTP batch/seq; decide product surface | **P1 strategic** |
-| **`exp/mtp-h2-small-model`** | tip (H2 logs already exist) | 0.8B ~100 t/s is the real MTP home if 35B plateaus | Formalize n≥5 protocol, document product claim | P2 (docs formalize) |
+| ~~**`exp/mtp-batch-verify-reprobe`**~~ | → **`exp/mtp-tps-ceiling` S4** | Post-fuse amortize batch T=2 | **KILL:** batch n2 **20.890** t/s vs seq **27.216**; verify-on-accept mean **77.1 ms** > 67.7 ms | **closed (S4)** |
+| ~~**`exp/mtp-ndraft3-p0b`**~~ | → S4 | n_draft=3 post-P0-B | **KILL:** seq n3 **18.290** still < n2; batch n3 **10.152** | **closed (S4)** |
+| ~~**`exp/mtp-rs-batch-verify`**~~ | N/A | RS reclaim via batch | Batch dead → N/A | **closed** |
+| **`exp/mtp-h1-dgpu`** | product or tip | MTP relative win scales on launch-bound dGPU vs 890M 8 CU | Hardware day; A/B eager vs MTP batch/seq; decide product surface | **P1 strategic (needs dGPU)** |
+| **`exp/mtp-h2-small-model`** | docs formalize (logs on tip) | 0.8B ~100 t/s is the real MTP home if 35B plateaus | n≥5 Fourier formalize **done** in `mtp-h2-small-model/`; product surface claim optional | **P2 — formalize MET; product optional** |
 | **`exp/mtp-h3-batching`** | main | Multi-stream throughput ≠ single-stream t/s | Server concurrency matrix; do not credit as “gen t/s” | P2 |
-| **`exp/mtp-dense-kept-audit`** | main or tip | dense_kept / T₁ attack lifts **eager and MTP equally** | ≥10% T₁ cut or kill; **do not credit MTP** | P2 |
-| **`exp/mtp-kv-quant`** | main | KV quant lowers bandwidth | Quality bar + t/s; same “don’t credit MTP-only” | P3 |
+| ~~**`exp/mtp-dense-kept-audit`**~~ | → **`exp/mtp-t1-attack`** | — | **CLOSED**: 7 keys all RMSNorm | closed |
+| ~~**`exp/mtp-kv-quant`**~~ | → same | — | **flat @ 256 tok**; park for long-ctx | parked |
 | **`exp/mtp-tsan-registry`** | `fix/mtp-product` or tip | Registry mutex/refcount under unload race | TSAN clean load/unload×generate; or document single-model invariant | P2 robustness |
 | **`exp/prefill-arena`** | **stash@{0}** → new branch off tip | PrefillArena fixed-address `[1,T]` reduces OOM/hang history | Isolate from MTP product; kill if hang/OOM returns or <10% pp/s | P2 (WIP ready) |
 | **`exp/mlx-hip-graph-upstream`** | **mlx tree**, not engine | Local `use_hip_graphs` opt-in patch (see prefill docs) | PR to MLX/ROCm host only if maintainers want; engine keeps env gate | P3 external |
@@ -200,7 +208,7 @@ Create with: `git checkout -b exp/<name> origin/main` **or** from `fix/mtp-strea
 |------|------------------|
 | LoopBrake / auto-disable MTP | HARD BAN |
 | Dual-load base+MTP containers | HARD BAN / SEGV history |
-| More C11–C15-class draft micro-opts without batch-verify reopen | Ceiling proof: draft not on critical path under seq verify |
+| More C11–C15-class draft micro-opts without batch-verify reopen | Ceiling proof: draft not on critical path under seq verify; **S4 reconfirmed batch dead** |
 | Fake accept-rate TPS without wall-clock | HARD BAN |
 | Reopen mega `fix/mtp-stream-p0` as sole PR | Use #77 lean product |
 
@@ -234,16 +242,18 @@ Create with: `git checkout -b exp/<name> origin/main` **or** from `fix/mtp-strea
 
 ---
 
-## 10. SHA snapshot (2026-08-02)
+## 10. SHA snapshot (2026-08-02 fire)
 
 | Ref | SHA |
 |-----|-----|
-| `origin/main` | `a63692e` (PR #74 merge) |
-| `origin/fix/mtp-stream-p0` | `6a59066` |
-| `origin/exp/mtp-stream-full` | `6a59066` |
-| `origin/fix/mtp-product` | `777f398` |
-| `origin/exp/prefill-hip-graph` | `b99cb2f` |
-| `origin/fix/quant-fuse-selective-gdn` | `4634f2b` |
+| `origin/main` | refresh via fetch (local often behind) |
+| `fix/mtp-stream-p0` / `exp/mtp-stream-full` | `875a39d` (+ later docs on tip) |
+| `fix/mtp-product` | `777f398` |
+| `exp/mtp-tps-ceiling` | `1396ab6` |
+| `exp/mtp-c11-topk-close` | `fbd90bf` |
+| `exp/mtp-t1-attack` | `e6a5eab`+ (this fire docs) |
+| `exp/prefill-hip-graph` | `b99cb2f` |
+| `fix/quant-fuse-selective-gdn` | `4634f2b` |
 
 Refresh with:
 
