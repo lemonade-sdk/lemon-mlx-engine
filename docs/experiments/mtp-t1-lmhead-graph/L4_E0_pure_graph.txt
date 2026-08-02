@@ -1,6 +1,6 @@
-=== RUN L4_E0_hip_graph ===
-date=2026-08-01T19:41:21-07:00 tip=b677fd8 branch=exp/mtp-t1-lmhead-graph
-env_extra: MLX_DECODE_GRAPH=1 MLX_HIP_GRAPH_DECODE=1 MLX_USE_HIP_GRAPHS=1
+=== RUN L4_E0_pure_graph ===
+date=2026-08-01T19:41:31-07:00 tip=b677fd8 branch=exp/mtp-t1-lmhead-graph
+env_extra: MLX_DECODE_GRAPH_PURE=1 MLX_HIP_GRAPH_DECODE=1 MLX_USE_HIP_GRAPHS=1
 args: --temperature 0 --top-p 1 --max-tokens 128 --no-think --ignore-eos
 Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
 [mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
@@ -18,19 +18,9 @@ Type your message (or 'quit' to exit):
 
 > 
 Assistant: [prefill-graph] ONE_GRAPH=<unset> ABSORB_TAIL=<unset> HIP_GRAPH_PREFILL=<unset> HIP_GRAPH_DECODE=1 USE_HIP_GRAPHS=1 PREFILL_REPLAY=<unset> PREFILL_STEP=<default> prompt_tokens=23 window=512
-# Technical Overview: The Fourier Transform for Engineers
-
-## 1. Introduction
-
-The **Fourier Transform (FT)** is a fundamental mathematical tool in engineering that decomposes a function of time (a signal) into its constituent frequencies. It reveals the frequency spectrum of a signal, transforming it from the **time domain** to the **frequency domain**.
-
-### Why It Matters
-- **Signal Analysis**: Identify dominant frequencies, noise, and harmonics.
-- **System Design**: Design filters, modulators, and communication systems.
-- **Data Compression**: JPEG, MP3, and video codecs rely on frequency-domain transformations.
-
-Prompt:     23 tokens, 30.3017 tokens/s, 0.759034s
-Generation: 128 tokens, 28.733 tokens/s, 4.4548s
+# Technical Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview Overview
+Prompt:     23 tokens, 26.5907 tokens/s, 0.864965s
+Generation: 128 tokens, 829.673 tokens/s, 0.154278s
 
 
-> === DONE L4_E0_hip_graph exit=0 ===
+> === DONE L4_E0_pure_graph exit=0 ===

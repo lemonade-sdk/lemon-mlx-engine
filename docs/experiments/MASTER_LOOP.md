@@ -15,8 +15,60 @@ Program state (high level):
 | C11–C15 draft fuses | **Dead** (`exp/mtp-c11-topk-close`) — do not reopen |
 | T1 fuse / KV@256 / dense_kept / long-ctx KV | **Closed** (`exp/mtp-t1-attack`) — do not reopen |
 | **Lever 3 lm_head traffic** | **A+B+C done** — implement **PARKED** (`DESIGN_C.md`); free-head ceiling ~+13% sketch |
-| **Lever 4 graph decode 35B** | **NEXT** — code inventory |
-| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` |
+| **Lever 4 graph decode 35B** | **LEVER4_KILL** — HIP −3.6% vs eager; pure garble/fake TPS |
+| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` (L3 residual still open) |
+
+---
+
+
+## Fire 2026-08-02T02:41Z — PROGRESS (LEVER4_KILL)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` @ tip after this commit |
+| **GPU** | ~2% idle → three 35B chat loads |
+| **Lever worked** | #4 graph decode A/B probe |
+| **MASTER path** | `mtp-t1-lmhead-graph/{LEVER4_graph_inventory,MASTER,RESULTS}.md` |
+
+### Clear Thought
+
+- `sequentialthinking` — one step = L4 probe (matrix/DESIGN_C already done)
+- `decisionframework` — probe over re-doc; GPU free
+- `scientificmethod` — H-l4-graph-gain **refuted**
+- `metacognitivemonitoring` — pure 829 t/s **not claimed** (fake TPS + garble)
+
+### Tested
+
+| Log | Key |
+|-----|-----|
+| `L4_E0_eager_ctrl.txt` | gen **29.8084** t/s |
+| `L4_E0_hip_graph.txt` | gen **28.733** t/s (−3.61%); T₁ 34.80 ms |
+| `L4_E0_pure_graph.txt` | **INVALID** 829.673 t/s; Overview loop garble |
+
+### Decision
+
+1. **LEVER4_KILL** — both kill bars hit on honest HIP path; pure fail-closed.
+2. Do not product-enable `MLX_DECODE_GRAPH_PURE` on this stack.
+3. Not STOPPED: L3 implement still PARKED.
+4. Next: C4 close residual head **or** dedicated C1 implement day; **no** L4 re-probe.
+
+### Insight
+
+Decode HIP graphs do not buy T₁ on 35B MoE+GDN gfx1150; pure path is quality-broken. Residual T₁ work is only parked lm_head design (~11.5% head / ~+13% free-head sketch).
+
+### Confidence
+
+**0.92** on LEVER4_KILL (logged). **0.95** pure TPS invalid.
+
+### Supervisor honesty
+
+| Claim | Verdict | Path |
+|-------|---------|------|
+| eager 29.8084 | **OK** | `L4_E0_eager_ctrl.txt` |
+| HIP 28.733 | **OK** | `L4_E0_hip_graph.txt` |
+| pure 829 as product speed | **FORBIDDEN** | garble log |
+| LEVER4_KILL | **OK** | kill bars |
 
 ---
 

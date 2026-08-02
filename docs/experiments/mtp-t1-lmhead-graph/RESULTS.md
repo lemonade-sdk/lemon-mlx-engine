@@ -245,6 +245,22 @@ Quality is **session-smoke**, not full Maxwell SAR re-certification.
 
 ---
 
-## 8. Lever 4 inventory
+## 8. Lever 4 inventory + field probe — **LEVER4_KILL**
 
-See [`LEVER4_graph_inventory.md`](LEVER4_graph_inventory.md). Probe not run this fire (matrix primary). Kill: T₁≥32 ms equiv or &lt;5% gain / uncapturable MoE graph.
+Full writeup: [`LEVER4_graph_inventory.md`](LEVER4_graph_inventory.md).
+
+**Same-fire tip `b677fd8` · fuse ON · temp=0 · no-think · 128 gen · Fourier · no MTP**
+
+| Cell | gen t/s | T₁ ms | Quality | Log |
+|------|---------|-------|---------|-----|
+| Eager ctrl | **29.8084** | 33.55 | Coherent | `L4_E0_eager_ctrl.txt` |
+| HIP (`MLX_DECODE_GRAPH` + `MLX_HIP_GRAPH_DECODE` + `MLX_USE_HIP_GRAPHS`) | **28.733** (−3.61%) | **34.80** | Coherent | `L4_E0_hip_graph.txt` |
+| Pure (`MLX_DECODE_GRAPH_PURE=1`) | **829.673** | n/a | **GARBLE** Overview loop | `L4_E0_pure_graph.txt` |
+
+| Kill bar | Outcome |
+|----------|---------|
+| T₁ ≥ 32 ms with graphs | **HIT** (HIP 34.80) |
+| Gain &lt;5% | **HIT** (−3.6%) |
+| Pure product usable | **No** — fake TPS ban + quality EXIT |
+
+**Verdict: LEVER4_KILL.** Do not product-enable pure; do not re-open without new evidence.

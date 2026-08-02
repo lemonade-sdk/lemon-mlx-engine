@@ -67,7 +67,7 @@ See [`DESIGN_C.md`](DESIGN_C.md). Summary:
 - **Ship gate:** temp=0 argmax match 100% vs full head; MTP RS stays full head.
 - **Fund implement** only if stage1+stage2 ≤ ~0.5×3.87 ms **or** e2e ≥+5% gen t/s (same-session logs).
 - **Honest cap:** cannot claim &gt; free-head ~+13% from head work alone.
-- **Next program step:** Lever 4 inventory (not C implement unless dedicated day).
+- **Next program step:** Lever 4 **KILL** (field). Residual optional C1 implement or C4 close.
 
 ---
 
