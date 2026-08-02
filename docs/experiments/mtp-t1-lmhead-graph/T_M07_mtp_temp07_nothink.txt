@@ -1,6 +1,6 @@
-=== RUN T_E0_temp0_nothink ===
-date=2026-08-01T19:38:00-07:00 tip=f30ea5c branch=exp/mtp-t1-lmhead-graph
-args: --temperature 0 --top-p 1 --max-tokens 128 --no-think --ignore-eos
+=== RUN T_M07_mtp_temp07_nothink ===
+date=2026-08-01T19:38:54-07:00 tip=1e6b681 branch=exp/mtp-t1-lmhead-graph
+args: --use-mtp --n-draft 2 --temperature 0.7 --top-p 0.9 --max-tokens 128 --no-think --ignore-eos
 Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
 [mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
 [MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
@@ -13,23 +13,23 @@ Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
 [quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
 [mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
 Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+MTP enabled: n_draft=2 temperature=0.7 top_p=0.9 (rejection-sampling)
 Type your message (or 'quit' to exit):
 
 > 
-Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+Assistant: [MTP] sampled mode (rejection sampling): MTP sampled mode (rejection sampling): temperature=0.7 top_p=0.9
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
 # Technical Overview: The Fourier Transform for Engineers
 
 ## 1. Introduction
 
-The **Fourier Transform (FT)** is a fundamental mathematical tool in engineering that decomposes a function of time (a signal) into its constituent frequencies. It reveals the frequency spectrum of a signal, transforming it from the **time domain** to the **frequency domain**.
+The **Fourier Transform (FT)** is a fundamental mathematical tool in signal processing, communications, control systems, and physics. It decomposes a function of time (a signal) into its constituent frequencies.
 
-### Why It Matters
-- **Signal Analysis**: Identify dominant frequencies, noise, and harmonics.
-- **System Design**: Design filters, modulators, and communication systems.
-- **Data Compression**: JPEG, MP3, and video codecs rely on frequency-domain transformations.
+**Core Concept:** Any continuous, non-periodic signal can be represented as a sum of infinite sinusoidal components (sine and cosine waves) with different frequencies, amplitudes, and phases.
 
-Prompt:     23 tokens, 30.1538 tokens/s, 0.762757s
-Generation: 128 tokens, 29.6099 tokens/s, 4.32287s
+> **Engineering Intuition:** While the Time Domain tells you *when* something happens, the Frequency Domain tells you *what* is happening.
+Prompt:     23 tokens, 25.7685 tokens/s, 0.892564s
+Generation: 128 tokens, 26.1348 tokens/s, 4.89769s
 
 
-> === DONE T_E0_temp0_nothink exit=0 ===
+> === DONE T_M07_mtp_temp07_nothink exit=0 ===

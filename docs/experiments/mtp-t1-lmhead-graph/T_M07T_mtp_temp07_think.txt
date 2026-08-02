@@ -1,0 +1,55 @@
+=== RUN T_M07T_mtp_temp07_think ===
+date=2026-08-01T19:39:05-07:00 tip=1e6b681 branch=exp/mtp-t1-lmhead-graph
+args: --use-mtp --n-draft 2 --temperature 0.7 --top-p 0.9 --max-tokens 512 --ignore-eos
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+MTP enabled: n_draft=2 temperature=0.7 top_p=0.9 (rejection-sampling)
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [MTP] sampled mode (rejection sampling): MTP sampled mode (rejection sampling): temperature=0.7 top_p=0.9
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+Here's a thinking process:
+
+1.  **Analyze User Input:**
+   - **Topic:** Maxwell's Gauss's Law for electric fields (differential form)
+   - **Requirements:** 
+     - 6-8 short sentences
+     - Explain the law
+     - Explain its physical meaning
+
+2.  **Identify Key Concepts:**
+   - Differential form: ∇ · E = ρ/ε₀
+   - ∇ · E: divergence of the electric field
+   - ρ: volume charge density
+   - ε₀: vacuum permittivity
+   - Physical meaning: Electric field lines diverge from positive charges and converge on negative charges; charge is the source/sink of the electric field.
+
+3.  **Draft - Sentence by Sentence (aiming for 6-8 short sentences):**
+   Maxwell’s Gauss law in differential form states that the divergence of the electric field equals the local charge density divided by the vacuum permittivity. Mathematically, this is written as ∇ · E = ρ/ε₀. The divergence operator measures how much the field spreads out from a point. A positive result indicates that the point acts as a source of electric field lines. A negative result shows the point acts as a sink where field lines terminate. Zero divergence means no net charge exists at that location. Physically, the law reveals that electric charges are the fundamental sources and sinks of electric fields. It also implies that electric field lines cannot begin or end in empty space without charge.
+
+4.  **Count and Check Sentences:**
+   1. Maxwell’s Gauss law in differential form states that the divergence of the electric field equals the local charge density divided by the vacuum permittivity.
+   2. Mathematically, this is written as ∇ · E = ρ/ε₀.
+   3. The divergence operator measures how much the field spreads out from a point.
+   4. A positive result indicates that the point acts as a source of electric field lines.
+   5. A negative result shows the point acts as a sink where field lines terminate.
+   6. Zero divergence means no net charge exists at that location.
+   7. Physically, the law reveals that electric charges are the fundamental sources and sinks of electric fields.
+   8. It also implies that electric field lines cannot begin or end in empty space without charge.
+   Total: 8 sentences.
+Prompt:     36 tokens, 37.0624 tokens/s, 0.971336s
+Generation: 512 tokens, 25.216 tokens/s, 20.3046s
+
+
+> === DONE T_M07T_mtp_temp07_think exit=0 ===

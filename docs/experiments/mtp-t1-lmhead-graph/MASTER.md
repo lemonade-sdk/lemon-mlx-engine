@@ -70,6 +70,20 @@ See [`DESIGN_C.md`](DESIGN_C.md). Summary:
 
 ## Fire log
 
+### Fire 2026-08-02T02:40Z — PROGRESS (temp×think matrix + design C + lever4 inventory)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **Work** | Product-mode gen matrix (temp 0/0.7 × think × eager/MTP); DESIGN_C_two_stage; LEVER4 inventory; scheduler prompt requires temp/think |
+| **Key TPS** | Eager ~29.6–29.9 flat; MTP 27.1 / RS 26.1 / RS+think 25.2 |
+| **Quality** | Smoke coherent E07/E07T/M07/M07T; not full Maxwell re-cert |
+| **Next** | Optional lever4 graph T₁ A/B; implement C1 only if funded; do not claim +15–25% |
+
+Clear Thought: sequentialthinking + decisionframework (matrix over implement C).
+
+
 ### Fire 2026-08-02T02:36Z — PROGRESS (design C)
 
 | Field | Value |

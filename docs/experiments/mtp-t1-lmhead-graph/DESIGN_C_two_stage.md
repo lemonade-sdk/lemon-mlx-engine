@@ -1,5 +1,7 @@
 # Design C — residual lm_head cut (after 4-bit already landed)
 
+> **Primary design doc:** [`DESIGN_C.md`](DESIGN_C.md) (loop fire). This file is the short product-mode checklist (temp×think gates).
+
 **Branch:** `exp/mtp-t1-lmhead-graph`  
 **Status:** DESIGN ONLY — no ship claim until microbench + quality  
 **Context:** Package already has 4-bit `lm_head` (~3.87 ms ≈ 11.5% of T₁). “Quantize to 4-bit” is **void**. Residual upside is **sparsity of logits materialization**, not more weight quant.

@@ -1,0 +1,110 @@
+=== RUN T_M0_mtp_temp0_nothink ===
+date=2026-08-01T19:38:44-07:00 tip=1e6b681 branch=exp/mtp-t1-lmhead-graph
+args: --use-mtp --n-draft 2 --temperature 0 --top-p 1 --max-tokens 128 --no-think --ignore-eos
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+MTP enabled: n_draft=2 temperature=0 top_p=1 (greedy-spec)
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[mtp-t] step=1 n_draft=2 accepted=1 draft=505418us verify=4902us commit=5us total=510325us
+# Technical[mtp-t] step=2 n_draft=2 accepted=1 draft=71588us verify=4174us commit=1us total=75764us
+ Overview:[mtp-t] step=3 n_draft=2 accepted=1 draft=69975us verify=4084us commit=2us total=74062us
+ The Fourier[mtp-t] step=4 n_draft=2 accepted=0 draft=69616us verify=12us commit=14us total=69643us
+ Transform[mtp-t] step=5 n_draft=2 accepted=1 draft=39297us verify=3689us commit=2us total=42989us
+ for Engineers[mtp-t] step=6 n_draft=2 accepted=1 draft=70820us verify=3787us commit=1us total=74608us
+
+
+##[mtp-t] step=7 n_draft=2 accepted=1 draft=69889us verify=3574us commit=1us total=73464us
+ 1[mtp-t] step=8 n_draft=2 accepted=1 draft=70689us verify=3756us commit=0us total=74446us
+. Introduction[mtp-t] step=9 n_draft=2 accepted=1 draft=69797us verify=3526us commit=1us total=73324us
+
+
+The[mtp-t] step=10 n_draft=2 accepted=1 draft=71987us verify=4285us commit=3us total=76275us
+ **Four[mtp-t] step=11 n_draft=2 accepted=1 draft=71037us verify=4521us commit=4us total=75563us
+ier Transform[mtp-t] step=12 n_draft=2 accepted=1 draft=70156us verify=4091us commit=3us total=74251us
+ (FT[mtp-t] step=13 n_draft=2 accepted=1 draft=69368us verify=3570us commit=2us total=72941us
+)** is[mtp-t] step=14 n_draft=2 accepted=1 draft=70834us verify=3788us commit=3us total=74626us
+ a fundamental[mtp-t] step=15 n_draft=2 accepted=1 draft=69605us verify=3456us commit=0us total=73063us
+ mathematical tool[mtp-t] step=16 n_draft=2 accepted=1 draft=71024us verify=4440us commit=5us total=75469us
+ in engineering[mtp-t] step=17 n_draft=2 accepted=0 draft=68105us verify=9us commit=2us total=68118us
+ that[mtp-t] step=18 n_draft=2 accepted=1 draft=38115us verify=4261us commit=2us total=42379us
+ decomposes[mtp-t] step=19 n_draft=2 accepted=1 draft=72376us verify=4831us commit=2us total=77210us
+ a function[mtp-t] step=20 n_draft=2 accepted=1 draft=71573us verify=4926us commit=2us total=76502us
+ of time[mtp-t] step=21 n_draft=2 accepted=0 draft=69478us verify=10us commit=5us total=69493us
+ ([mtp-t] step=22 n_draft=2 accepted=1 draft=37389us verify=3753us commit=1us total=41144us
+a signal[mtp-t] step=23 n_draft=2 accepted=1 draft=69314us verify=3590us commit=3us total=72909us
+) into[mtp-t] step=24 n_draft=2 accepted=1 draft=69123us verify=5298us commit=2us total=74424us
+ its constituent[mtp-t] step=25 n_draft=2 accepted=1 draft=69497us verify=3473us commit=1us total=72972us
+ frequencies.[mtp-t] step=26 n_draft=2 accepted=0 draft=69710us verify=23us commit=3us total=69738us
+ It[mtp-t] step=27 n_draft=2 accepted=1 draft=38245us verify=3767us commit=2us total=42015us
+ reveals the[mtp-t] step=28 n_draft=2 accepted=0 draft=70070us verify=18us commit=3us total=70092us
+ frequency[mtp-t] step=29 n_draft=2 accepted=0 draft=38398us verify=70us commit=5us total=38474us
+ spectrum[mtp-t] step=30 n_draft=2 accepted=1 draft=39239us verify=4783us commit=1us total=44024us
+ of a[mtp-t] step=31 n_draft=2 accepted=1 draft=70775us verify=4434us commit=5us total=75214us
+ signal,[mtp-t] step=32 n_draft=2 accepted=0 draft=70054us verify=10us commit=2us total=70066us
+ transforming[mtp-t] step=33 n_draft=2 accepted=1 draft=37698us verify=3964us commit=1us total=41664us
+ it from[mtp-t] step=34 n_draft=2 accepted=1 draft=69038us verify=4727us commit=2us total=73768us
+ the **[mtp-t] step=35 n_draft=2 accepted=1 draft=69138us verify=3983us commit=2us total=73125us
+time domain[mtp-t] step=36 n_draft=2 accepted=1 draft=69127us verify=4596us commit=2us total=73726us
+** to[mtp-t] step=37 n_draft=2 accepted=1 draft=68074us verify=3329us commit=1us total=71404us
+ the **[mtp-t] step=38 n_draft=2 accepted=0 draft=70209us verify=9us commit=1us total=70221us
+frequency[mtp-t] step=39 n_draft=2 accepted=1 draft=37588us verify=3456us commit=1us total=41046us
+ domain**.[mtp-t] step=40 n_draft=2 accepted=0 draft=70400us verify=14us commit=1us total=70417us
+
+
+[mtp-t] step=41 n_draft=2 accepted=1 draft=39082us verify=3992us commit=1us total=43076us
+### Why[mtp-t] step=42 n_draft=2 accepted=1 draft=70064us verify=5050us commit=2us total=75118us
+ It Matters[mtp-t] step=43 n_draft=2 accepted=0 draft=68339us verify=9us commit=1us total=68350us
+
+[mtp-t] step=44 n_draft=2 accepted=1 draft=38208us verify=3917us commit=2us total=42129us
+- **[mtp-t] step=45 n_draft=2 accepted=0 draft=68449us verify=7us commit=1us total=68458us
+Signal[mtp-t] step=46 n_draft=2 accepted=1 draft=37421us verify=3224us commit=0us total=40647us
+ Analysis**:[mtp-t] step=47 n_draft=2 accepted=0 draft=69653us verify=7us commit=1us total=69662us
+ Identify[mtp-t] step=48 n_draft=2 accepted=1 draft=37576us verify=3337us commit=1us total=40914us
+ dominant frequencies[mtp-t] step=49 n_draft=2 accepted=1 draft=68116us verify=3267us commit=1us total=71384us
+, noise[mtp-t] step=50 n_draft=2 accepted=0 draft=68279us verify=6us commit=1us total=68287us
+,[mtp-t] step=51 n_draft=2 accepted=1 draft=37944us verify=4442us commit=1us total=42388us
+ and harmon[mtp-t] step=52 n_draft=2 accepted=1 draft=71833us verify=4451us commit=1us total=76286us
+ics.[mtp-t] step=53 n_draft=2 accepted=0 draft=69874us verify=11us commit=1us total=69887us
+
+[mtp-t] step=54 n_draft=2 accepted=1 draft=38020us verify=3894us commit=3us total=41917us
+- **[mtp-t] step=55 n_draft=2 accepted=0 draft=68077us verify=6us commit=1us total=68084us
+System[mtp-t] step=56 n_draft=2 accepted=1 draft=38573us verify=4479us commit=3us total=43057us
+ Design**:[mtp-t] step=57 n_draft=2 accepted=1 draft=69489us verify=4374us commit=1us total=73864us
+ Design filters[mtp-t] step=58 n_draft=2 accepted=0 draft=69903us verify=16us commit=2us total=69922us
+,[mtp-t] step=59 n_draft=2 accepted=1 draft=37981us verify=3685us commit=1us total=41667us
+ modulators[mtp-t] step=60 n_draft=2 accepted=1 draft=68766us verify=3514us commit=1us total=72282us
+, and[mtp-t] step=61 n_draft=2 accepted=1 draft=70242us verify=3506us commit=0us total=73749us
+ communication systems[mtp-t] step=62 n_draft=2 accepted=1 draft=72553us verify=5265us commit=4us total=77823us
+.
+[mtp-t] step=63 n_draft=2 accepted=1 draft=71024us verify=4703us commit=1us total=75729us
+- **[mtp-t] step=64 n_draft=2 accepted=1 draft=68925us verify=3588us commit=1us total=72515us
+Data Compression[mtp-t] step=65 n_draft=2 accepted=1 draft=69418us verify=3513us commit=1us total=72933us
+**: JPEG[mtp-t] step=66 n_draft=2 accepted=0 draft=70215us verify=17us commit=4us total=70237us
+,[mtp-t] step=67 n_draft=2 accepted=1 draft=37716us verify=3812us commit=1us total=41530us
+ MP3[mtp-t] step=68 n_draft=2 accepted=1 draft=67894us verify=3419us commit=1us total=71314us
+, and[mtp-t] step=69 n_draft=2 accepted=0 draft=69020us verify=8us commit=1us total=69030us
+ video[mtp-t] step=70 n_draft=2 accepted=0 draft=37597us verify=6us commit=2us total=37606us
+ codecs[mtp-t] step=71 n_draft=2 accepted=1 draft=37894us verify=3407us commit=1us total=41302us
+ rely on[mtp-t] step=72 n_draft=2 accepted=1 draft=70439us verify=4299us commit=4us total=74743us
+ frequency-domain[mtp-t] step=73 n_draft=2 accepted=1 draft=70606us verify=4307us commit=2us total=74916us
+ transformations.[mtp-t] step=74 n_draft=2 accepted=0 draft=70072us verify=10us commit=1us total=70085us
+
+
+Prompt:     23 tokens, 26.8302 tokens/s, 0.857244s
+Generation: 128 tokens, 27.1463 tokens/s, 4.71519s
+
+
+> === DONE T_M0_mtp_temp0_nothink exit=0 ===

@@ -199,3 +199,51 @@ Full plan: [`DESIGN_C.md`](DESIGN_C.md).
 | S4 batch n2 | 20.890 | mean **77.1** ms &gt; 67.7 | **KILL** |
 
 Source branch: `exp/mtp-tps-ceiling` → `docs/experiments/mtp-tps-ceiling/RESULTS.md` + `S4_*.txt`.
+
+---
+
+## 7. Product-mode matrix: temperature × thinking (2026-08-02)
+
+**Why:** Product defaults are temp **0.7** and **thinking ON** unless `--no-think`. Greedy temp=0 only was under-representing lm_head/sampler cost and quality risk for Design C.
+
+**Runner:** `run_temp_think_matrix.sh`  
+**Env:** `MLX_ENABLE_QUANT_FUSE=1` `MLX_LOAD_MTP_HEAD=1` · model LemonMLXE 35B MTP 4bit · gfx1150  
+**HARD BAN:** numbers only from logs below.
+
+| Cell | Mode | max_tok | gen t/s | log |
+|------|------|---------|---------|-----|
+| **E0** | eager temp=0 `--no-think` | 128 | **29.610** | `T_E0_temp0_nothink.txt` |
+| **E07** | eager temp=0.7 top_p=0.9 `--no-think` | 128 | **29.879** | `T_E07_temp07_nothink.txt` |
+| **E07T** | eager temp=0.7 **think ON** | 512 | **29.929** | `T_E07T_temp07_think.txt` |
+| **M0** | MTP n2 temp=0 `--no-think` | 128 | **27.146** | `T_M0_mtp_temp0_nothink.txt` |
+| **M07** | MTP n2 temp=0.7 **RS** `--no-think` | 128 | **26.135** | `T_M07_mtp_temp07_nothink.txt` |
+| **M07T** | MTP n2 temp=0.7 **RS + think** | 512 | **25.216** | `T_M07T_mtp_temp07_think.txt` |
+
+### TPS takeaways
+
+1. Eager gen t/s is **flat** across temp0 / temp0.7 / think (~29.6–29.9) on these short runs — sampling + think template do **not** dominate wall vs trunk T₁.
+2. MTP greedy ~**27.1**; MTP RS ~**26.1** (−3.7% vs M0); MTP RS+think ~**25.2** (−7.1% vs M0) — matches historical RS tax, not a new bug.
+3. Design C **greedy-only** path (C1) only helps E0/M0; **product 0.7+think** needs C2 two-stage with quality gates or accept residual head tax.
+
+### Quality takeaways (honest, short)
+
+| Cell | Note |
+|------|------|
+| E07 no-think | Coherent Fourier overview structure |
+| E07T think | Structured “thinking process” + Maxwell content; usable (no garble) |
+| M07 no-think | Coherent Fourier sections; RS path OK |
+| M07T think | Structured thinking + Gauss law content; no garble; **not** full Maxwell multi-turn bar |
+
+Quality is **session-smoke**, not full Maxwell SAR re-certification.
+
+### Implication for Design C
+
+- **C1 (greedy argmax path):** can fund if ≥5% on E0/M0 only; **does not** cover product default.
+- **C2 (two-stage):** must pass E07 + E07T + M07 + M07T quality gates before product.
+- **Baselines above** are the A/B denominators for any future C1/C2 implementation.
+
+---
+
+## 8. Lever 4 inventory
+
+See [`LEVER4_graph_inventory.md`](LEVER4_graph_inventory.md). Probe not run this fire (matrix primary). Kill: T₁≥32 ms equiv or &lt;5% gain / uncapturable MoE graph.

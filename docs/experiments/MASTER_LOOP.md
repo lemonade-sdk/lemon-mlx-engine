@@ -215,3 +215,15 @@ On the field 35B MTP mlx-4bit model, **lm_head is already quantized (U32 pack + 
 
 - **STOPPED** + `scheduler_delete` when: lever 3 CLOSED **and** lever 4 KILL/impossible **and** lever 2 already KILL; **or** three consecutive fires with no implement/measure.  
 - This fire is **not** that condition.
+
+## Fire 2026-08-02T02:40Z — PROGRESS (temp×think product matrix)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **Work** | Ran temp×think×eager/MTP matrix; design C residual head; lever4 inventory |
+| **Insight** | Eager t/s flat across temp/think; MTP RS+think ~25.2; Design C must cover product modes not just greedy |
+| **Next** | Lever4 graph probe or C1 fund decision |
+| **Logs** | `mtp-t1-lmhead-graph/T_*.txt` |
+
