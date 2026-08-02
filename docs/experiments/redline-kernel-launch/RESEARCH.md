@@ -124,7 +124,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | **E1** | Run `dispatch_floor` / hipfire-6409 microbench on **gfx1150** if ROCm allows | **AQL MEASURED** — see [`E1_FLOOR.md`](E1_FLOOR.md) (~1.91× BoundarySerialized vs system-every); PM4 example tail N/A on gfx1150 |
 | **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | **MEASURED** — [`E2_MULTI.md`](E2_MULTI.md) (~1.5–1.6× host wall BoundarySerialized vs HIP eager; hipGraph ≈ eager) |
 | **E3** | Inventory whether MLX can export HSACO for one QMM | **DONE** — drop-in **not** feasible; JIT CO yes; see [`E3_HSACO.md`](E3_HSACO.md) |
-| **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | Design doc only until E1 green |
+| **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) |
 
 **HARD BAN:** No fake TPS; no claiming Redline wins without logs on **this** GPU; no re-opening killed HIP-graph product decode.
 
@@ -140,7 +140,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | Prefer upstream remote | **warpfront/redline** (pwilkin = fork for reading) |
 | Parallel with lm_head C1? | **Yes** — orthogonal (compute cut vs dispatch cut) |
 
-**Overall confidence:** **0.82** on mechanism understanding; **0.90** on compile feasibility on 7.13 (E0); **0.55** on near-term gen-t/s win on gfx1150 (unmeasured).
+**Overall confidence:** **0.82** on mechanism understanding; **0.90** on compile feasibility on 7.13 (E0); **0.90** on no-op dispatch-floor win (E1/E2); **0.55** on near-term gen-t/s win on gfx1150 (**still unmeasured** — E4 design only).
 
 ---
 
@@ -156,6 +156,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | [`E1_FLOOR.md`](E1_FLOOR.md) | E1 AQL µs/dispatch on gfx1150 |
 | [`E2_MULTI.md`](E2_MULTI.md) | E2 HIP wall vs retained AQL |
 | [`E3_HSACO.md`](E3_HSACO.md) | MLX qmm / JIT HSACO feasibility |
+| [`E4_DESIGN.md`](E4_DESIGN.md) | `MLX_REDLINE_DECODE` design (default OFF) |
 | [`harness/`](harness/) | E2 HIP + AQL host-wall sources |
 | [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
 | [`logs/`](logs/) | E0–E2 logs + floor CO |
