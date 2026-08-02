@@ -41,6 +41,12 @@ private:
     mlx::core::array q_norm_weight_;
     mlx::core::array k_norm_weight_;
 
+    // C13: optional fused q|k|v packed weight (one matmul vs three). Opt-in
+    // MLX_MTP_QKV_FUSE=1 (default off — regressed on gfx1150 vs C7).
+    void ensure_qkv_proj_fused();
+    bool qkv_proj_fused_ready_ = false;
+    std::optional<mlx::core::array> qkv_proj_fused_weight_;
+
     // Layer norms.
     mlx::core::array input_layernorm_weight_;
     mlx::core::array post_attention_layernorm_weight_;

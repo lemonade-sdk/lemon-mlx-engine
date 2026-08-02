@@ -162,14 +162,25 @@ static mx::array linear_fwd(const mx::array& x, const mx::array& w,
 // fallback) if any source is not quantized or quant params differ. Does not
 // handle a separate per-projection (linear) bias — caller must only fuse
 // bias-free projections.
+// Fuse quantized projections by concat on out-axis + one quantized_matmul.
+// Exact when each row is independently quantized (affine per group_size).
+// Opt-in: MLX_ENABLE_QUANT_FUSE=1. GDN in_proj uses a separate gate (below).
+// CRITICAL: packs must be contiguous — non-contiguous concat of packed uint32
+// quant weights can dequant wrong and was the likely fuse thrash mechanism
+// (historical FUSE@0.7 FAIL at tip without contiguous; FULL fuse PASS after).
 static bool fuse_quant_projections(
     const std::vector<const mx::array*>& srcs,
     std::optional<mx::array>& dst)
 {
     if (dst.has_value()) return true;
-    // Default: separate matmuls. Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
     if (std::getenv("MLX_ENABLE_QUANT_FUSE") == nullptr) {
         return false;
+    }
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        std::cerr << "[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); "
+                     "GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1\n";
     }
     auto& reg = QuantizedWeightRegistry::instance();
     std::vector<const QuantizationInfo*> qis;
@@ -194,7 +205,6 @@ static bool fuse_quant_projections(
         ss.push_back(qis[i]->scales);
         if (have_biases) bs.push_back(*qis[i]->biases);
     }
-    // Soft-fail on shape mismatch (caller keeps separate matmuls).
     auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
         if (arrs.empty()) return false;
         for (size_t i = 1; i < arrs.size(); ++i) {
@@ -215,11 +225,11 @@ static bool fuse_quant_projections(
     if (have_biases && !concat_axis0_ok(bs)) {
         return false;
     }
-    auto w = mx::concatenate(ws, 0);
-    auto s = mx::concatenate(ss, 0);
+    // Contiguous packs for quantized_matmul (packed uint32 layout).
+    auto w = mx::contiguous(mx::concatenate(ws, 0));
+    auto s = mx::contiguous(mx::concatenate(ss, 0));
     std::optional<mx::array> b;
-    if (have_biases) b = mx::concatenate(bs, 0);
-    // Materialize as constants so they are not recomputed each step.
+    if (have_biases) b = mx::contiguous(mx::concatenate(bs, 0));
     mx::eval(w);
     mx::eval(s);
     if (b) mx::eval(*b);
@@ -415,16 +425,17 @@ void Qwen35MoEGatedDeltaNet::materialize_decode_constants(mx::Dtype act_dtype) {
     }
 }
 
-// Build the fused in_proj weight once: concatenate the qkv/z/b/a quantized
-// weights (and their scales/biases) along the output axis and register the
-// result so linear_fwd routes it through a single quantized_matmul. They share
-// input width (hidden_size) and quantization params, so output rows are
-// independent and concatenation is exact. No-op (leaves fused weight unset, so
-// the caller falls back to four matmuls) if any weight is not quantized or the
-// quant params differ.
+// GDN in_proj fuse is optional and OFF by default even when QUANT_FUSE=1.
+// Historical note: one FUSE@0.7 thrash cell was mis-attributed to a/b sensitivity;
+// retest with contiguous packs + QUANT_FUSE_GDN=1 PASSed Maxwell @0.0 and @0.7.
+// Gate kept as conservative product default (smaller memory; belt-and-suspenders).
+// Force full GDN pack: MLX_ENABLE_QUANT_FUSE=1 and MLX_ENABLE_QUANT_FUSE_GDN=1.
 void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
     if (in_proj_fused_ready_) return;
-    in_proj_fused_ready_ = true; // attempt exactly once
+    in_proj_fused_ready_ = true;
+    if (std::getenv("MLX_ENABLE_QUANT_FUSE_GDN") == nullptr) {
+        return;
+    }
     fuse_quant_projections({&in_proj_qkv_weight_, &in_proj_z_weight_,
                             &in_proj_b_weight_, &in_proj_a_weight_},
                            in_proj_fused_weight_);
@@ -1321,9 +1332,10 @@ void Qwen35MoEModel::build_mtp_head() {
         if (src.quant_group_size > 0) cfg.quant_group_size = src.quant_group_size;
     }
 
-    // Step 2: Dequantize weights BEFORE reading shapes.
-    // Quantized weights are stored as packed uint32 arrays with shape [M, N*bits/32].
-    // We need the original dimensions for correct head_dim/num_attention_heads inference.
+    // Step 2: Temporary dequantize ONLY for shape inference.
+    // Packed uint32 weights have shape [M, N*bits/32]; logical dims need dequant
+    // or scales-derived size. These arrays are discarded after config is fixed —
+    // runtime load keeps packed weights via QuantizedWeightRegistry (C1).
     std::unordered_map<std::string, mx::array> dequantized_weights;
     std::vector<std::string> quant_prefixes;
 
@@ -1347,9 +1359,12 @@ void Qwen35MoEModel::build_mtp_head() {
         }
     }
 
-    std::cerr << "[MTP] Found " << quant_prefixes.size() << " quantized weight groups" << std::endl;
+    std::cerr << "[MTP] Found " << quant_prefixes.size()
+              << " quantized weight groups (shape-inference dequant only; "
+                 "runtime keeps packed unless MLX_MTP_DEQUANT=1)"
+              << std::endl;
 
-    // Dequantize quantized weights.
+    // Dequantize quantized weights for shape reads only.
     for (const auto& prefix : quant_prefixes) {
         std::string weight_key = prefix + std::string(kWeightSuffix);
         std::string scales_key = prefix + std::string(kScalesSuffix);
@@ -1385,7 +1400,8 @@ void Qwen35MoEModel::build_mtp_head() {
         }
     }
 
-    std::cerr << "[MTP] Dequantized " << dequantized_weights.size() << " weights total" << std::endl;
+    std::cerr << "[MTP] Shape-map has " << dequantized_weights.size()
+              << " weight tensors (temp; not retained for runtime)" << std::endl;
 
     // --- Pass 1: Determine head_dim from q_norm/k_norm weight shapes (ground truth).
     // q_norm and k_norm are RMSNorm layers applied per-head, so their weight
@@ -1498,11 +1514,16 @@ void Qwen35MoEModel::build_mtp_head() {
     cfg.moe_intermediate_size = config_.moe_intermediate_size;
     cfg.shared_expert_intermediate_size = config_.shared_expert_intermediate_size;
 
+    // Drop temporary dense shape-map before constructing the head so peak
+    // VRAM does not hold both dequantized and packed MTP weights.
+    dequantized_weights.clear();
+
     if (cfg.is_moe()) {
         mtp_head_ = MTPHead::create_moe(cfg);
     } else {
         mtp_head_ = MTPHead(cfg);
     }
+    // Packed + registry by default (see MTPHead::load_mtp_weights).
     mtp_head_->load_mtp_weights(mtp_weights_);
 }
 

@@ -5,7 +5,9 @@
 #include <mlx-lm/common/chat_session.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/model_container.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
+#include <vector>
 #if defined(MLX_BUILD_ROCM)
 #include <hip/hip_runtime.h>
 #endif
@@ -80,7 +82,9 @@ struct CliArgs {
     int kv_group_size = 64; // KV cache quantization group size
     int ctx_size = 0;       // Context size for KV cache pre-allocation (0=auto)
     bool use_mtp = false;
-    int n_draft_tokens = 1;
+    int n_draft_tokens = 2;   // γ≈1 productive default (C7); was 1 (no speculation)
+    bool temperature_set = false;
+    bool top_p_set = false;
     int device = -1;          // GPU index to use (-1 = auto / default device 0)
     bool list_devices = false;
     bool ignore_eos = false;  // Benchmark: keep generating to --max-tokens (ignore EOS)
@@ -92,17 +96,17 @@ static CliArgs parse_args(int argc, char* argv[]) {
         std::cerr << "Usage: " << argv[0] << " <model_id_or_directory> [options]\n"
                   << "  --system-prompt \"...\"   System instructions\n"
                   << "  --max-tokens N          Max tokens to generate (default: 4096)\n"
-                  << "  --temperature T         Sampling temperature (default: 0.7)\n"
-                  << "  --top-p P               Nucleus sampling (default: 0.9)\n"
-                  << "  --repetition-penalty F  Repetition penalty (default: off)\n"
+                  << "  --temperature T         Sampling temperature (default: 0.7; works with --use-mtp via rejection sampling)\n"
+                  << "  --top-p P               Nucleus sampling (default: 0.9; works with --use-mtp)\n"
+                  << "  --repetition-penalty F  Repetition penalty (default: off; applied on trunk under --use-mtp)\n"
                   << "  --memory-limit MB       GPU wired memory limit\n"
                   << "  --no-think              Disable thinking/reasoning (Qwen3)\n"
                   << "  --raw                   Skip chat template, raw encoding\n"
                   << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                   << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
-                  << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
-                  << "  --n-draft N             MTP draft tokens per step (default: 1)\n"
+                  << "  --use-mtp               Enable MTP speculative decode (greedy argmax at temp=0; rejection sampling at temp>0)\n"
+                  << "  --n-draft N             MTP block size per step (default: 2)\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
         std::exit(1);
@@ -116,8 +120,10 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.max_tokens = std::stoi(argv[++i]);
         } else if (flag == "--temperature" && i + 1 < argc) {
             args.temperature = std::stof(argv[++i]);
+            args.temperature_set = true;
         } else if (flag == "--top-p" && i + 1 < argc) {
             args.top_p = std::stof(argv[++i]);
+            args.top_p_set = true;
         } else if (flag == "--repetition-penalty" && i + 1 < argc) {
             args.repetition_penalty = std::stof(argv[++i]);
         } else if (flag == "--memory-limit" && i + 1 < argc) {
@@ -146,6 +152,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.ignore_eos = true;
         }
     }
+    // Bare --use-mtp keeps chat defaults (temp 0.7 / top_p 0.9) → sampled MTP.
+    // Pass --temperature 0 for the fast greedy-spec path.
     return args;
 }
 
@@ -173,7 +181,12 @@ int main(int argc, char* argv[]) {
     try {
         std::cout << "Loading model: " << args.model_path << std::endl;
 
-        auto ctx = mlx_lm::load_llm(args.model_path);
+        std::vector<const mx::array*> quant_ptrs;
+        mlx_lm::ModelContext ctx;
+        {
+            mlx_lm::QuantizedWeightRegistry::LoadScope quant_scope(quant_ptrs);
+            ctx = mlx_lm::load_llm(args.model_path);
+        }
 
         // Set enable_thinking before any forward (incl. warmup).
         if (ctx.template_extra_context) {
@@ -263,15 +276,21 @@ int main(int argc, char* argv[]) {
         if (const char* e = std::getenv("MLX_PREFILL_STEP"))
             params.prefill_step_size = std::atoi(e);
         if (args.use_mtp) {
-            std::cerr << "MTP enabled (scaffolding): n_draft="
-                      << args.n_draft_tokens << "\n";
+            std::cerr << "MTP enabled: n_draft=" << args.n_draft_tokens
+                      << " temperature=" << args.temperature
+                      << " top_p=" << args.top_p
+                      << (args.temperature == 0.0f && args.top_p >= 1.0f
+                              ? " (greedy-spec)"
+                              : " (rejection-sampling)")
+                      << "\n";
         }
 
         // Use ChatSession if chat template is available and not in raw mode.
         if (has_chat_template && !args.raw_mode) {
             // enable_thinking already set pre-warmup (see above).
 
-            auto container = std::make_shared<mlx_lm::ModelContainer>(std::move(ctx));
+            auto container = std::make_shared<mlx_lm::ModelContainer>(
+                std::move(ctx), std::move(quant_ptrs));
 
             std::optional<std::string> instructions;
             if (!args.system_prompt.empty()) {
@@ -312,7 +331,8 @@ int main(int argc, char* argv[]) {
             if (!has_chat_template) {
                 std::cerr << "Warning: No chat template found. Using raw encoding." << std::endl;
             }
-            auto container = mlx_lm::ModelContainer(std::move(ctx));
+            auto container = mlx_lm::ModelContainer(
+                std::move(ctx), std::move(quant_ptrs));
 
             std::cout << "Type your message (or 'quit' to exit):" << std::endl;
 

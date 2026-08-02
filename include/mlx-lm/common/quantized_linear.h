@@ -6,9 +6,11 @@
 #pragma once
 
 #include <mlx/mlx.h>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace mlx_lm {
 
@@ -39,28 +41,80 @@ public:
                          mlx::core::array scales,
                          std::optional<mlx::core::array> biases,
                          int group_size, int bits) {
-        registry_.insert_or_assign(
-            weight_ptr,
-            QuantizationInfo{std::move(scales), std::move(biases), group_size, bits});
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = registry_.find(weight_ptr);
+        if (it != registry_.end()) {
+            // Shared array (e.g. delta-merge): bump refcount, keep first meta.
+            it->second.refcount++;
+        } else {
+            registry_.emplace(
+                weight_ptr,
+                Entry{QuantizationInfo{std::move(scales), std::move(biases),
+                                       group_size, bits},
+                      /*refcount=*/1});
+        }
+        // Capture into active load scope (if any) so unload can unregister.
+        if (load_scope_ptrs_ != nullptr) {
+            load_scope_ptrs_->push_back(weight_ptr);
+        }
     }
 
     const QuantizationInfo* find(const mlx::core::array* weight_ptr) const {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = registry_.find(weight_ptr);
-        return (it != registry_.end()) ? &it->second : nullptr;
+        return (it != registry_.end()) ? &it->second.info : nullptr;
     }
 
-    // Drop a weight's quant metadata (frees its scales/biases). Used after
-    // fusing two projections into one so the originals can be released.
+    // Drop one ownership claim. Erases metadata only when refcount hits 0
+    // (safe if two ModelContainers share the same packed weight pointer).
     void unregister(const mlx::core::array* weight_ptr) {
-        registry_.erase(weight_ptr);
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = registry_.find(weight_ptr);
+        if (it == registry_.end()) return;
+        if (--it->second.refcount <= 0) {
+            registry_.erase(it);
+        }
     }
 
-    void clear() { registry_.clear(); }
-    size_t size() const { return registry_.size(); }
+    void unregister_many(const std::vector<const mlx::core::array*>& ptrs) {
+        for (auto* p : ptrs) unregister(p);
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        registry_.clear();
+    }
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return registry_.size();
+    }
+
+    // RAII: all register_weight calls while alive are recorded into `out`.
+    // ModelContainer uses this so destructor can unregister on unload.
+    struct LoadScope {
+        explicit LoadScope(std::vector<const mlx::core::array*>& out)
+            : prev_(QuantizedWeightRegistry::instance().load_scope_ptrs_) {
+            QuantizedWeightRegistry::instance().load_scope_ptrs_ = &out;
+        }
+        ~LoadScope() {
+            QuantizedWeightRegistry::instance().load_scope_ptrs_ = prev_;
+        }
+        LoadScope(const LoadScope&) = delete;
+        LoadScope& operator=(const LoadScope&) = delete;
+    private:
+        std::vector<const mlx::core::array*>* prev_;
+    };
 
 private:
+    struct Entry {
+        QuantizationInfo info;
+        int refcount = 1;
+    };
     QuantizedWeightRegistry() = default;
-    std::unordered_map<const mlx::core::array*, QuantizationInfo> registry_;
+    mutable std::mutex mutex_;
+    std::unordered_map<const mlx::core::array*, Entry> registry_;
+    // Non-owning: points at the active LoadScope's vector (or null).
+    std::vector<const mlx::core::array*>* load_scope_ptrs_ = nullptr;
 };
 
 // Quantization-aware linear forward pass.

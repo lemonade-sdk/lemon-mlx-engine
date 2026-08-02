@@ -454,9 +454,15 @@ struct Server::Impl {
         }
 
         // Build generation parameters from request + defaults.
+        // Only override sampling fields when the client JSON includes them so
+        // server defaults are not clobbered by ChatCompletionRequest struct defaults.
         GenerateParameters params = defaults;
-        params.temperature = chat_req.temperature;
-        params.top_p = chat_req.top_p;
+        if (body.contains("temperature") && !body.at("temperature").is_null()) {
+            params.temperature = chat_req.temperature;
+        }
+        if (body.contains("top_p") && !body.at("top_p").is_null()) {
+            params.top_p = chat_req.top_p;
+        }
         params.max_tokens = chat_req.max_tokens;
         if (chat_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = chat_req.repetition_penalty;
@@ -464,6 +470,7 @@ struct Server::Impl {
         if (chat_req.use_mtp) {
             params.use_mtp = chat_req.use_mtp;
         }
+        // MTP supports temp>0 via rejection sampling (no HTTP 400).
 
         if (chat_req.stream) {
             handle_chat_stream(res, model, chat_req, params, tools_gate.inject);
@@ -506,8 +513,12 @@ struct Server::Impl {
         }
 
         GenerateParameters params = defaults;
-        params.temperature = comp_req.temperature;
-        params.top_p = comp_req.top_p;
+        if (body.contains("temperature") && !body.at("temperature").is_null()) {
+            params.temperature = comp_req.temperature;
+        }
+        if (body.contains("top_p") && !body.at("top_p").is_null()) {
+            params.top_p = comp_req.top_p;
+        }
         params.max_tokens = comp_req.max_tokens;
         if (comp_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = comp_req.repetition_penalty;
@@ -515,6 +526,7 @@ struct Server::Impl {
         if (comp_req.use_mtp) {
             params.use_mtp = comp_req.use_mtp;
         }
+        // MTP supports temp>0 via rejection sampling (no HTTP 400).
 
         handle_completion_blocking(res, model, comp_req, params);
     }

@@ -6,6 +6,7 @@
 #include <mlx/mlx.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -13,6 +14,7 @@
 #include <numeric>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
 
 #if defined(MLX_BUILD_ROCM)
 // Decode-mode toggle (defined in mlx/backend/rocm/eval.cpp; declared here to
@@ -36,9 +38,34 @@ void decode_capture_destroy();
 } // namespace mlx::core
 #endif
 
+// mlx registers CPU CommandEncoders in thread_local maps at stream creation
+// (mlx/backend/cpu/eval.cpp). Streams created on the main/load thread are
+// invisible to httplib worker threads — eval then throws
+// "There is no Stream(cpu, 0) in current thread" (PR #63 P0-MTP / M1 server).
+// Re-bind known CPU streams into this thread's encoder map (try_emplace).
+namespace mlx::core::cpu {
+void new_stream(Stream s);
+} // namespace mlx::core::cpu
+
 namespace mlx_lm {
 
 namespace mx = mlx::core;
+
+static void ensure_thread_cpu_stream_encoders() {
+    static thread_local size_t last_n = 0;
+    auto streams = mx::get_streams();
+    if (streams.size() == last_n && last_n > 0) {
+        return;
+    }
+    for (const auto& s : streams) {
+        if (s.device.type == mx::Device::cpu) {
+            mlx::core::cpu::new_stream(s);
+        }
+    }
+    // Ensure this thread also has a default CPU stream for future host ops.
+    (void)mx::default_stream(mx::Device::cpu);
+    last_n = mx::get_streams().size();
+}
 
 // MLX_KV_OFFSET_LOG=1: stderr KV max offset every MLX_KV_OFFSET_EVERY (default 64).
 static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
@@ -71,15 +98,21 @@ static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
 // Dedicated generation stream (thread-local).
 
 mx::Stream& generation_stream() {
+    // Prefer a thread-owned stream so worker threads (server) and MTP draft
+    // never depend on a missing default Stream(cpu, 0) TLS binding.
+    // Opt out: MLX_GEN_OWN_STREAM=0 → device default stream (legacy).
 #ifdef __APPLE__
     static thread_local mx::Stream s = mx::new_stream(mx::default_device());
     return s;
 #else
-    if (std::getenv("MLX_GEN_OWN_STREAM")) {
-        static thread_local mx::Stream s = mx::new_stream(mx::default_device());
-        return s;
-    }
-    static thread_local mx::Stream s = mx::default_stream(mx::default_device());
+    static thread_local mx::Stream s = [] {
+        const char* v = std::getenv("MLX_GEN_OWN_STREAM");
+        // Default ON for non-Apple (ROCm/Linux): own stream. Explicit 0 disables.
+        if (v && v[0] == '0' && v[1] == '\0') {
+            return mx::default_stream(mx::default_device());
+        }
+        return mx::new_stream(mx::default_device());
+    }();
     return s;
 #endif
 }
@@ -89,6 +122,8 @@ struct StreamGuard {
     mx::Stream old_stream_;
     bool changed_ = false;
     StreamGuard(mx::Stream s) : old_stream_(mx::default_stream(mx::default_device())) {
+        // Bind CPU stream encoders onto this worker before any eval.
+        ensure_thread_cpu_stream_encoders();
 #ifndef __APPLE__
         if (s != old_stream_) {
             mx::set_default_stream(s);
@@ -161,6 +196,170 @@ AnySampler AnySampler::from_params(const GenerateParameters& params) {
     } else {
         return AnySampler(CategoricalSampler(params.temperature));
     }
+}
+
+bool mtp_uses_greedy_spec(const GenerateParameters& params) {
+    // Fast argmax draft/verify when sampling contract is greedy-neutral.
+    // temperature==0 → AnySampler is ArgMax (top_p is inert: TopPSampler has
+    // nucleus filtering disabled, and temp=0 never constructs TopPSampler).
+    // Do not force the slow RS path solely because top_p∈(0,1) at temp=0.
+    if (params.temperature != 0.0f) return false;
+    if (params.repetition_penalty.has_value() &&
+        params.repetition_penalty.value() != 1.0f) {
+        return false;
+    }
+    return true;
+}
+
+std::string mtp_greedy_only_violation(const GenerateParameters& params) {
+    // Legacy name: empty when greedy-spec path applies; otherwise describes
+    // why rejection-sampling MTP will be used (not an error).
+    if (mtp_uses_greedy_spec(params)) return {};
+    std::ostringstream oss;
+    oss << "MTP sampled mode (rejection sampling): temperature="
+        << params.temperature << " top_p=" << params.top_p;
+    if (params.repetition_penalty.has_value()) {
+        oss << " repetition_penalty=" << params.repetition_penalty.value();
+    }
+    return oss.str();
+}
+
+MtpEmitPlan mtp_make_emit_plan(const std::vector<int>& draft_tokens, int accepted) {
+    MtpEmitPlan plan;
+    if (draft_tokens.empty()) {
+        return plan;
+    }
+    plan.d0 = draft_tokens[0];
+    const int max_acc = static_cast<int>(draft_tokens.size()) - 1;
+    if (accepted < 0) {
+        accepted = 0;
+    }
+    if (accepted > max_acc) {
+        accepted = max_acc;
+    }
+    plan.buffered.reserve(static_cast<size_t>(accepted));
+    for (int a = 0; a < accepted; ++a) {
+        plan.buffered.push_back(draft_tokens[static_cast<size_t>(a + 1)]);
+    }
+    return plan;
+}
+
+float mtp_accept_ratio(float log_q, float log_p) {
+    // min(1, exp(log_q - log_p)); reject non-finite inputs before min/exp
+    // (std::min with NaN is implementation-defined and can yield 1 via exp(0)).
+    if (!std::isfinite(log_q) || !std::isfinite(log_p)) {
+        return 0.0f;
+    }
+    const float diff = log_q - log_p;
+    if (diff >= 0.0f) {
+        return 1.0f;
+    }
+    float ratio = std::exp(diff);
+    if (!std::isfinite(ratio) || ratio < 0.0f) {
+        return 0.0f;
+    }
+    if (ratio > 1.0f) {
+        ratio = 1.0f;
+    }
+    return ratio;
+}
+
+int mtp_adaptive_n_draft(
+    int n_draft_tokens,
+    const uint8_t* accept_history,
+    int history_len,
+    bool fixed) {
+    if (n_draft_tokens <= 2) {
+        return n_draft_tokens;
+    }
+    if (fixed) {
+        return n_draft_tokens;
+    }
+    if (history_len <= 0 || accept_history == nullptr) {
+        return n_draft_tokens;
+    }
+    int sum = 0;
+    for (int i = 0; i < history_len; ++i) {
+        sum += static_cast<int>(accept_history[i]);
+    }
+    const float mean_acc =
+        static_cast<float>(sum) / static_cast<float>(history_len);
+    int want = static_cast<int>(mean_acc + 2.0f);  // d0 + drafts slack
+    if (want < 2) {
+        want = 2;
+    }
+    if (want > n_draft_tokens) {
+        want = n_draft_tokens;
+    }
+    return want;
+}
+
+static mx::array mtp_last_row_logits(const mx::array& logits) {
+    mx::array last = logits;
+    if (last.ndim() == 3) {
+        int seq_len = last.shape(1);
+        last = mx::slice(last, {0, seq_len - 1, 0},
+                         {last.shape(0), seq_len, last.shape(2)});
+        last = mx::squeeze(last, 1);
+    }
+    if (last.ndim() == 2 && last.shape(0) == 1) {
+        last = mx::squeeze(last, 0);
+    }
+    return last;  // [V]
+}
+
+float TokenIterator::mtp_token_logprob(
+    const mx::array& logits, int token, float temperature) {
+    mx::array last = mtp_last_row_logits(logits);
+    float t = temperature;
+    if (t <= 0.0f) t = 1.0f;
+    if (t != 1.0f) {
+        last = mx::multiply(last, mx::array(1.0f / t));
+    }
+    auto lp = mx::log(mx::softmax(last, /*axis=*/-1));
+    auto idx = mx::array(token, mx::int32);
+    auto val = mx::take(lp, idx);
+    mx::eval(val);
+    return val.item<float>();
+}
+
+mx::array TokenIterator::mtp_residual_logits(
+    const mx::array& target_logits,
+    const mx::array& draft_logits,
+    int rejected_token,
+    float temperature) {
+    // Leviathan residual: r = max(0, q - p). Returns logits for bare
+    // categorical(sample) — do NOT pass through sampler_.sample() which would
+    // divide by temperature again (R-1 double-scale bug → samples r^(1/t)).
+    float t = temperature > 0.0f ? temperature : 1.0f;
+    auto q_logits = mtp_last_row_logits(target_logits);
+    auto p_logits = mtp_last_row_logits(draft_logits);
+    if (t != 1.0f) {
+        q_logits = mx::multiply(q_logits, mx::array(1.0f / t));
+        p_logits = mx::multiply(p_logits, mx::array(1.0f / t));
+    }
+    auto q = mx::softmax(q_logits, /*axis=*/-1);
+    auto p = mx::softmax(p_logits, /*axis=*/-1);
+    auto r = mx::maximum(mx::subtract(q, p), mx::array(0.0f));
+    auto mass = mx::sum(r);
+    mx::eval(mass);
+    float m = mass.item<float>();
+    if (!(m > 1e-8f)) {
+        // Residual mass collapsed — sample from target with rejected token
+        // masked; apply temperature once here (bare categorical after).
+        auto masked = mtp_last_row_logits(target_logits);
+        if (t != 1.0f) {
+            masked = mx::multiply(masked, mx::array(1.0f / t));
+        }
+        auto idx = mx::arange(0, masked.shape(0), mx::int32);
+        auto is_rej = mx::equal(idx, mx::array(rejected_token, mx::int32));
+        float ninf = -1.0e9f;
+        masked = mx::where(is_rej, mx::array(ninf), masked);
+        return mx::reshape(masked, {1, masked.shape(0)});
+    }
+    // log(r) as categorical logits (distribution is already temperatured via q,p).
+    auto log_r = mx::log(mx::add(r, mx::array(1e-10f)));
+    return mx::reshape(log_r, {1, log_r.shape(0)});
 }
 
 // ---------------------------------------------------------------------------
@@ -537,9 +736,47 @@ mx::array TokenIterator::step_pure_graph(const LMInput::Text& previous) {
 void TokenIterator::prepare(const LMInput& input, int window_size) {
     StreamGuard sg(generation_stream());
 #if defined(MLX_BUILD_ROCM)
-    // Prefill: large multi-token intermediates — keep the per-graph caps active
-    // (decode-mode off) so peak graph memory stays bounded.
-    mlx::core::gpu_set_graph_decode_mode(false);
+    // Prefill graph mode (opt-in experiment — default OFF / product-safe):
+    //
+    // Default: graph_decode_mode=false so mid-forward commit caps bound peak
+    // graph memory on multi-token chunks (see mlx CommandEncoder::needs_commit).
+    //
+    // MLX_PREFILL_ONE_GRAPH=1: force graph_decode_mode=true for prepare chunk
+    // evals only — whole multi-token forward becomes ONE HIP graph (no split).
+    // Requires mlx use_hip_graphs on for decode-mode, i.e. MLX_HIP_GRAPH_DECODE=1
+    // or MLX_USE_HIP_GRAPHS=1 (use_hip_graphs picks decode vs prefill flag by mode).
+    // Pair with MLX_GRAPH_PREFILL_REPLAY=1 for ExecUpdate on stable topologies.
+    // See docs/experiments/prefill-hip-graph/.
+    static const bool prefill_one_graph = [] {
+        const char* e = std::getenv("MLX_PREFILL_ONE_GRAPH");
+        return e && e[0] == '1' && e[1] == '\0';
+    }();
+    mlx::core::gpu_set_graph_decode_mode(prefill_one_graph);
+    if (std::getenv("MLX_PROFILE_PREFILL") || std::getenv("MLX_HIP_GRAPH_PREFILL")
+        || std::getenv("MLX_GRAPH_PREFILL_REPLAY")
+        || std::getenv("MLX_PREFILL_ONE_GRAPH")
+        || std::getenv("MLX_USE_HIP_GRAPHS")) {
+        static bool logged = false;
+        if (!logged) {
+            const char* hp = std::getenv("MLX_HIP_GRAPH_PREFILL");
+            const char* hd = std::getenv("MLX_HIP_GRAPH_DECODE");
+            const char* ug = std::getenv("MLX_USE_HIP_GRAPHS");
+            const char* pr = std::getenv("MLX_GRAPH_PREFILL_REPLAY");
+            const char* og = std::getenv("MLX_PREFILL_ONE_GRAPH");
+            const char* at = std::getenv("MLX_PREFILL_ABSORB_TAIL");
+            const char* ps = std::getenv("MLX_PREFILL_STEP");
+            std::cerr << "[prefill-graph] ONE_GRAPH=" << (og ? og : "<unset>")
+                      << " ABSORB_TAIL=" << (at ? at : "<unset>")
+                      << " HIP_GRAPH_PREFILL=" << (hp ? hp : "<unset>")
+                      << " HIP_GRAPH_DECODE=" << (hd ? hd : "<unset>")
+                      << " USE_HIP_GRAPHS=" << (ug ? ug : "<unset>")
+                      << " PREFILL_REPLAY=" << (pr ? pr : "<unset>")
+                      << " PREFILL_STEP=" << (ps ? ps : "<default>")
+                      << " prompt_tokens=" << input.text.tokens.size()
+                      << " window=" << window_size << "\n";
+            logged = true;
+        }
+    }
 #endif
 
     if (processor_.has_value()) {
@@ -547,6 +784,12 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
     }
 
     auto prep_result = context_.prepare_fn(input, cache_, window_size);
+
+#if defined(MLX_BUILD_ROCM)
+    // Restore split caps before remainder step / decode so product path stays
+    // memory-bounded after experimental whole-chunk prefill graphs.
+    mlx::core::gpu_set_graph_decode_mode(false);
+#endif
 
     if (prep_result.is_tokens()) {
         // Model returned remaining tokens — prime the cache.
@@ -567,12 +810,12 @@ void TokenIterator::prepare(const LMInput& input, int window_size) {
     }
 
     // Capture trunk hidden state at last prompt position for first MTP step.
+    // C7: keep slice lazy (materialized with first draft eval).
     if (use_mtp_ && state_.has_value() && state_->hidden_intermediates.has_value()) {
         auto trunk_h = state_->hidden_intermediates.value();  // [B, T, H]
         int last_pos = trunk_h.shape(1) - 1;
         auto h_slice = mx::slice(trunk_h, {0, last_pos, 0},
                                  {1, last_pos + 1, trunk_h.shape(2)});  // [1, 1, H]
-        mx::eval(h_slice);
         mtp_trunk_hidden_ = h_slice;
     }
 }
@@ -618,11 +861,32 @@ TokenIterator::TokenIterator(
     , kv_group_size_(params.kv_group_size)
     , quantized_kv_start_(params.quantized_kv_start)
     , use_mtp_(params.use_mtp && context.get_mtp_head_fn != nullptr)
+    , mtp_greedy_spec_(mtp_uses_greedy_spec(params))
+    , mtp_temperature_(params.temperature)
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)  // Initialize with 1 (accepted)
 {
-    // When MTP is active, request hidden_intermediates from the model.
+    // M6 (PR #63): pure-graph and MTP are mutually exclusive. TokenIterator::next
+    // short-circuits to MTP when use_mtp_, so pure never runs on the same request —
+    // but operators may set both env flags by mistake. Log once so M6 is auditable.
     if (use_mtp_) {
+        if (!mtp_greedy_spec_) {
+            static bool logged_sample = false;
+            if (!logged_sample) {
+                std::cerr << "[MTP] sampled mode (rejection sampling): "
+                          << mtp_greedy_only_violation(params) << "\n";
+                logged_sample = true;
+            }
+        }
+        const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
+        if (pure && pure[0] == '1' && pure[1] == '\0') {
+            static bool logged = false;
+            if (!logged) {
+                std::cerr << "[MTP] M6 XOR: MLX_DECODE_GRAPH_PURE=1 ignored while "
+                             "--use-mtp is active (MTP path takes precedence)\n";
+                logged = true;
+            }
+        }
         mtp_caches_ = context.new_mtp_cache_fn(params);
         state_ = LMOutput::State();  // Empty state signals model to return hidden
     }
@@ -676,10 +940,29 @@ TokenIterator::TokenIterator(
     , quantized_kv_start_(params.quantized_kv_start)
     , use_mtp_(params.use_mtp && context.get_mtp_head_fn != nullptr
                && context.new_mtp_cache_fn != nullptr)
+    , mtp_greedy_spec_(mtp_uses_greedy_spec(params))
+    , mtp_temperature_(params.temperature)
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)
 {
     if (use_mtp_) {
+        if (!mtp_greedy_spec_) {
+            static bool logged_sample_ext = false;
+            if (!logged_sample_ext) {
+                std::cerr << "[MTP] sampled mode (rejection sampling): "
+                          << mtp_greedy_only_violation(params) << "\n";
+                logged_sample_ext = true;
+            }
+        }
+        const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
+        if (pure && pure[0] == '1' && pure[1] == '\0') {
+            static bool logged_ext = false;
+            if (!logged_ext) {
+                std::cerr << "[MTP] M6 XOR: MLX_DECODE_GRAPH_PURE=1 ignored while "
+                             "--use-mtp is active (MTP path takes precedence)\n";
+                logged_ext = true;
+            }
+        }
         mtp_caches_ = context.new_mtp_cache_fn(params);
         state_ = LMOutput::State();  // Empty state signals model to return hidden
     }
@@ -695,10 +978,244 @@ TokenIterator::TokenIterator(
 // TokenIterator — MTP speculative decoding
 // ---------------------------------------------------------------------------
 
+std::optional<mx::array> TokenIterator::mtp_run_draft_chain(
+    int n_draft, bool async_launch, bool sample_draft,
+    std::vector<float>* draft_logprobs,
+    std::vector<mx::array>* draft_logits_rows) {
+    if (n_draft <= 1 || context_.get_mtp_head_fn == nullptr
+        || context_.embed_fn == nullptr || context_.apply_lm_head_fn == nullptr) {
+        return std::nullopt;
+    }
+    MTPHead* mtp_head = static_cast<MTPHead*>(context_.get_mtp_head_fn());
+    if (mtp_head == nullptr) return std::nullopt;
+
+    // C7: MTP KV only needed when drafting ≥2 tokens in one chain (n_draft≥3).
+    // Default γ≈1 path is n_draft=2 → a single draft step; skip cache reset +
+    // update (rope offset 0, no write) to cut draft bandwidth/launches.
+    // P0-B: when use_mtp_kv, pass the cache on every draft step including the
+    // final one so the last draft can attend to prior draft keys (RoPE offset).
+    // Previously i < n_draft-1 nulled the final step and starved self-attn history.
+    const bool use_mtp_kv = (n_draft > 2) && !mtp_caches_.empty();
+    if (use_mtp_kv) {
+        for (auto& c : mtp_caches_) {
+            c.set_position(0);
+        }
+    }
+
+    auto hidden = mtp_trunk_hidden_.has_value()
+        ? mtp_trunk_hidden_.value()
+        : context_.embed_fn(y_.tokens);
+    if (hidden.ndim() == 2) {
+        hidden = mx::reshape(hidden, {1, 1, hidden.shape(-1)});
+    }
+
+#if defined(MLX_BUILD_ROCM)
+    // Draft is T=1 recurrence — allow ROCm single-token graph decode path.
+    mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+
+    auto prev_tok_arr = mx::reshape(y_.tokens, {1, 1});  // d0
+    std::vector<mx::array> draft_tok_arrs;
+    draft_tok_arrs.reserve(static_cast<size_t>(n_draft - 1));
+    if (draft_logprobs) draft_logprobs->clear();
+    if (draft_logits_rows) draft_logits_rows->clear();
+
+    for (int i = 1; i < n_draft; ++i) {
+        auto prev_embed = context_.embed_fn(prev_tok_arr);
+        // Pass MTP KV for all multi-draft steps (read prior keys on final step too).
+        KVCache* mtp_cache = use_mtp_kv ? &mtp_caches_[0] : nullptr;
+        hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{}, mtp_cache);
+        auto norm_h = mtp_head->apply_output_norm(hidden);
+        auto logits = context_.apply_lm_head_fn(norm_h);
+        if (sample_draft) {
+            // Sample from draft distribution (no trunk processor on draft side).
+            auto tok = sampler_.sample(logits);
+            mx::eval(tok);
+            int tid = tok.item<int32_t>();
+            if (draft_logprobs) {
+                draft_logprobs->push_back(
+                    mtp_token_logprob(logits, tid, mtp_temperature_));
+            }
+            if (draft_logits_rows) {
+                draft_logits_rows->push_back(mtp_last_row_logits(logits));
+            }
+            prev_tok_arr = mx::reshape(mx::astype(tok, mx::int32), {1, 1});
+        } else {
+            prev_tok_arr = mx::reshape(
+                mx::argmax(logits, -1, /*keepdims=*/false), {1, 1});
+            prev_tok_arr = mx::astype(prev_tok_arr, mx::int32);
+        }
+        draft_tok_arrs.push_back(prev_tok_arr);
+    }
+
+    if (draft_tok_arrs.empty()) return std::nullopt;
+
+    auto drafts_dev = mx::reshape(
+        mx::concatenate(draft_tok_arrs, /*axis=*/0),
+        {static_cast<int>(draft_tok_arrs.size())});
+    if (async_launch) {
+        mx::async_eval(drafts_dev);
+    } else {
+        mx::eval(y_.tokens, drafts_dev);
+    }
+    return drafts_dev;
+}
+
+std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
+    // Serial draft + sequential T=1 verify with Leviathan-style rejection sampling.
+    // Parallel draft / batch verify stay on the greedy-spec path only.
+    StreamGuard sg(generation_stream());
+    pending_draft_valid_ = false;
+    pending_draft_dev_.reset();
+
+    std::vector<float> draft_lps;
+    std::vector<mx::array> draft_logit_rows;
+    std::vector<int> draft_tokens;
+    draft_tokens.reserve(static_cast<size_t>(n_draft));
+
+    mx::eval(y_.tokens);
+    draft_tokens.push_back(y_.tokens.item<int32_t>());
+
+    if (n_draft > 1) {
+        auto drafts_dev = mtp_run_draft_chain(
+            n_draft, /*async_launch=*/false, /*sample_draft=*/true, &draft_lps,
+            &draft_logit_rows);
+        if (drafts_dev.has_value()) {
+            mx::eval(*drafts_dev);
+            const int n_extra = static_cast<int>(drafts_dev->size());
+            const int32_t* dptr = drafts_dev->data<int32_t>();
+            for (int i = 0; i < n_extra; ++i) {
+                draft_tokens.push_back(static_cast<int>(dptr[i]));
+            }
+        }
+    }
+
+    if (draft_tokens.size() < 2) {
+        // No draft slots — plain sample.
+        auto token = step(y_);
+        y_ = LMInput::Text(token);
+        mx::eval(token);
+        return {token.item<int32_t>()};
+    }
+
+    LMOutput::State want_hidden;
+    std::optional<LMOutput::State> last_st;
+    int accepted = 0;
+    float temp = mtp_temperature_ > 0.0f ? mtp_temperature_ : 1.0f;
+
+    auto note_sample = [&](const mx::array& tok) {
+        if (processor_.has_value()) processor_->did_sample(tok);
+    };
+
+    for (int i = 0; i < n_draft; ++i) {
+#if defined(MLX_BUILD_ROCM)
+        mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+        auto tok_arr = mx::array(
+            {static_cast<int32_t>(draft_tokens[i])}, {1, 1}, mx::int32);
+        LMInput::Text tok_text(tok_arr);
+        auto result = context_.call_fn(
+            tok_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+        state_ = result.state;
+        last_st = result.state;
+
+        mx::array logits = result.logits;
+        if (processor_.has_value()) {
+            // process() expects last-token style [B,V] when possible
+            if (logits.ndim() == 3) {
+                int seq_len = logits.shape(1);
+                logits = mx::slice(logits, {0, seq_len - 1, 0},
+                                   {logits.shape(0), seq_len, logits.shape(2)});
+                logits = mx::squeeze(logits, 1);
+            }
+            logits = processor_->process(logits);
+        }
+
+        if (i < n_draft - 1) {
+            const int draft_tok = draft_tokens[i + 1];
+            const float log_q = mtp_token_logprob(logits, draft_tok, temp);
+            const float log_p =
+                (static_cast<size_t>(i) < draft_lps.size())
+                    ? draft_lps[static_cast<size_t>(i)]
+                    : log_q;
+            // Accept with min(1, q/p) via pure helper (golden-tested).
+            float ratio = mtp_accept_ratio(log_q, log_p);
+            auto uarr = mx::random::uniform(0.0f, 1.0f, {}, mx::float32);
+            mx::eval(uarr);
+            const float u = uarr.item<float>();
+            if (u <= ratio) {
+                accepted++;
+                note_sample(mx::array(draft_tok, mx::int32));
+                continue;
+            }
+            // Reject: sample from Leviathan residual max(0,q-p) with bare
+            // categorical (R-1: no sampler_ temp re-scale on already-temp'd r).
+            mx::array tok(0, mx::int32);
+            if (static_cast<size_t>(i) < draft_logit_rows.size()) {
+                auto resid = mtp_residual_logits(
+                    logits, draft_logit_rows[static_cast<size_t>(i)], draft_tok,
+                    temp);
+                tok = mx::random::categorical(resid);
+            } else {
+                // No draft logits — fall back to target sampler (temp applied once).
+                tok = sampler_.sample(logits);
+            }
+            mx::eval(tok);
+            note_sample(tok);
+            y_ = LMInput::Text(mx::reshape(mx::astype(tok, mx::int32), {1}));
+            mx::async_eval(y_.tokens);
+            break;
+        } else {
+            // Bonus token after full draft accept.
+            auto tok = sampler_.sample(logits);
+            mx::eval(tok);
+            note_sample(tok);
+            y_ = LMInput::Text(mx::reshape(mx::astype(tok, mx::int32), {1}));
+            mx::async_eval(y_.tokens);
+            accepted = n_draft - 1;
+        }
+    }
+
+    maybe_quantize_kv_cache(
+        cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+    if (last_st.has_value()) {
+        if (last_st->hidden_intermediates.has_value()) {
+            auto trunk_h = last_st->hidden_intermediates.value();
+            int tlen = trunk_h.shape(1);
+            int p = std::max(0, tlen - 1);
+            mtp_trunk_hidden_ = mx::slice(
+                trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+        }
+    }
+
+    // Emit protocol (shared pure helper): next() returns only d0; buffer
+    // holds d1..d_accepted. y_ is residual/bonus for the next step's d0.
+    // Fire-1 bug: returning [d0,d1,…] without filling draft_buffer_ dropped
+    // every accepted draft under temp>0 (Maxwell word-garble).
+    auto plan = mtp_make_emit_plan(draft_tokens, accepted);
+    draft_buffer_ = std::move(plan.buffered);
+    draft_buffer_idx_ = 0;
+
+    record_acceptance(n_draft, accepted);
+    mtp_draft_proposed_ += std::max(0, n_draft - 1);
+    mtp_draft_accepted_ += accepted;
+    mtp_speculative_steps_++;
+    return {plan.d0};
+}
+
 std::vector<int> TokenIterator::mtp_speculative_step() {
+    // Same stream discipline as step()/prepare(): MTP draft+verify must not
+    // run on an unbound thread default stream. On ROCm, that path historically
+    // threw "There is no Stream(cpu, 0) in current thread" under --use-mtp.
+    StreamGuard sg(generation_stream());
+
+    // C12: never start a new step with an unfinished pipelined v1.
+    if (pending_v1_) finish_pending_v1_();
+
     // Fallback to plain decode if MTP is not available on this context.
     if (!use_mtp_ || context_.get_mtp_head_fn == nullptr || context_.embed_fn == nullptr
         || context_.apply_lm_head_fn == nullptr) {
+        pending_draft_valid_ = false;
         auto token = step(y_);
         y_ = LMInput::Text(token);
         mx::eval(token);
@@ -708,13 +1225,28 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
     MTPHead* mtp_head = static_cast<MTPHead*>(context_.get_mtp_head_fn());
     // Null when the model carries no MTP head weights — fall back to plain decode.
     if (mtp_head == nullptr) {
+        pending_draft_valid_ = false;
         auto token = step(y_);
         y_ = LMInput::Text(token);
         mx::eval(token);
         return {token.item<int32_t>()};
     }
     int n_draft = current_draft_count();
+
+    // Sampled MTP (temp>0 / top_p / rep-penalty): rejection-sampling path.
+    if (!mtp_greedy_spec_) {
+        return mtp_speculative_step_sampled(n_draft);
+    }
     static const bool kMtpTiming = (std::getenv("MTP_TIMING") != nullptr);
+    // C4: overlap MTP draft with first trunk verify token (side stream).
+    // Disable: MLX_MTP_NO_PARALLEL_DRAFT=1 (serial draft-then-verify).
+    static const bool kNoParallelDraft =
+        std::getenv("MLX_MTP_NO_PARALLEL_DRAFT") != nullptr;
+    // Inter-step async prefetch of next draft. Default OFF: on gfx1150 host
+    // emit is too short to hide draft, and post-step draft work is not
+    // overlapped — it adds unaccounted wall (~draft_ms per step). Opt in:
+    // MLX_MTP_PREFETCH=1.
+    static const bool kPrefetch = (std::getenv("MLX_MTP_PREFETCH") != nullptr);
     auto t_start = std::chrono::steady_clock::now();
     auto t_draft = t_start, t_verify = t_start;
     // Read the trunk's position from a full-attention (non-Mamba) cache.
@@ -726,199 +1258,491 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         }
     }
 
-    // Reset MTP head cache to drop stale KV from prior speculative steps.
-    for (auto& c : mtp_caches_) {
-        c.set_position(0);
-    }
+    // Side stream for MTP draft so it can run concurrent with trunk verify.
+    // Independent of generation_stream_ (different weights path / caches).
+    static thread_local mx::Stream mtp_draft_stream =
+        mx::new_stream(mx::default_device());
 
     // Draft phase. d0 is the trunk's already-computed next token (y_), trusted
     // and never verified; the head drafts d1..d_{K-1}.
-    auto hidden = mtp_trunk_hidden_.has_value()
-        ? mtp_trunk_hidden_.value()
-        : context_.embed_fn(y_.tokens);
-    // Ensure hidden is always 3D [1, 1, H].
-    if (hidden.ndim() == 2) {
-        hidden = mx::reshape(hidden, {1, 1, hidden.shape(-1)});
-    }
-
     std::vector<int> draft_tokens;
-    draft_tokens.reserve(n_draft);
+    draft_tokens.reserve(static_cast<size_t>(n_draft));
 
-    // Keep the draft recurrence on-device; sync once after the chain.
-    auto prev_tok_arr = mx::reshape(y_.tokens, {1, 1});  // [1,1] int32, d0
-    std::vector<mx::array> draft_tok_arrs;               // d1..d_{n-1}, on-device
-    draft_tok_arrs.reserve(n_draft > 1 ? n_draft - 1 : 0);
-
-    for (int i = 1; i < n_draft; ++i) {
-        // Advance the hidden state with the previous token, then predict d_i.
-        auto prev_embed = context_.embed_fn(prev_tok_arr);
-        hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{},
-                            mtp_caches_.empty() ? nullptr : &mtp_caches_[0]);
-
-        auto norm_h = mtp_head->apply_output_norm(hidden);
-        auto logits = context_.apply_lm_head_fn(norm_h);
-        prev_tok_arr = mx::reshape(
-            mx::argmax(logits, -1, /*keepdims=*/false), {1, 1});
-        prev_tok_arr = mx::astype(prev_tok_arr, mx::int32);
-        draft_tok_arrs.push_back(prev_tok_arr);
-    }
-
-    // Single sync: concatenate d1..d_{n-1}, eval once with d0, read ints together.
-    if (!draft_tok_arrs.empty()) {
-        auto drafts_dev = mx::reshape(
-            mx::concatenate(draft_tok_arrs, /*axis=*/0),
-            {static_cast<int>(draft_tok_arrs.size())});
-        mx::eval(y_.tokens, drafts_dev);
-        draft_tokens.push_back(y_.tokens.item<int32_t>());  // d0
-        for (size_t i = 0; i < draft_tok_arrs.size(); ++i) {
-            draft_tokens.push_back(drafts_dev.data<int32_t>()[i]);
-        }
+    // Consume inter-step prefetch if still valid for this n_draft.
+    bool used_prefetch = false;
+    std::optional<mx::array> drafts_dev_pending;
+    if (pending_draft_valid_ && pending_draft_n_ == n_draft
+        && pending_draft_dev_.has_value() && n_draft > 1) {
+        drafts_dev_pending = pending_draft_dev_;
+        used_prefetch = true;
+        pending_draft_valid_ = false;
+        pending_draft_dev_.reset();
     } else {
-        mx::eval(y_.tokens);
-        draft_tokens.push_back(y_.tokens.item<int32_t>());  // d0 only
-    }
-    if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
-
-    // Trunk verification: run trunk model on draft tokens.
-    if (draft_tokens.empty()) {
-        auto token = step(y_);
-        y_ = LMInput::Text(token);
-        mx::eval(token);
-        return {token.item<int32_t>()};
+        pending_draft_valid_ = false;
+        pending_draft_dev_.reset();
     }
 
-    // Build draft token sequence for trunk verification.
-    std::vector<int32_t> draft_seq;
-    draft_seq.reserve(draft_tokens.size());
-    for (int t : draft_tokens) draft_seq.push_back(static_cast<int32_t>(t));
-    auto draft_arr = mx::array(draft_seq.data(), {1, static_cast<int>(draft_seq.size())}, mx::int32);
-    LMInput::Text draft_text(draft_arr);
-
-    // Enable per-token recurrent-state capture on the linear (Mamba) layers for
-    // prefix rollback; snapshot is a safety fallback.
-    struct SavedMambaState {
-        MambaCache::Snapshot snapshot;
-        bool has_mamba = false;
-    };
-    // MTP_NO_INTERMEDIATES=1 forces the legacy restore+re-run rollback.
-    static const bool kUseIntermediates = (std::getenv("MTP_NO_INTERMEDIATES") == nullptr);
-    std::vector<SavedMambaState> saved_mamba;
-    saved_mamba.reserve(cache_.size());
-    bool any_mamba = false;
-    for (auto& c : cache_) {
-        if (auto* m = c.as_mamba()) {
-            SavedMambaState s;
-            s.snapshot = m->snapshot();
-            s.has_mamba = true;
-            saved_mamba.push_back(s);
-            if (kUseIntermediates) m->set_capture_spec(true);
-            any_mamba = true;
-        } else {
-            saved_mamba.push_back({});
-        }
-    }
-
-    // Run trunk model forward on all draft tokens, requesting hidden intermediates.
-    auto state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
-    auto result = context_.call_fn(draft_text, cache_.empty() ? nullptr : &cache_, &state);
-    state_ = result.state;
-    maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
-
-    // Compare trunk argmax vs draft tokens: logit[i] predicts draft[i+1].
-    // Take argmax over [1, n_draft, vocab] in one op, then scan on host ints.
-    auto logits = result.logits;
-    auto trunk_argmax = mx::astype(mx::argmax(logits, -1), mx::int32);  // [1, n_draft]
-    mx::eval(trunk_argmax);
-    const int32_t* trunk_pred = trunk_argmax.data<int32_t>();
+    // Default (C2): sequential T=1 verify — uses ROCm graph-decode mode and
+    // fused GDN T=1 path; early-exit on mismatch (no capture_spec tax, no
+    // multi-token gated_delta_update_seq). Field: multi-token verify was the
+    // residual after C1 quant draft (~86ms verify vs ~38ms eager T=1).
+    // Opt into old batch verify: MLX_MTP_BATCH_VERIFY=1.
+    static const bool kBatchVerify =
+        std::getenv("MLX_MTP_BATCH_VERIFY") != nullptr;
 
     int accepted = 0;
-    for (int i = 0; i < n_draft - 1; ++i) {
-        int32_t trunk_token = trunk_pred[i];
-        if (trunk_token == draft_tokens[i + 1]) {
-            accepted++;
-        } else {
-            // Mismatch — replace with trunk token and stop accepting.
-            draft_tokens[i + 1] = trunk_token;
-            break;
-        }
-    }
 
-    // Set y_ to the following token (bonus on full accept, else trunk correction).
-    if (accepted == n_draft - 1) {
-        int32_t bonus_token = trunk_pred[n_draft - 1];
-        y_ = LMInput::Text(mx::array({bonus_token}, {1}, mx::int32));
-    } else {
-        y_ = LMInput::Text(mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
-    }
-    if (kMtpTiming) { mx::eval(y_.tokens); t_verify = std::chrono::steady_clock::now(); }
+    auto stash_hidden_from = [&](const LMOutput::State& st) {
+        if (!st.hidden_intermediates.has_value()) return;
+        auto trunk_h = st.hidden_intermediates.value();
+        int tlen = trunk_h.shape(1);
+        int p = std::max(0, tlen - 1);
+        auto h_slice = mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+        // C7: leave lazy — next draft's async_eval/eval pulls this; avoid
+        // a hard per-step barrier after every speculative step.
+        mtp_trunk_hidden_ = h_slice;
+    };
 
-    // Commit the accepted prefix without re-running the trunk: trim the caches.
-
-    // Capture the next-step trunk hidden at the position that predicts y_.
-    auto capture_hidden_at = [&](int pos) {
-        if (result.state.has_value() && result.state->hidden_intermediates.has_value()) {
-            auto trunk_h = result.state->hidden_intermediates.value();
-            int p = std::min(pos, static_cast<int>(trunk_h.shape(1)) - 1);
-            if (p < 0) p = 0;
-            auto h_slice = mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
-            mx::eval(h_slice);
-            mtp_trunk_hidden_ = h_slice;
+    auto fill_draft_tokens_from_dev = [&](const mx::array& drafts_dev) {
+        draft_tokens.clear();
+        mx::eval(y_.tokens, drafts_dev);
+        draft_tokens.push_back(y_.tokens.item<int32_t>());
+        const int n_extra = static_cast<int>(drafts_dev.size());
+        for (int i = 0; i < n_extra; ++i) {
+            draft_tokens.push_back(static_cast<int>(drafts_dev.data<int32_t>()[i]));
         }
     };
 
-    // Did every linear layer capture its per-token states this step?
-    bool have_spec = any_mamba;
-    if (any_mamba) {
-        for (auto& c : cache_) {
-            if (auto* m = c.as_mamba()) {
-                if (!m->has_spec()) { have_spec = false; break; }
-            }
-        }
-    }
+    if (!kBatchVerify) {
+        // Feed each draft token with L=1; compare trunk next to draft[i+1].
+        // Defer KV quant + hidden stash to end of loop (fewer host barriers).
+        // Empty State* is only a "return hidden" signal — no dummy array(0.0f).
+        LMOutput::State want_hidden;
+        std::optional<LMOutput::State> last_st;
 
-    if (accepted == n_draft - 1) {
-        // All drafts accepted — caches already hold exactly [d0..d_{n-1}].
-        capture_hidden_at(n_draft - 1);
-    } else if (any_mamba && !have_spec) {
-        // Safety fallback: restore recurrent state and re-run on accepted prefix.
-        for (size_t i = 0; i < cache_.size(); ++i) {
-            if (saved_mamba[i].has_mamba) {
-                auto* m = cache_[i].as_mamba();
-                if (m) m->restore(saved_mamba[i].snapshot);
+        // C4 parallel: when we need a fresh draft, run MTP draft on a side
+        // stream while the trunk verifies d0 on the generation stream. Join
+        // before the accept decision. Prefetch path skips this (draft ready).
+        const bool do_parallel = !kNoParallelDraft && !used_prefetch && n_draft > 1
+            && !kBatchVerify;
+
+        if (used_prefetch && drafts_dev_pending.has_value()) {
+            fill_draft_tokens_from_dev(*drafts_dev_pending);
+            if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
+        } else if (do_parallel) {
+            // C6: materialize d0 *before* launching the side-stream draft.
+            // C4 launched draft then mx::eval(y_.tokens) which can force a
+            // device-wide join on ROCm and destroy draft‖verify overlap
+            // (joint wall ~55ms vs expected max(~20 draft, ~38 T1)≈38ms).
+            mx::eval(y_.tokens);
+            auto d0_arr = mx::reshape(y_.tokens, {1, 1});
+            if (d0_arr.dtype() != mx::int32) {
+                d0_arr = mx::astype(d0_arr, mx::int32);
+            }
+
+            // Launch draft on side stream (async). y_/d0 already resident.
+            std::optional<mx::array> drafts_dev;
+            {
+                StreamGuard dsg(mtp_draft_stream);
+                drafts_dev = mtp_run_draft_chain(n_draft, /*async_launch=*/true);
+            }
+            // Concurrent: trunk verify of d0 on generation stream (no extra eval).
+#if defined(MLX_BUILD_ROCM)
+            mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+            LMInput::Text tok_text(d0_arr);
+            auto result = context_.call_fn(
+                tok_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+            state_ = result.state;
+            last_st = result.state;
+            auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
+
+            // C15: join pred + drafts on device; accept compare from device
+            // pointers before building full host draft_tokens. On reject only
+            // keep d0 for emit (skip host materialize of rejected drafts).
+            static const bool kMtpDebugEarly =
+                (std::getenv("MTP_DEBUG") != nullptr);
+            // C12: pipeline v1 under host emit of d0 (γ=1 accept only).
+            // Measured REGRESS on gfx1150; opt-in MLX_MTP_PIPELINE_V1=1.
+            static const bool kPipelineV1 =
+                std::getenv("MLX_MTP_PIPELINE_V1") != nullptr &&
+                std::getenv("MLX_MTP_NO_PIPELINE_V1") == nullptr;
+            bool pipelined_v1 = false;
+
+            draft_tokens.clear();
+            bool draft_match = false;
+            if (drafts_dev.has_value()) {
+                mx::eval(pred, *drafts_dev);
+                // d0 already eval'd before side-stream draft (C6).
+                const int32_t d0 = y_.tokens.item<int32_t>();
+                draft_tokens.push_back(static_cast<int>(d0));
+                const int n_extra = static_cast<int>(drafts_dev->size());
+                const int32_t* dptr = drafts_dev->data<int32_t>();
+                const int32_t trunk_next = pred.data<int32_t>()[0];
+                if (n_extra >= 1 && trunk_next == dptr[0]) {
+                    draft_match = true;
+                    // Accept: host ids for emit/debug (d1..).
+                    for (int i = 0; i < n_extra; ++i) {
+                        draft_tokens.push_back(static_cast<int>(dptr[i]));
+                    }
+                } else if (n_extra >= 1 && kMtpDebugEarly) {
+                    // Reject but keep draft ids for MTP_DEBUG visibility only.
+                    for (int i = 0; i < n_extra; ++i) {
+                        draft_tokens.push_back(static_cast<int>(dptr[i]));
+                    }
+                }
+                // else reject: draft_tokens = {d0} only
+            } else {
+                mx::eval(pred);
+                draft_tokens.push_back(
+                    static_cast<int>(y_.tokens.item<int32_t>()));
+            }
+            if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
+
+            if (draft_match && draft_tokens.size() >= 2) {
+                accepted = 1;
+                // Continue sequential verify from i=1 (feed d1..).
+                // Prefer device slices of drafts_dev over host re-upload.
+                for (int i = 1; i < n_draft; ++i) {
+#if defined(MLX_BUILD_ROCM)
+                    mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+                    // draft_tokens[i] == drafts_dev[i-1]; prefer device slice.
+                    mx::array t2 =
+                        drafts_dev.has_value()
+                            ? mx::reshape(
+                                  mx::slice(*drafts_dev, {i - 1}, {i}), {1, 1})
+                            : mx::array(
+                                  {static_cast<int32_t>(draft_tokens[i])},
+                                  {1, 1}, mx::int32);
+                    if (t2.dtype() != mx::int32) {
+                        t2 = mx::astype(t2, mx::int32);
+                    }
+                    LMInput::Text t2_text(t2);
+                    auto r2 = context_.call_fn(
+                        t2_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+                    state_ = r2.state;
+                    last_st = r2.state;
+                    auto pred2 = mx::astype(mx::argmax(r2.logits, -1), mx::int32);
+                    if (i < n_draft - 1) {
+                        mx::eval(pred2);
+                        int32_t tn = pred2.data<int32_t>()[0];
+                        if (tn == static_cast<int32_t>(draft_tokens[i + 1])) {
+                            accepted++;
+                        } else {
+                            y_ = LMInput::Text(mx::reshape(pred2, {1}));
+                            break;
+                        }
+                    } else if (kPipelineV1 && n_draft == 2 && i == 1) {
+                        // C12: do not wait for residual pred2 — return d0 now;
+                        // finish_pending_v1_() runs when draining buffered d1.
+                        pending_v1_pred_ = pred2;
+                        pending_v1_state_ = r2.state;
+                        pending_v1_ = true;
+                        pipelined_v1 = true;
+                        accepted = 1;
+                    } else {
+                        y_ = LMInput::Text(mx::reshape(pred2, {1}));
+                        accepted = n_draft - 1;
+                    }
+                }
+            } else {
+                // Reject d1 or no draft: y_ is trunk alternative (pred eval'd).
+                y_ = LMInput::Text(mx::reshape(pred, {1}));
+                accepted = 0;
+            }
+
+            if (!pipelined_v1) {
+                maybe_quantize_kv_cache(
+                    cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+                if (last_st.has_value()) stash_hidden_from(*last_st);
+                // C8: kick residual accept-path T=1 (y_/pred2) immediately so it can
+                // run under host emit of d0 (+ buffered drafts). Do not force a full
+                // mx::eval here — MTP_TIMING used to barrier-sync residual into the
+                // step wall and destroy hide-under-emit (opt-in: MTP_TIMING_SYNC=1).
+                mx::async_eval(y_.tokens);
+            } else {
+                // Residual y_ deferred until finish_pending_v1_(); still schedule
+                // the in-flight pred graph without a host barrier.
+                if (pending_v1_pred_.has_value()) {
+                    mx::async_eval(*pending_v1_pred_);
+                }
+            }
+            if (kMtpTiming) {
+                static const bool kTimingSync =
+                    std::getenv("MTP_TIMING_SYNC") != nullptr;
+                if (kTimingSync && !pipelined_v1) mx::eval(y_.tokens);
+                t_verify = std::chrono::steady_clock::now();
+            }
+        } else {
+            // Serial draft then sequential verify (legacy / n_draft<=1 / flag).
+            if (n_draft > 1) {
+                auto drafts_dev = mtp_run_draft_chain(n_draft, /*async_launch=*/false);
+                if (drafts_dev.has_value()) {
+                    fill_draft_tokens_from_dev(*drafts_dev);
+                } else {
+                    mx::eval(y_.tokens);
+                    draft_tokens.push_back(y_.tokens.item<int32_t>());
+                }
+            } else {
+                mx::eval(y_.tokens);
+                draft_tokens.push_back(y_.tokens.item<int32_t>());
+            }
+            if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
+
+            if (draft_tokens.empty()) {
+                auto token = step(y_);
+                y_ = LMInput::Text(token);
+                mx::eval(token);
+                return {token.item<int32_t>()};
+            }
+
+            for (int i = 0; i < n_draft; ++i) {
+#if defined(MLX_BUILD_ROCM)
+                mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+                auto tok_arr = mx::array(
+                    {static_cast<int32_t>(draft_tokens[i])}, {1, 1}, mx::int32);
+                LMInput::Text tok_text(tok_arr);
+                auto result = context_.call_fn(
+                    tok_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+                state_ = result.state;
+                last_st = result.state;
+
+                auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
+                if (i < n_draft - 1) {
+                    mx::eval(pred);
+                    int32_t trunk_next = pred.data<int32_t>()[0];
+                    if (trunk_next == static_cast<int32_t>(draft_tokens[i + 1])) {
+                        accepted++;
+                    } else {
+                        y_ = LMInput::Text(mx::reshape(pred, {1}));
+                        break;
+                    }
+                } else {
+                    y_ = LMInput::Text(mx::reshape(pred, {1}));
+                    accepted = n_draft - 1;
+                }
+            }
+            maybe_quantize_kv_cache(
+                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+            if (last_st.has_value()) stash_hidden_from(*last_st);
+            // C8: async residual y_ (see parallel path).
+            mx::async_eval(y_.tokens);
+            if (kMtpTiming) {
+                static const bool kTimingSync =
+                    std::getenv("MTP_TIMING_SYNC") != nullptr;
+                if (kTimingSync) mx::eval(y_.tokens);
+                t_verify = std::chrono::steady_clock::now();
             }
         }
-        for (auto& c : cache_) c.set_position(trunk_cache_pos);
-        std::vector<int32_t> rerun_seq;
-        rerun_seq.reserve(1 + accepted);
-        for (int i = 0; i <= accepted; ++i) {
-            rerun_seq.push_back(static_cast<int32_t>(draft_tokens[i]));
-        }
-        auto rerun_arr = mx::array(rerun_seq.data(), {1, static_cast<int>(rerun_seq.size())}, mx::int32);
-        LMInput::Text rerun_text(rerun_arr);
-        auto rerun_state = LMOutput::State(std::nullopt, std::optional<mx::array>(mx::array(0.0f)));
-        result = context_.call_fn(rerun_text, &cache_, &rerun_state);
-        state_ = result.state;
-        maybe_quantize_kv_cache(cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
-        logits = result.logits;
-        capture_hidden_at(accepted);
-    } else if (accepted < n_draft - 1 && !cache_.empty()) {
-        // Fast path: trim caches to [d0..d_accepted].
-        capture_hidden_at(accepted);
-        int keep_pos = trunk_cache_pos + accepted + 1;
-        for (auto& c : cache_) {
-            if (auto* m = c.as_mamba()) {
-                m->rollback_spec(accepted + 1);
-            } else {
-                c.set_position(keep_pos);
+
+        // Prefetch path still needs sequential verify of all tokens.
+        if (used_prefetch) {
+            if (draft_tokens.empty()) {
+                auto token = step(y_);
+                y_ = LMInput::Text(token);
+                mx::eval(token);
+                return {token.item<int32_t>()};
+            }
+            for (int i = 0; i < n_draft; ++i) {
+#if defined(MLX_BUILD_ROCM)
+                mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+                auto tok_arr = mx::array(
+                    {static_cast<int32_t>(draft_tokens[i])}, {1, 1}, mx::int32);
+                LMInput::Text tok_text(tok_arr);
+                auto result = context_.call_fn(
+                    tok_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+                state_ = result.state;
+                last_st = result.state;
+
+                auto pred = mx::astype(mx::argmax(result.logits, -1), mx::int32);
+                if (i < n_draft - 1) {
+                    mx::eval(pred);
+                    int32_t trunk_next = pred.data<int32_t>()[0];
+                    if (trunk_next == static_cast<int32_t>(draft_tokens[i + 1])) {
+                        accepted++;
+                    } else {
+                        y_ = LMInput::Text(mx::reshape(pred, {1}));
+                        break;
+                    }
+                } else {
+                    y_ = LMInput::Text(mx::reshape(pred, {1}));
+                    accepted = n_draft - 1;
+                }
+            }
+            maybe_quantize_kv_cache(
+                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+            if (last_st.has_value()) stash_hidden_from(*last_st);
+            // C8: async residual y_ (see parallel path).
+            mx::async_eval(y_.tokens);
+            if (kMtpTiming) {
+                static const bool kTimingSync =
+                    std::getenv("MTP_TIMING_SYNC") != nullptr;
+                if (kTimingSync) mx::eval(y_.tokens);
+                t_verify = std::chrono::steady_clock::now();
             }
         }
     } else {
-        capture_hidden_at(accepted);
-    }
+        // Batch path needs host draft tokens first (serial draft).
+        if (used_prefetch && drafts_dev_pending.has_value()) {
+            fill_draft_tokens_from_dev(*drafts_dev_pending);
+        } else if (n_draft > 1) {
+            auto drafts_dev = mtp_run_draft_chain(n_draft, /*async_launch=*/false);
+            if (drafts_dev.has_value()) {
+                fill_draft_tokens_from_dev(*drafts_dev);
+            } else {
+                mx::eval(y_.tokens);
+                draft_tokens.push_back(y_.tokens.item<int32_t>());
+            }
+        } else {
+            mx::eval(y_.tokens);
+            draft_tokens.push_back(y_.tokens.item<int32_t>());
+        }
+        if (kMtpTiming) t_draft = std::chrono::steady_clock::now();
+        if (draft_tokens.empty()) {
+            auto token = step(y_);
+            y_ = LMInput::Text(token);
+            mx::eval(token);
+            return {token.item<int32_t>()};
+        }
 
-    // Clear the capture flag and any leftover per-token states for next step.
-    for (auto& c : cache_) {
-        if (auto* m = c.as_mamba()) m->set_capture_spec(false);
+        // Legacy multi-token batch verify + optional capture_spec rollback.
+        std::vector<int32_t> draft_seq;
+        draft_seq.reserve(draft_tokens.size());
+        for (int t : draft_tokens) draft_seq.push_back(static_cast<int32_t>(t));
+        auto draft_arr = mx::array(
+            draft_seq.data(), {1, static_cast<int>(draft_seq.size())}, mx::int32);
+        LMInput::Text draft_text(draft_arr);
+
+        struct SavedMambaState {
+            MambaCache::Snapshot snapshot;
+            bool has_mamba = false;
+        };
+        static const bool kUseIntermediates =
+            std::getenv("MLX_MTP_NO_INTERMEDIATES") == nullptr;
+        std::vector<SavedMambaState> saved_mamba;
+        saved_mamba.reserve(cache_.size());
+        bool any_mamba = false;
+        for (auto& c : cache_) {
+            if (auto* m = c.as_mamba()) {
+                SavedMambaState s;
+                s.snapshot = m->snapshot();
+                s.has_mamba = true;
+                saved_mamba.push_back(s);
+                if (kUseIntermediates) m->set_capture_spec(true);
+                any_mamba = true;
+            } else {
+                saved_mamba.push_back({});
+            }
+        }
+
+        LMOutput::State want_hidden;
+        auto result =
+            context_.call_fn(draft_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+        state_ = result.state;
+        maybe_quantize_kv_cache(
+            cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+
+        auto logits = result.logits;
+        auto trunk_argmax = mx::astype(mx::argmax(logits, -1), mx::int32);
+        mx::eval(trunk_argmax);
+        const int32_t* trunk_pred = trunk_argmax.data<int32_t>();
+
+        accepted = 0;
+        for (int i = 0; i < n_draft - 1; ++i) {
+            int32_t trunk_token = trunk_pred[i];
+            if (trunk_token == draft_tokens[i + 1]) {
+                accepted++;
+            } else {
+                draft_tokens[i + 1] = trunk_token;
+                break;
+            }
+        }
+
+        if (accepted == n_draft - 1) {
+            int32_t bonus_token = trunk_pred[n_draft - 1];
+            y_ = LMInput::Text(mx::array({bonus_token}, {1}, mx::int32));
+        } else {
+            y_ = LMInput::Text(
+                mx::array({draft_tokens[accepted + 1]}, {1}, mx::int32));
+        }
+        // C8: async residual y_ (batch path).
+        mx::async_eval(y_.tokens);
+        if (kMtpTiming) {
+            static const bool kTimingSync =
+                std::getenv("MTP_TIMING_SYNC") != nullptr;
+            if (kTimingSync) mx::eval(y_.tokens);
+            t_verify = std::chrono::steady_clock::now();
+        }
+
+        auto capture_hidden_at = [&](int pos) {
+            if (result.state.has_value() &&
+                result.state->hidden_intermediates.has_value()) {
+                auto trunk_h = result.state->hidden_intermediates.value();
+                int p = std::min(pos, static_cast<int>(trunk_h.shape(1)) - 1);
+                if (p < 0) p = 0;
+                auto h_slice =
+                    mx::slice(trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+                // C7: lazy stash (same as sequential path).
+                mtp_trunk_hidden_ = h_slice;
+            }
+        };
+
+        bool have_spec = any_mamba;
+        if (any_mamba) {
+            for (auto& c : cache_) {
+                if (auto* m = c.as_mamba()) {
+                    if (!m->has_spec()) {
+                        have_spec = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (accepted == n_draft - 1) {
+            capture_hidden_at(n_draft - 1);
+        } else if (any_mamba && !have_spec) {
+            for (size_t i = 0; i < cache_.size(); ++i) {
+                if (saved_mamba[i].has_mamba) {
+                    auto* m = cache_[i].as_mamba();
+                    if (m) m->restore(saved_mamba[i].snapshot);
+                }
+            }
+            for (auto& c : cache_) c.set_position(trunk_cache_pos);
+            std::vector<int32_t> rerun_seq;
+            rerun_seq.reserve(1 + accepted);
+            for (int i = 0; i <= accepted; ++i) {
+                rerun_seq.push_back(static_cast<int32_t>(draft_tokens[i]));
+            }
+            auto rerun_arr = mx::array(
+                rerun_seq.data(), {1, static_cast<int>(rerun_seq.size())}, mx::int32);
+            LMInput::Text rerun_text(rerun_arr);
+            LMOutput::State rerun_want_hidden;
+            result = context_.call_fn(rerun_text, &cache_, &rerun_want_hidden);
+            state_ = result.state;
+            maybe_quantize_kv_cache(
+                cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+            capture_hidden_at(accepted);
+        } else if (accepted < n_draft - 1 && !cache_.empty()) {
+            capture_hidden_at(accepted);
+            int keep_pos = trunk_cache_pos + accepted + 1;
+            for (auto& c : cache_) {
+                if (auto* m = c.as_mamba()) {
+                    m->rollback_spec(accepted + 1);
+                } else {
+                    c.set_position(keep_pos);
+                }
+            }
+        } else {
+            capture_hidden_at(accepted);
+        }
+
+        for (auto& c : cache_) {
+            if (auto* m = c.as_mamba()) m->set_capture_spec(false);
+        }
     }
 
     // Record acceptance for adaptive draft length.
@@ -952,13 +1776,69 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
 
     // Emit the accepted prefix [d0..d_accepted]: d0 now, d1..d_accepted buffered.
     // y_ holds the following token, emitted as d0 of the next step (not here).
-    draft_buffer_.clear();
-    for (size_t i = 1; i < draft_tokens.size() && static_cast<int>(i) <= accepted; ++i) {
-        draft_buffer_.push_back(draft_tokens[i]);
+    {
+        auto plan = mtp_make_emit_plan(draft_tokens, accepted);
+        draft_buffer_ = std::move(plan.buffered);
+        draft_buffer_idx_ = 0;
+        // plan.d0 == draft_tokens[0] when non-empty (return below).
     }
-    draft_buffer_idx_ = 0;
+
+    // Optional inter-step draft prefetch (MLX_MTP_PREFETCH=1 only).
+    if (kPrefetch && mtp_trunk_hidden_.has_value()) {
+        const int next_n = current_draft_count();
+        if (next_n > 1) {
+            auto pref = mtp_run_draft_chain(next_n, /*async_launch=*/true);
+            if (pref.has_value()) {
+                pending_draft_dev_ = std::move(*pref);
+                pending_draft_n_ = next_n;
+                pending_draft_valid_ = true;
+            } else {
+                pending_draft_valid_ = false;
+                pending_draft_dev_.reset();
+            }
+        } else {
+            pending_draft_valid_ = false;
+            pending_draft_dev_.reset();
+        }
+    } else {
+        pending_draft_valid_ = false;
+        pending_draft_dev_.reset();
+    }
 
     return {draft_tokens[0]};
+}
+
+void TokenIterator::finish_pending_v1_() {
+    if (!pending_v1_ || !pending_v1_pred_.has_value()) {
+        pending_v1_ = false;
+        pending_v1_pred_.reset();
+        pending_v1_state_.reset();
+        return;
+    }
+    // Same stream as generate / mtp_speculative_step (ROCm TLS encoders).
+    StreamGuard sg(generation_stream());
+#if defined(MLX_BUILD_ROCM)
+    mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+    mx::eval(*pending_v1_pred_);
+    y_ = LMInput::Text(mx::reshape(*pending_v1_pred_, {1}));
+    if (pending_v1_state_.has_value()) {
+        state_ = pending_v1_state_;
+        // Same lazy trunk-hidden stash as mtp_speculative_step (C7).
+        if (pending_v1_state_->hidden_intermediates.has_value()) {
+            auto trunk_h = pending_v1_state_->hidden_intermediates.value();
+            int tlen = trunk_h.shape(1);
+            int p = std::max(0, tlen - 1);
+            mtp_trunk_hidden_ = mx::slice(
+                trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+        }
+    }
+    maybe_quantize_kv_cache(
+        cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+    mx::async_eval(y_.tokens);
+    pending_v1_ = false;
+    pending_v1_pred_.reset();
+    pending_v1_state_.reset();
 }
 
 void TokenIterator::record_acceptance(int proposed, int accepted) {
@@ -968,7 +1848,17 @@ void TokenIterator::record_acceptance(int proposed, int accepted) {
 }
 
 int TokenIterator::current_draft_count() const {
-    return n_draft_tokens_;
+    // Adaptive block size from recent accepts (C3). Pure helper is golden-tested.
+    // Never collapses to "MTP off": min 2 when n_draft_tokens>=2.
+    // Disable: MLX_MTP_FIXED_DRAFT=1 → always n_draft_tokens_.
+    const bool fixed = (std::getenv("MLX_MTP_FIXED_DRAFT") != nullptr);
+    const int n = static_cast<int>(
+        std::min(accept_history_idx_, static_cast<size_t>(kAcceptHistorySize)));
+    return mtp_adaptive_n_draft(
+        n_draft_tokens_,
+        accept_history_.data(),
+        n,
+        fixed);
 }
 
 // ---------------------------------------------------------------------------
@@ -996,24 +1886,37 @@ void TokenIterator::measure_prefill_boundary_() {
 
 std::optional<int> TokenIterator::next() {
     if (max_tokens_.has_value() && token_count_ >= max_tokens_.value()) {
+        // Complete any in-flight v1 so KV/cache stay consistent even if we
+        // stop without emitting the buffered draft token.
+        if (pending_v1_) finish_pending_v1_();
         return std::nullopt;
     }
 
     // MTP path: drain buffer first, then run speculative step.
     if (use_mtp_) {
         if (!draft_buffer_.empty() && draft_buffer_idx_ < draft_buffer_.size()) {
-            // Return a buffered accepted token; do NOT touch y_.
+            // C12: finish deferred v1 before emitting buffered d1 (host already
+            // had a chance to emit d0 while v1 ran).
+            if (pending_v1_) finish_pending_v1_();
+            // Return a buffered accepted token; do NOT touch y_ further.
             int tok = draft_buffer_[draft_buffer_idx_++];
             token_count_++;
             return tok;
         }
 
-        // Buffer exhausted — run new MTP speculative step.
+        // Buffer exhausted — complete any orphan pending v1, then new step.
+        if (pending_v1_) finish_pending_v1_();
         draft_buffer_.clear();
         draft_buffer_idx_ = 0;
         auto accepted = mtp_speculative_step();
         token_count_++;
-        mx::eval(y_.tokens);
+        // Do not hard-sync y_ here: C4 may have async-prefetched the next draft
+        // that depends on y_; a full barrier would collapse the overlap with
+        // host emit. y_ is materialised when the next draft/eval needs it.
+        // C12: when v1 is still pending, y_ is not set yet — skip async_eval.
+        if (!pending_v1_) {
+            mx::async_eval(y_.tokens);
+        }
         measure_prefill_boundary_();
         return accepted.empty() ? std::nullopt : std::optional<int>(accepted[0]);
     }
