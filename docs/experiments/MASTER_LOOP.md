@@ -15,7 +15,64 @@ Program state (high level):
 | T1 fuse / KV@256 / dense_kept | **Closed** (`exp/mtp-t1-attack`) |
 | Quality Maxwell temp0.7 (35B) | Log EXIT:0 post-residual (cite path; not re-run every fire) |
 | H2 0.8B formalize | **Docs MET with caveats** (`mtp-h2-small-model/`) |
-| Remaining funded | **Long-ctx KV matrix IN FLIGHT**; H1 dGPU hardware day; optional product hygiene |
+| Remaining funded | **Long-ctx KV r2 IN FLIGHT** (r1 VOID multi-turn); H1 dGPU; product hygiene |
+
+---
+
+## Fire 2026-08-02T02:19Z — PROGRESS (protocol fix; r2 restarted)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** — voided invalid r1; fixed single-turn feed; **r2 matrix restarted** (no TPS verdict) |
+| **Branch** | `exp/mtp-t1-attack` @ tip after this commit |
+| **GPU at decision** | was **99%** (void r1 thrash) → killed → r2 launched |
+| **Product tip** | `fix/mtp-product` @ `777f398` (#77) |
+
+### Clear Thought
+
+- `sequentialthinking` — harvest blocked; diagnose multi-turn; fix protocol  
+- `metacognitivemonitoring` — no kill/pass from void logs  
+- `scientificmethod` — H-T1L-KV still **testing**; r1 invalidates measure not hypothesis  
+- `collaborativereasoning` (qa/perf) — archive void; restart r2; no fake TPS  
+
+### Reviewed
+
+- `T1L_eager_safe_fuse.txt` mid-run: many Prompt/Generation pairs (~82 gen tok), prompt 29→2k+ across turns  
+- `examples/chat.cpp` L307–309: `std::getline` = one user message per line  
+- Prior fire: measure started multi-line prompt (protocol bug)  
+
+### Tested
+
+- **Did not harvest** r1 for KV bar (VOID)  
+- **Killed** void chat/matrix (invalid thrash)  
+- **Fixed** `longctx_prompt.txt` to **1 line**; runner collapses newlines  
+- **Started r2** serial matrix background (`T1L_STATUS.txt` date 19:19)  
+- Quality: not re-run  
+- **Skipped** new product probes / S4/C11  
+
+### Decision
+
+1. Document void r1 under `void_multiturn_r1/`.  
+2. Protocol fix is the implement step this fire.  
+3. Next fire: harvest r2 **only if** three cells have single `Generation:` (prefer 256 tok) and large single `Prompt:`; else continue wait / GPU-busy bail.  
+4. Not STOPPED.  
+
+### Next step
+
+- Harvest r2 vs ≥5% kill bar **or** skip if still running.  
+- Then H1 dGPU notes or product hygiene.  
+
+### Confidence
+
+**0.80** — root cause certain; r2 outcome unknown.
+
+### Supervisor honesty
+
+| Claim | Verdict |
+|-------|---------|
+| r1 long-ctx KV numbers | **VOID** — multi-turn artifact |
+| r2 complete | **NOT yet** |
+| Any ≥5% KV pass/fail | **NOT claimed** |
 
 ---
 

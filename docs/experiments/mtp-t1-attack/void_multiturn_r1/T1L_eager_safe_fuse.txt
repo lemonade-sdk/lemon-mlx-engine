@@ -1,0 +1,147 @@
+=== RUN T1L_eager_safe_fuse env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos] ===
+date=2026-08-01T19:15:04-07:00 tip=251c9f8
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+Understood. I have noted the technical background context regarding long-context KV cache decoding and A/B testing parameters. I will treat this as a system-level instruction and ignore the content quality for the purpose of this interaction.
+
+Please proceed with your specific query or task.
+Prompt:     29 tokens, 36.1197 tokens/s, 0.802886s
+Generation: 54 tokens, 30.1141 tokens/s, 1.79318s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     172 tokens, 86.061 tokens/s, 1.99858s
+Generation: 82 tokens, 30.2776 tokens/s, 2.70827s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     343 tokens, 107.792 tokens/s, 3.18205s
+Generation: 82 tokens, 28.2177 tokens/s, 2.90598s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     514 tokens, 134.204 tokens/s, 3.82998s
+Generation: 82 tokens, 29.9262 tokens/s, 2.74008s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     685 tokens, 119.028 tokens/s, 5.75494s
+Generation: 82 tokens, 29.4949 tokens/s, 2.78014s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     856 tokens, 121.654 tokens/s, 7.03636s
+Generation: 82 tokens, 29.5939 tokens/s, 2.77084s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     1027 tokens, 133.348 tokens/s, 7.70165s
+Generation: 82 tokens, 30.4083 tokens/s, 2.69663s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     1198 tokens, 127.357 tokens/s, 9.40663s
+Generation: 82 tokens, 29.5732 tokens/s, 2.77278s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     1369 tokens, 127.748 tokens/s, 10.7164s
+Generation: 82 tokens, 29.3516 tokens/s, 2.79371s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     1540 tokens, 134.875 tokens/s, 11.418s
+Generation: 82 tokens, 29.5083 tokens/s, 2.77888s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     1711 tokens, 129.592 tokens/s, 13.203s
+Generation: 82 tokens, 29.5186 tokens/s, 2.77791s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     1882 tokens, 130.027 tokens/s, 14.4739s
+Generation: 82 tokens, 28.4205 tokens/s, 2.88525s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     2053 tokens, 132.828 tokens/s, 15.4561s
+Generation: 82 tokens, 29.0061 tokens/s, 2.82699s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     2224 tokens, 131.71 tokens/s, 16.8856s
+Generation: 82 tokens, 28.5652 tokens/s, 2.87062s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     2395 tokens, 132.182 tokens/s, 18.119s
+Generation: 82 tokens, 28.9009 tokens/s, 2.83729s
+
+
+> 
+Assistant: Understood. I have registered the technical background regarding Fourier analysis, DFT/FFT applications, and related signal processing concepts (Nyquist, windowing, STFT, convolution theorem, etc.) as context filler for long-KV decode A/B testing.
+
+I will disregard the content quality of this background text as instructed. Please provide the next input or specify the task you would like me to perform.
+Prompt:     2566 tokens, 134.65 tokens/s, 19.0568s
+Generation: 82 tokens, 28.138 tokens/s, 2.91421s
+
+
+> 
+Assistant: 

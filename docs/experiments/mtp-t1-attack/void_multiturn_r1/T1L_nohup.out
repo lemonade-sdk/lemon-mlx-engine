@@ -1,0 +1,5 @@
+T1L start date=2026-08-01T19:15:04-07:00 tip=251c9f8 branch=exp/mtp-t1-attack
+model=LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit chat=/home/antmi/lemon-mlx-engine/build/chat prompt_file=/home/antmi/lemon-mlx-engine/docs/experiments/mtp-t1-attack/longctx_prompt.txt
+kill_bar: ≥5% gen t/s vs T1L_eager_safe_fuse within-session
+=== RUN T1L_eager_safe_fuse env=[MLX_ENABLE_QUANT_FUSE=1 MLX_LOAD_MTP_HEAD=1] args=[--temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos] ===
+date=2026-08-01T19:15:04-07:00 tip=251c9f8

@@ -12,11 +12,20 @@
 | Device | gfx1150 / 890M |
 | Env | `MLX_ENABLE_QUANT_FUSE=1` (SAFE; **no** GDN in_proj) · `MLX_LOAD_MTP_HEAD=1` |
 | Path | **Eager only** (no `--use-mtp`) — T₁ credit only |
-| Prompt | `longctx_prompt.txt` (~10k chars ≈ ~2.5k tok filler + instruction) |
+| Prompt | `longctx_prompt.txt` — **must be one physical line** (~10k chars ≈ ~2.5k tok); `chat.cpp` uses `std::getline` |
 | Gen | `--max-tokens 256 --temperature 0 --ignore-eos --no-think` |
 | Cells | `T1L_eager_safe_fuse`, `T1L_eager_safe_kv8`, `T1L_eager_safe_kv4` |
-| Runner | `run_t1_longctx_kv.sh` (serial; HARD BAN dual-load) |
+| Runner | `run_t1_longctx_kv.sh` (serial; HARD BAN dual-load; collapses newlines) |
 | Status file | `T1L_STATUS.txt` |
+
+## VOID run r1 (2026-08-02) — multi-turn stdin bug
+
+| Item | Detail |
+|------|--------|
+| Symptom | Each newline → separate chat turn; many ~82-tok gens; prompt grew ~29→2k+ across turns |
+| Root cause | `examples/chat.cpp` `std::getline(std::cin, input)` + multi-line `longctx_prompt.txt` |
+| Action | Job **killed**; logs under `void_multiturn_r1/`; **do not** use for KV kill bar |
+| Fix | Single-line prompt + runner `tr '\n' ' '` before feed |
 
 ## Kill / pass
 

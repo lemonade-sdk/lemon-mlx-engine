@@ -34,8 +34,11 @@ run() {
   echo "=== RUN $name env=[$envx] args=[${args[*]}] ===" | tee "$log" | tee -a "$STATUS"
   echo "date=$(date -Iseconds) tip=$(git rev-parse --short HEAD)" | tee -a "$log"
   # shellcheck disable=SC2086
-  # Feed long prompt then quit; ignore-eos + max-tokens 256 for fixed gen length.
-  { cat "$PROMPT_FILE"; echo; echo quit; } | env $envx "$CHAT" "$MODEL" "${args[@]}" >>"$log" 2>&1 || {
+  # chat.cpp uses std::getline — ONE physical line = ONE user turn.
+  # Collapse prompt to a single line, then quit. Do NOT feed multi-line files.
+  local one_line
+  one_line="$(tr '\n' ' ' <"$PROMPT_FILE" | tr -s ' ')"
+  { printf '%s\n' "$one_line"; printf 'quit\n'; } | env $envx "$CHAT" "$MODEL" "${args[@]}" >>"$log" 2>&1 || {
     echo "=== FAIL $name exit=$? ===" | tee -a "$log" | tee -a "$STATUS"
     return 0
   }
