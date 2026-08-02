@@ -171,9 +171,23 @@ Generation: 128 tokens, 29.68 tokens/s, 4.31267s
 - Fraction uses T₁ that **includes** head cost (ratio, not pure leave-one-out).  
 - Do **not** claim product +15–25% or two-stage wins until implemented and measured.
 
-### Verdict
+### Verdict (after B)
 
-**Lever 3 stays OPEN** → next fire **design C** (two-stage top-k / vocab slice) with quality risk notes. Already-4-bit conversion path remains **void**.
+**Lever 3 stayed OPEN for design C** (kill &lt;5% T₁ not met). Already-4-bit conversion path remains **void**.
+
+---
+
+## 5b. Design C (no new GPU numbers)
+
+Full plan: [`DESIGN_C.md`](DESIGN_C.md).
+
+| Decision | |
+|----------|--|
+| Primary design | Two-stage shortlist + exact K-row head (temp=0 first); embed-as-proxy **rejected** (BF16 dequant embed ~1GB worse than 4-bit head) |
+| Secondary | Kernel-only faster full qmm (quality-neutral) |
+| Implement this fire | **No** |
+| Upside claim | Cap narrative at free-head sketch **~+13%**; **no** +15–25% |
+| Next | Lever 4 graph inventory; implement C only if gates in DESIGN_C §3 met later |
 
 ---
 

@@ -14,9 +14,66 @@ Program state (high level):
 | S4 batch verify + n_draft=3 | **LEVER2_CLOSED / KILL** (`exp/mtp-tps-ceiling`) |
 | C11–C15 draft fuses | **Dead** (`exp/mtp-c11-topk-close`) — do not reopen |
 | T1 fuse / KV@256 / dense_kept / long-ctx KV | **Closed** (`exp/mtp-t1-attack`) — do not reopen |
-| **Lever 3 lm_head traffic** | **A+B done** — already 4-bit; qmm **3.87 ms ≈ 11.5% T₁** → **OPEN for design C** |
-| **Lever 4 graph decode 35B** | Pending after #3 C or close |
+| **Lever 3 lm_head traffic** | **A+B+C done** — implement **PARKED** (`DESIGN_C.md`); free-head ceiling ~+13% sketch |
+| **Lever 4 graph decode 35B** | **NEXT** — code inventory |
 | Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` |
+
+---
+
+## Fire 2026-08-02T02:36Z — PROGRESS (design C only)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` @ tip after this commit |
+| **GPU** | ~2% idle — **GPU_IDLE docs-only** (no measure) |
+| **Lever worked** | #3 step **C** design plan |
+| **MASTER path** | `mtp-t1-lmhead-graph/DESIGN_C.md` + MASTER/RESULTS |
+
+### Clear Thought
+
+- `sequentialthinking` — C design only; no implement; no L4 expand beyond pointer  
+- `decisionframework` — two-stage (C1) primary; kernel (C2) secondary; park implement  
+- `metacognitivemonitoring` — +15–25% **forbidden**; free-head ~+13% is ceiling sketch from B logs only  
+
+### Reviewed
+
+- Sampler path: `generate.cpp` ArgMax/TopP/Categorical on **full** logits  
+- Head path: `qwen35_moe.cpp` `call_impl` → `linear_forward` → `quantized_matmul`  
+- MTP RS needs dense vocab (`mtp_residual_logits`) — two-stage must stay off for RS  
+- Embed-as-proxy rejected (dequant BF16 embed at load)  
+
+### Tested
+
+- **No GPU probe** this fire.  
+- No new gen t/s.  
+
+### Decision
+
+1. Land `DESIGN_C.md` with quality gates and fund bars.  
+2. Mark lever 3 **DESIGN_C_DONE / implement parked**.  
+3. **Next fire:** Lever 4 graph-decode inventory only.  
+4. Not STOPPED (L4 open; L3 implement optional later).  
+
+### Insight
+
+Residual head room is only **~3.9 ms (~11–13% free-head ceiling)**; two-stage is the only algorithmic bet, but **must prove argmax match and beat half of 3.87 ms** before product work.
+
+### Next step
+
+- Lever 4: inventory `graph_decode.cpp` / `MLX_DECODE_GRAPH` / pure path; short probe only if GPU free and not mid other load.
+
+### Confidence
+
+**0.88** on design completeness; **0.0** on two-stage e2e win (unmeasured).
+
+### Supervisor honesty
+
+| Claim | Verdict |
+|-------|---------|
+| New ms/TPS this fire | **None** |
+| +15–25% two-stage | **NOT claimed** |
+| Free-head ~+13% | **Sketch from B only** |
 
 ---
 

@@ -14,8 +14,8 @@
 | # | Lever | Status | Notes |
 |---|--------|--------|-------|
 | **2** | Batch-verify re-probe (06 §4) | **LEVER2_CLOSED / KILL** | Confirmed from `exp/mtp-tps-ceiling` S4 — **do not re-run** |
-| **3** | lm_head traffic cut (T₁) | **B DONE — OPEN for design C** | Already 4-bit; qmm **~3.87 ms** ≈ **11.5%** of same-fire T₁ — kill &lt;5% T₁ **not** met |
-| **4** | Graph decode MoE+GDN 35B | **PENDING** | After #3 design C or close |
+| **3** | lm_head traffic cut (T₁) | **A+B+C DONE — implement PARKED** | 4-bit; **3.87 ms ~11.5% T₁**; design [`DESIGN_C.md`](DESIGN_C.md); free-head ceiling ~+13% sketch only |
+| **4** | Graph decode MoE+GDN 35B | **NEXT** | Code inventory of `MLX_DECODE_GRAPH` / pure path |
 
 ---
 
@@ -56,9 +56,33 @@ See [`RESULTS.md`](RESULTS.md). Headline:
 
 **Theoretical free-head ceiling** (if head→0 and T₁ drops by mean qmm only): 33.69−3.87=29.82 ms → **~33.5 t/s** (~**+13%** vs 29.68). **Not measured**; upper-bound sketch only.
 
+### Design C (2026-08-02) — complete, implement parked
+
+See [`DESIGN_C.md`](DESIGN_C.md). Summary:
+
+- **Not** “quantize to 4-bit” (void). Residual is algorithmic (two-stage / hierarchical) or kernel-only qmm.
+- **Ship gate:** temp=0 argmax match 100% vs full head; MTP RS stays full head.
+- **Fund implement** only if stage1+stage2 ≤ ~0.5×3.87 ms **or** e2e ≥+5% gen t/s (same-session logs).
+- **Honest cap:** cannot claim &gt; free-head ~+13% from head work alone.
+- **Next program step:** Lever 4 inventory (not C implement unless dedicated day).
+
 ---
 
 ## Fire log
+
+### Fire 2026-08-02T02:36Z — PROGRESS (design C)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **GPU** | ~2% idle — **docs only** (no probe) |
+| **Lever work** | #3 step **C design** → [`DESIGN_C.md`](DESIGN_C.md) |
+| **Implement** | **None** (parked behind §3 gates) |
+
+Clear Thought: sequentialthinking + decisionframework (two-stage primary, kernel secondary, park implement) + metacognitivemonitoring (no +15–25; free-head ceiling only).
+
+**Next:** Lever 4 graph-decode code inventory (`src/common/graph_decode.cpp`, `MLX_DECODE_GRAPH`, `MLX_DECODE_GRAPH_PURE` in `generate.cpp`).
 
 ### Fire 2026-08-02T02:34Z — PROGRESS (microbench B)
 
