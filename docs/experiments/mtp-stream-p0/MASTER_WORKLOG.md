@@ -58,3 +58,16 @@
 - (b) Golden MTP logic tests: **PASS** (fire2, `test_generate "[mtp]"`).
 - Action: scheduler_delete task `019fbff3379c`.
 
+## 2026-08-01 full Maxwell SAR (post-loop, high max_tokens)
+- Goal: Full multi-turn Maxwell quality with MTP rejection sampling, **max_tokens=8192** (no early length cut).
+- Config: tip `147a319`, QUANT_FUSE+GDN, LOAD_MTP_HEAD=1, `--use-mtp --n-draft 2 --temperature 0.7 --top-p 0.9`, thinking ON, **max_tokens=8192**.
+- Turns: T1 four equations overview; T2 Gauss E differential; T3 Faraday; T4 Ampère–Maxwell; T5 Gauss B.
+- Log: `FIELD_MAXWELL_FULL_RS_ndraft2_temp07_think_max8k.txt`
+- Result: **EXIT:0** ~4 min wall after load. Rejection-sampling on. All 5 turns completed with `</think>` + final answers.
+  - T1: 3034 tok @ 25.6 t/s — 9-sentence overview of all four laws (coherent).
+  - T2: 766 tok @ 26.1 t/s — \(\nabla\cdot E=\rho/\varepsilon_0\) + meaning.
+  - T3: 916 tok @ 25.7 t/s — \(\nabla\times E=-\partial B/\partial t\) + meaning.
+  - T4: 1006 tok @ 25.6 t/s — Ampère–Maxwell full form + meaning.
+  - T5: 326 tok @ 25.9 t/s — \(\nabla\cdot B=0\) + monopoles.
+- Verdict: **FULL MAXWELL multi-turn PASS** at temp=0.7 + MTP + fuse + thinking with high token budget.
+

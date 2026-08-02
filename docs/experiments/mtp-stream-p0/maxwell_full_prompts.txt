@@ -1,0 +1,6 @@
+In 8–12 short sentences, name all four Maxwell equations and give one physical meaning for each. Be accurate and concise.
+Write Gauss's law for electricity in differential form and add one sentence on what it means.
+State Faraday's law of induction (differential form) and one sentence of physical meaning.
+State the Ampère–Maxwell law (differential form) and one sentence of physical meaning.
+State Gauss's law for magnetism (differential form) and one sentence of physical meaning.
+quit
