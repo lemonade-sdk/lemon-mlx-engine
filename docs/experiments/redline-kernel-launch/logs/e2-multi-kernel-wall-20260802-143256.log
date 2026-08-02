@@ -1,0 +1,51 @@
+=== E2 multi-kernel retained vs HIP wall ===
+2026-08-02T14:32:56-07:00
+7.13.0
+  Name:                    AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+  Marketing Name:          AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+  Vendor Name:             CPU                                
+  Name:                    gfx1150                            
+  Marketing Name:          AMD Radeon 890M Graphics           
+  Vendor Name:             AMD                                
+      Name:                    amdgcn-amd-amdhsa--gfx1150         
+      Name:                    amdgcn-amd-amdhsa--gfx11-generic   
+/opt/rocm/core/bin/hipcc
+HIP version: 7.13.99004-3309c611
+AMD clang version 23.0.0git (https://github.com/ROCm/llvm-project.git 43215c73116c407735c85a180d174f718798c328+PATCHED:2506c552d8428e2cc1778bef048b20f818e06bb3)
+Target: x86_64-unknown-linux-gnu
+=== build HIP harness ===
+HIP_BUILD_EXIT:0
+=== build Redline AQL host wall example ===
+   Compiling redline-dispatch v0.1.0 (/tmp/redline-warpfront/crates/redline-dispatch)
+    Finished `release` profile [optimized] target(s) in 0.29s
+AQL_BUILD_EXIT:0
+
+======== N=64 ========
+--- HIP arms ---
+e2_hip_multi_wall: device=AMD Radeon 890M Graphics arch=11.5 N=64 M=100 warmup=20
+HIP_eager:     N=64  median host us/replay = 119.605  us/disp = 1.8688
+HIP_graph:     N=64  median host us/replay = 120.120  us/disp = 1.8769
+ratio HIP_eager/HIP_graph = 0.996x  (higher => graph faster)
+HIP_RUN_EXIT:0
+--- Redline AQL arms ---
+e2_aql_host_wall: device=gfx1150 N=64 M=100 warmup=20 hsaco=/tmp/redline-warpfront-hsaco/floor_kernel-gfx1150.co
+  policy                      host_us    host_us/d       gpu_us     gpu_us/d
+  SystemEveryDispatch         148.359       2.3181      131.046       2.0476  vs_sys_host=1.000x
+  BoundarySerialized           75.117       1.1737       63.720       0.9956  vs_sys_host=1.975x
+  BoundaryIndependent          73.418       1.1472       56.907       0.8892  vs_sys_host=2.021x
+AQL_RUN_EXIT:0
+
+======== N=256 ========
+--- HIP arms ---
+e2_hip_multi_wall: device=AMD Radeon 890M Graphics arch=11.5 N=256 M=100 warmup=20
+HIP_eager:     N=256  median host us/replay = 441.254  us/disp = 1.7236
+HIP_graph:     N=256  median host us/replay = 452.414  us/disp = 1.7672
+ratio HIP_eager/HIP_graph = 0.975x  (higher => graph faster)
+HIP_RUN_EXIT:0
+--- Redline AQL arms ---
+e2_aql_host_wall: device=gfx1150 N=256 M=100 warmup=20 hsaco=/tmp/redline-warpfront-hsaco/floor_kernel-gfx1150.co
+  policy                      host_us    host_us/d       gpu_us     gpu_us/d
+  SystemEveryDispatch         562.391       2.1968      543.497       2.1230  vs_sys_host=1.000x
+  BoundarySerialized          289.278       1.1300      269.832       1.0540  vs_sys_host=1.944x
+  BoundaryIndependent         261.822       1.0227      242.415       0.9469  vs_sys_host=2.148x
+AQL_RUN_EXIT:0

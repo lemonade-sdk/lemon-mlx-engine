@@ -15,12 +15,23 @@
 | Architecture / integration map | **DONE** — RESEARCH + subagent docs |
 | E0 build on host ROCm 7.13 | **BUILD_OK** — warpfront `b505a72`; log + HSACO; 7.14 not hard compile gate |
 | E1 floor bench gfx1150 | **AQL MEASURED** — ~2.04 vs ~1.07 µs/disp (1.91× BoundarySerialized); PM4 example tail FAIL gfx12 |
-| E2 toy multi-kernel | **PENDING** |
+| E2 toy multi-kernel | **MEASURED** — N=64 host BoundarySerialized **75µs** vs HIP_eager **120µs** (~1.59×); hipGraph ≈ eager |
 | E3 MLX HSACO inventory | **PENDING** |
-| E4 design hook | **PENDING** |
+| E4 design hook | **PENDING** (E1 green → design allowed next) |
 | Engine wire | **NOT STARTED** (design only) |
 
 ## Fire log
+
+### 2026-08-02 — E2 multi-kernel HIP wall vs AQL
+
+- **Primary E-step:** E2.  
+- Clear Thought: sequentialthinking, scientificmethod (experiment), metacognitivemonitoring, collaborative critique.  
+- Harness: [`harness/e2_hip_multi_wall.hip`](harness/e2_hip_multi_wall.hip) + [`harness/e2_aql_host_wall.rs`](harness/e2_aql_host_wall.rs).  
+- **N=64 host wall (median M=100):** HIP_eager **119.6µs**; HIP_graph **120.1µs** (~no win); AQL BoundarySerialized **75.1µs** (**~1.59×** vs eager); AQL SystemEveryDispatch **148.4µs** (worse than eager).  
+- **N=256:** HIP_eager **441µs**; BoundarySerialized **289µs** (**~1.53×**).  
+- Evidence: [`logs/e2-multi-kernel-wall-20260802-143256.log`](logs/e2-multi-kernel-wall-20260802-143256.log), [`E2_MULTI.md`](E2_MULTI.md).  
+- **Not claimed:** gen t/s; conflating E1 GPU-span 1.91× with E2 host wall.  
+- **Next:** E3 MLX HSACO inventory **or** E4 design sketch (E1 unlocked).
 
 ### 2026-08-02 — E1 dispatch_floor gfx1150
 

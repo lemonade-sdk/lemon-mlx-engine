@@ -7,7 +7,7 @@ Research how **[Redline](https://github.com/warpfront/redline)** (user URL typo 
 → **Start here:** [`RESEARCH.md`](RESEARCH.md)
 
 ### Status
-- **E0 BUILD_OK** on host ROCm Core **7.13.0** / gfx1150 (warpfront build + floor HSACO). See [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md).  
-- **E1 AQL MEASURED** on gfx1150: ~**2.04** vs ~**1.07** µs/disp (BoundarySerialized **~1.91×**). PM4 example tail needs gfx12. See [`E1_FLOOR.md`](E1_FLOOR.md).  
-- Redline README **≥ 7.14** is **not** a hard *compile* gate here ([`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md)).  
+- **E0 BUILD_OK** on host ROCm Core **7.13.0** / gfx1150. [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md).  
+- **E1 AQL MEASURED:** ~**2.04** vs ~**1.07** µs/disp (GPU-span fence **~1.91×**). [`E1_FLOOR.md`](E1_FLOOR.md).  
+- **E2 MEASURED:** multi no-op host wall — BoundarySerialized **~1.5–1.6×** vs HIP eager; hipGraph **≈** eager (no win). [`E2_MULTI.md`](E2_MULTI.md).  
 - **No gen t/s claim.** No product wire. Decode HIP graphs remain **product OFF**.

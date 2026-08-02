@@ -69,15 +69,15 @@ From engine map ([`SUBAGENT_ENGINE_LAUNCH_MAP.md`](SUBAGENT_ENGINE_LAUNCH_MAP.md
 | Requirement | Local status | Risk |
 |-------------|--------------|------|
 | ROCm Core SDK **≥ 7.14** (TheRock) | Host **7.13.0** — **compile OK** (E0 2026-08-02) | 7.14 still preferred for optional HIP FFI + upstream product cert; **not** hard compile gate for dispatch/capi/hipgraph |
-| Public AQL / ROCr | `libhsa-runtime64` present under `/opt/rocm/core/lib` | On-device AQL replay = **E1** (not yet run) |
+| Public AQL / ROCr | `libhsa-runtime64` present; **E1/E2 AQL measured** | Optional 7.14-only FFI still untested |
 | Retained PM4 GFX11 | `gfx11*` → Gfx11 encoder | **Likely maps gfx1150** |
 | Radiowave ArchProfile | Subagent: may treat **gfx1150 ≠ gfx1151** | Re-certify on 890M; don’t assume Strix Halo numbers |
 | Published gfx1151 benches | Strong (Strix Halo) | **Transfer, not proof**, for gfx1150 |
-| Floor HSACO gfx1150 | **Built** (`hipcc --genco --offload-arch=gfx1150`) | Load/`dispatch_floor` pending E1 |
+| Floor HSACO gfx1150 | **Built** + **E1/E2 exercised** | PM4 example path still gfx12-only |
 
 **Confidence we can *build* on 890M today:** **high** (E0 log).  
-**Confidence of *dispatch-floor* win on no-op:** **high** on this host (E1 AQL ~1.91× BoundarySerialized).  
-**Confidence of *productive* gen-t/s win:** still **medium-low** until E2+ engine-shaped work (no-op ≠ 35B).
+**Confidence of *dispatch-floor* win on no-op:** **high** (E1 GPU-span ~1.91×; E2 host wall ~1.5–1.6× vs HIP eager).  
+**Confidence of *productive* gen-t/s win:** still **medium-low** until E3/E4 engine-shaped HSACO work (no-op ≠ 35B).
 
 ---
 
@@ -122,7 +122,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 |----|------------|-------------|
 | **E0** | Build Redline (warpfront) against local ROCm; note 7.13 vs 7.14 | **BUILD_OK** — see [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) |
 | **E1** | Run `dispatch_floor` / hipfire-6409 microbench on **gfx1150** if ROCm allows | **AQL MEASURED** — see [`E1_FLOOR.md`](E1_FLOOR.md) (~1.91× BoundarySerialized vs system-every); PM4 example tail N/A on gfx1150 |
-| **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | ≥ measurable wall cut |
+| **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | **MEASURED** — [`E2_MULTI.md`](E2_MULTI.md) (~1.5–1.6× host wall BoundarySerialized vs HIP eager; hipGraph ≈ eager) |
 | **E3** | Inventory whether MLX can export HSACO for one QMM | Feasible / not |
 | **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | Design doc only until E1 green |
 
@@ -154,8 +154,10 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | Local clones (not in git) | `/tmp/redline-pwilkin`, `/tmp/redline-warpfront` |
 | [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) | E0 compile + HSACO evidence |
 | [`E1_FLOOR.md`](E1_FLOOR.md) | E1 AQL µs/dispatch on gfx1150 |
+| [`E2_MULTI.md`](E2_MULTI.md) | E2 HIP wall vs retained AQL |
+| [`harness/`](harness/) | E2 HIP + AQL host-wall sources |
 | [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
-| [`logs/`](logs/) | E0/E1 logs + floor CO |
+| [`logs/`](logs/) | E0–E2 logs + floor CO |
 
 ## 9. References
 
