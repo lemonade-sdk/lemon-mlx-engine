@@ -2,6 +2,9 @@
 
 **Branch:** `fix/mtp-stream-p0` (includes #74 GDN + #76 quant-fuse + MTP StreamGuard)
 
+**Complete branch map (all product / exp / historical / potential):** [`../BRANCH_MAP.md`](../BRANCH_MAP.md)  
+**Lean product PR:** [#77](https://github.com/lemonade-sdk/lemon-mlx-engine/pull/77) (`fix/mtp-product`) · **Full tip alias:** `exp/mtp-stream-full`
+
 ## All quant-fuse flags + MTP
 
 ```bash
