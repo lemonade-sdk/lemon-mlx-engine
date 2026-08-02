@@ -15,7 +15,67 @@ Program state (high level):
 | T1 fuse / KV@256 / dense_kept | **Closed** (`exp/mtp-t1-attack`) |
 | Quality Maxwell temp0.7 (35B) | Log EXIT:0 post-residual (cite path; not re-run every fire) |
 | H2 0.8B formalize | **Docs MET with caveats** (`mtp-h2-small-model/`) |
-| Remaining funded | Long-ctx KV retest; H1 dGPU hardware day; optional product hygiene |
+| Remaining funded | **Long-ctx KV matrix IN FLIGHT**; H1 dGPU hardware day; optional product hygiene |
+
+---
+
+## Fire 2026-08-02T02:15Z — PROGRESS (measure started)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** — T1 long-ctx KV matrix **started** (serial); **no TPS verdict this fire** |
+| **Branch** | `exp/mtp-t1-attack` @ pre-commit `251c9f8` → see tip after push |
+| **Parent archive** | siblings @ `875a39d` / tip lineage |
+| **Product tip** | `fix/mtp-product` @ `777f398` (#77) |
+| **GPU at start** | use **2%**, VRAM ~1.3/8 GB; after start use **~16%** (expected load) |
+
+### Clear Thought
+
+- `sequentialthinking` — next funded lever is long-ctx KV (H2 formalize done prior fire)  
+- `metacognitivemonitoring` — no invent TPS; results pending harvest  
+- `decisionframework` — start serial background matrix; do not poll  
+- `scientificmethod` — H-T1L-KV: kv4/8 ≥ +5% gen t/s vs safe fuse at ~2.5k prompt + 256 gen  
+
+### Reviewed
+
+- Prior MASTER_LOOP fire (H2 formalize, S4 closed)  
+- `mtp-t1-attack/RESULTS.md` KV flat@256; kill bar ≥5%  
+- `examples/chat.cpp` `--kv-bits` wiring  
+- GPU idle; `build/chat` present; no concurrent model thrash at decision time  
+
+### Tested
+
+- **Started** (background, serial only): `run_t1_longctx_kv.sh`  
+  - Cells: `T1L_eager_safe_fuse` → `T1L_eager_safe_kv8` → `T1L_eager_safe_kv4`  
+  - Prompt: `longctx_prompt.txt` (~10k chars ≈ ~2.5k tok filler)  
+  - Status: `T1L_STATUS.txt` / `T1L_nohup.out`  
+- **Not harvested** this fire (no inline poll)  
+- Quality: not re-run (no sampling/emit change)  
+- **Skipped:** S4/C11 re-litigation  
+
+### Decision
+
+1. Implement long-ctx protocol docs + runner on `exp/mtp-t1-attack`.  
+2. Launch measure in background; next fire **harvests** logs vs ≥5% kill bar.  
+3. Do **not** claim KV win/kill until `Generation:` lines exist for all three cells.  
+4. Scheduler continues (not STOPPED).  
+
+### Next step
+
+- **Harvest** `T1L_eager_*.txt` + fill `LONGCTX_KV.md` verdict; if matrix still running, **skip new load** (GPU busy bail).  
+- After harvest: H1 dGPU notes or product hygiene.  
+
+### Confidence
+
+**0.72** — protocol sound and job launched; outcome unknown; ~2.5k ctx may under-stress bandwidth (note if flat).
+
+### Supervisor honesty
+
+| Claim | Verdict |
+|-------|---------|
+| Matrix started serially | **OK** — `T1L_STATUS.txt` + `build/chat` PID |
+| Long-ctx KV ≥5% win | **NOT claimed** (pending) |
+| Any new gen t/s number | **NONE this fire** |
 
 ---
 

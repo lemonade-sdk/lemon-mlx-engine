@@ -54,7 +54,7 @@ Code: list keys when `MLX_MTP_LOG_DENSE=1` or `MTP_DEBUG=1` (`mtp_head.cpp`).
 |-------|--------|---------|
 | **Quant fuse SAFE** | ~**+2%** eager vs nofuse (this day) | Keep opt-in `MLX_ENABLE_QUANT_FUSE=1` |
 | **Quant fuse + GDN in_proj** | ~**+1%** more at **temp=0** | Opt-in `MLX_ENABLE_QUANT_FUSE_GDN=1` only where quality allows (temp0.7 thrash history) |
-| **KV quant 4/8** | **Flat** on 256-tok decode (no ≥5% bar) | Not a short-context win; retest only at long ctx if bandwidth-bound |
+| **KV quant 4/8** | **Flat** on 256-tok decode (no ≥5% bar) | Not a short-context win; **long-ctx retest in flight** — see `LONGCTX_KV.md` + `run_t1_longctx_kv.sh` |
 | **dense_kept** | **No linears left** | Closed |
 | **MTP vs eager** | MTP still ≈ eager − few % on this stack | Plateau story unchanged; don’t credit MTP for fuse |
 

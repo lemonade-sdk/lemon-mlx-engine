@@ -1,0 +1,44 @@
+# T1 long-context KV retest
+
+**Branch:** `exp/mtp-t1-attack`  
+**Hypothesis (H-T1L-KV):** With long prefill (~2k+ prompt tokens), eager `--kv-bits 4|8` raises wall-clock **Generation** t/s by **≥5%** vs safe quant-fuse baseline (same session).  
+**Why:** At 256-tok short decode, KV was **flat** (`RESULTS.md` §1). Residual story is bandwidth-bound only if cache is large.
+
+## Protocol
+
+| Item | Value |
+|------|--------|
+| Model | `LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit` |
+| Device | gfx1150 / 890M |
+| Env | `MLX_ENABLE_QUANT_FUSE=1` (SAFE; **no** GDN in_proj) · `MLX_LOAD_MTP_HEAD=1` |
+| Path | **Eager only** (no `--use-mtp`) — T₁ credit only |
+| Prompt | `longctx_prompt.txt` (~10k chars ≈ ~2.5k tok filler + instruction) |
+| Gen | `--max-tokens 256 --temperature 0 --ignore-eos --no-think` |
+| Cells | `T1L_eager_safe_fuse`, `T1L_eager_safe_kv8`, `T1L_eager_safe_kv4` |
+| Runner | `run_t1_longctx_kv.sh` (serial; HARD BAN dual-load) |
+| Status file | `T1L_STATUS.txt` |
+
+## Kill / pass
+
+| Outcome | Decision |
+|---------|----------|
+| max(kv4, kv8) ≥ baseline × **1.05** gen t/s | **PASS** — fund product KV for long-ctx; document delta with logs |
+| Neither ≥5% | **KILL / park** long-ctx KV on this stack; product stays default full KV |
+| Load OOM / hang | **BLOCKED** — note in MASTER_LOOP; do not invent TPS |
+
+**Honesty:** Within-session deltas only. Do not compare to short-ctx T1_*.txt absolutes as “win.”
+
+## Results (fill after matrix completes)
+
+| Cell | Prompt tok | gen t/s | Δ vs fuse | Log |
+|------|------------|---------|-----------|-----|
+| T1L_eager_safe_fuse | TBD | TBD | baseline | `T1L_eager_safe_fuse.txt` |
+| T1L_eager_safe_kv8 | TBD | TBD | TBD | `T1L_eager_safe_kv8.txt` |
+| T1L_eager_safe_kv4 | TBD | TBD | TBD | `T1L_eager_safe_kv4.txt` |
+
+**Verdict:** _pending matrix_
+
+## Related
+
+- Short-ctx flat: `RESULTS.md` §1–3  
+- Master loop: `../MASTER_LOOP.md`
