@@ -15,7 +15,7 @@
 |---|--------|--------|-------|
 | **2** | Batch-verify re-probe (06 §4) | **LEVER2_CLOSED / KILL** | Confirmed from `exp/mtp-tps-ceiling` S4 — **do not re-run** |
 | **3** | lm_head traffic cut (T₁) | **A+B+C DONE — implement PARKED** | 4-bit; **3.87 ms ~11.5% T₁**; design [`DESIGN_C.md`](DESIGN_C.md); free-head ceiling ~+13% sketch only |
-| **4** | Graph decode MoE+GDN 35B | **NEXT** | Code inventory of `MLX_DECODE_GRAPH` / pure path |
+| **4** | Graph decode MoE+GDN 35B | **LEVER4_KILL** | HIP −3.6% vs eager; pure **garble + fake TPS ban**; see [`LEVER4_graph_inventory.md`](LEVER4_graph_inventory.md) |
 
 ---
 
@@ -72,6 +72,22 @@ See [`DESIGN_C.md`](DESIGN_C.md). Summary:
 ---
 
 ## Fire log
+
+### Fire 2026-08-02T02:41Z — PROGRESS (LEVER4_KILL field probe)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** (L4 closed) |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **GPU** | ~2% idle → three short eager/graph loads |
+| **Lever work** | #4 graph decode A/B |
+| **Key** | Eager **29.8084** t/s; HIP **28.733** (−3.6%, T₁ 34.8 ms); pure **INVALID** 829 t/s + Overview garble |
+| **Verdict** | **LEVER4_KILL** |
+| **Next** | Optional L3 C1 implement day or CLOSE residual C4 → STOPPED; do not re-probe L4 |
+
+Clear Thought: sequentialthinking + decisionframework (probe L4) + scientificmethod (H-l4-graph-gain **refuted**) + metacognitivemonitoring (ban fake 829).
+
+Logs: `L4_E0_eager_ctrl.txt`, `L4_E0_hip_graph.txt`, `L4_E0_pure_graph.txt`.
 
 ### Fire 2026-08-02T02:40Z — PROGRESS (temp×think matrix + design C + lever4 inventory)
 
@@ -135,3 +151,4 @@ Clear Thought: sequentialthinking + metacognitivemonitoring + decisionframework 
 
 - STOPPED if lever 3 CLOSED **and** lever 4 KILL/impossible **and** lever 2 already KILL.
 - Or three consecutive fires with no implement/measure.
+- **Now:** L2 KILL · L4 KILL · L3 implement still **PARKED** (not CLOSED) → loop **not** STOPPED until residual head accepted as C4 or C1/C2 lands.

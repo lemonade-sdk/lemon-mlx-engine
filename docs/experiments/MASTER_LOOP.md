@@ -239,3 +239,16 @@ On the field 35B MTP mlx-4bit model, **lm_head is already quantized (U32 pack + 
 | **Change** | Split NOTABLE (log any +Δ) vs FUND (implement cost) vs NOISE; re-label fuse +2–3%, long-ctx KV +1–1.4%, MTP C7 +4.6% as notable; &lt;5% is not “ignore” |
 | **Unchanged** | HARD BAN: no invented TPS; no +15–25% without measure; S4 batch still a notable **regress** |
 
+
+## Fire 2026-08-02 — HIP graph stance (prefill-only)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **Advice reviewed** | HIP graphs only for prefill; decode/pure not stable / not worth it |
+| **Clear Thought** | sequential + meta + argument + scientific conclusion |
+| **Our measure** | HIP decode 28.73 vs 29.81 (−3.6% **notable regress**); pure VOID (garble + 829 t/s) |
+| **Decision** | **Agree directionally** with field data: product decode HIP **OFF**; pure **OFF**; prefill **opt-in only** |
+| **Doc** | `docs/experiments/mtp-t1-lmhead-graph/HIP_GRAPH_STANCE.md` |
+

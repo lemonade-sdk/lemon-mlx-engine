@@ -36,6 +36,9 @@ All numbers log-backed. Small positives are **notable**, not “round to zero.�
 | Eager temp×think matrix | flat ~29.6–29.9 | “no effect” | **NOTABLE:** product modes **don’t hurt** decode t/s |
 | MTP RS vs greedy | ~26.1 vs 27.1 (**~−3.7%**) | expected tax | **NOTABLE cost** of product sampling |
 | MTP RS+think | ~25.2 (**~−7%** vs greedy) | expected | **NOTABLE** product-mode cost |
+| HIP graph **decode** vs ctrl | **28.73 vs 29.81 (−3.6%)** | lever4 hope | **NOTABLE REGRESS** — leave decode HIP **off** |
+| Pure decode graph | 829 t/s + garble | — | **VOID** (not a win; quality fail) |
+| Prefill HIP F1–F3 | ~+2–4% pp/s | miss 10% bar | **NOTABLE micro** if logged; opt-in only |
 
 ---
 
