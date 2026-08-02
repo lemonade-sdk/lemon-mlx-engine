@@ -438,3 +438,14 @@ On the field 35B MTP mlx-4bit model, **lm_head is already quantized (U32 pack + 
 | **Quality** | Coherent; ~2.3% argmax mismatch under CHECK |
 | **Status** | Partial resolve; flag opt-in; not product default |
 
+
+## Fire 2026-08-02 — SWEEP_RESULTS.md + recommended defaults
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Doc** | `docs/experiments/mtp-t1-lmhead-graph/SWEEP_RESULTS.md` |
+| **Recommend** | Balanced `R=96 POWER=0 K=16384` (+3.1%); speed `R=128 POWER=1 K=16384` (+4.1%) |
+| **Avoid** | r≥160–192 as default (mean Δ negative) |
+| **Next** | Multi-seed validation of 2–3 winners; not another full blind grid |
+

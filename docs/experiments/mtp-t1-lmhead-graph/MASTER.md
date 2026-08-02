@@ -72,6 +72,20 @@ See [`DESIGN_C.md`](DESIGN_C.md) + [`C1_IMPLEMENT.md`](C1_IMPLEMENT.md).
 
 ## Fire log
 
+### Fire 2026-08-02 — config sweep complete + recommended defaults
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Grid** | 45 cells (r×power×K); CSV `sweep_out/SWEEP_20260801_200647.csv` |
+| **Doc** | [`SWEEP_RESULTS.md`](SWEEP_RESULTS.md) |
+| **Speed pick** | r=128 p=1 K=16384 **+4.09%** mism 3.12% |
+| **Balanced pick** | r=96 p=0 K=16384 **+3.10%** mism 1.56% |
+| **Match pick** | r=64 p=1 K=16384 **+1.47%** mism 0% |
+| **Code defaults when flag on** | r=96, power=0, K=16384 (balanced) |
+| **Product** | Still opt-in; multi-seed next |
+
+
 ### Fire 2026-08-02 — C1v2 range-finder (partial resolve)
 
 | Field | Value |

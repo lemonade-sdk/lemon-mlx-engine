@@ -63,3 +63,6 @@ Always: “&lt;5% still **notable**; fund decision separate.”
 - **Park expensive micro-notables** (KV path complexity for +1%) unless free.  
 - **Still pursue** residual lm_head / graph if they can recover multi-ms T₁ — even +2–4% e2e is **notable**.
 | C1v2 two-stage range-finder | **+2.28%** gen t/s (temp0) | quality fail v1 | **NOTABLE** win; opt-in; ~2% argmax mismatch |
+| C1 sweep best speed `r128_p1_K16384` | **+4.09%** gen t/s | config grid | **NOTABLE**; mism 3.12%; opt-in |
+| C1 sweep balanced `r96_p0_K16384` | **+3.10%** | config grid | **NOTABLE**; mism 1.56%; **recommended** |
+| C1 sweep zero-mism `r64_p1_K16384` | **+1.47%** | config grid | **NOTABLE**; mism 0% |

@@ -1086,15 +1086,16 @@ void Qwen35MoEModel::ensure_lm_head_twostage() {
 
     const int V = config_.vocab_size;
     const int H = config_.hidden_size;
-    int r = 128;
+    // Defaults tuned after v2: higher rank/power cut argmax mismatch (~2%→lower).
+    int r = 96;  // sweep: balanced default (was 192)
     if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_R")) {
         int v = std::atoi(e);
-        if (v >= 8 && v <= 256) r = v;
+        if (v >= 8 && v <= 384) r = v;
     }
-    int power_iters = 1;
+    int power_iters = 0;  // sweep: balanced (p0 + large K)
     if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_POWER")) {
         int v = std::atoi(e);
-        if (v >= 0 && v <= 3) power_iters = v;
+        if (v >= 0 && v <= 4) power_iters = v;
     }
     const int gs = qi->group_size;
     const int bits = qi->bits;
@@ -1194,7 +1195,7 @@ std::optional<mx::array> Qwen35MoEModel::try_lm_head_twostage(
     if (!qi) return std::nullopt;
 
     const int V = config_.vocab_size;
-    int K = 8192;
+    int K = 16384; // sweep recommend large K
     if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_K")) {
         int v = std::atoi(e);
         if (v >= 64 && v <= V) K = v;

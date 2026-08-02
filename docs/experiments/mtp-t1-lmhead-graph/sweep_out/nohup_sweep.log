@@ -1,0 +1,205 @@
+=== CTRL ===
+ctrl_tps=29.4136
+=== CELL r64_p0_K4096 ===
+  check steps=64 mism=20 rate=31.25%
+  tps=30.0068 delta=2.017% quality_ok=1
+=== CELL r64_p0_K8192 ===
+  check steps=64 mism=19 rate=29.6875%
+  tps=30.3117 delta=3.053% quality_ok=1
+=== CELL r64_p0_K16384 ===
+  check steps=64 mism=9 rate=14.0625%
+  tps=29.9212 delta=1.726% quality_ok=1
+=== CELL r64_p1_K4096 ===
+  check steps=64 mism=10 rate=15.625%
+  tps=29.8782 delta=1.58% quality_ok=1
+=== CELL r64_p1_K8192 ===
+  check steps=64 mism=4 rate=6.25%
+  tps=29.9468 delta=1.813% quality_ok=1
+=== CELL r64_p1_K16384 ===
+  check steps=64 mism=0 rate=0%
+  tps=29.8469 delta=1.473% quality_ok=1
+=== CELL r64_p2_K4096 ===
+  check steps=64 mism=5 rate=7.8125%
+  tps=30.0655 delta=2.216% quality_ok=1
+=== CELL r64_p2_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.3981 delta=3.347% quality_ok=1
+=== CELL r64_p2_K16384 ===
+  check steps=64 mism=0 rate=0%
+  tps=28.5438 delta=-2.957% quality_ok=1
+=== CELL r96_p0_K4096 ===
+  check steps=64 mism=11 rate=17.1875%
+  tps=29.5945 delta=0.615% quality_ok=1
+=== CELL r96_p0_K8192 ===
+  check steps=64 mism=12 rate=18.75%
+  tps=29.7502 delta=1.144% quality_ok=1
+=== CELL r96_p0_K16384 ===
+  check steps=64 mism=1 rate=1.5625%
+  tps=30.3261 delta=3.102% quality_ok=1
+=== CELL r96_p1_K4096 ===
+  check steps=64 mism=6 rate=9.375%
+  tps=29.948 delta=1.817% quality_ok=1
+=== CELL r96_p1_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.6812 delta=0.91% quality_ok=1
+=== CELL r96_p1_K16384 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.0706 delta=2.234% quality_ok=1
+=== CELL r96_p2_K4096 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.1604 delta=2.539% quality_ok=1
+=== CELL r96_p2_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.205 delta=2.691% quality_ok=1
+=== CELL r96_p2_K16384 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.2715 delta=2.917% quality_ok=1
+=== CELL r128_p0_K4096 ===
+  check steps=64 mism=3 rate=4.6875%
+  tps=28.7226 delta=-2.349% quality_ok=1
+=== CELL r128_p0_K8192 ===
+  check steps=64 mism=6 rate=9.375%
+  tps=28.7992 delta=-2.089% quality_ok=1
+=== CELL r128_p0_K16384 ===
+  check steps=64 mism=1 rate=1.5625%
+  tps=29.427 delta=0.046% quality_ok=1
+=== CELL r128_p1_K4096 ===
+  check steps=64 mism=4 rate=6.25%
+  tps=30.3509 delta=3.187% quality_ok=1
+=== CELL r128_p1_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.9753 delta=1.91% quality_ok=1
+=== CELL r128_p1_K16384 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.6162 delta=4.089% quality_ok=1
+=== CELL r128_p2_K4096 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=28.8786 delta=-1.819% quality_ok=1
+=== CELL r128_p2_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=30.279 delta=2.942% quality_ok=1
+=== CELL r128_p2_K16384 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.0974 delta=-1.075% quality_ok=1
+=== CELL r160_p0_K4096 ===
+  check steps=64 mism=4 rate=6.25%
+  tps=29.0958 delta=-1.08% quality_ok=1
+=== CELL r160_p0_K8192 ===
+  check steps=64 mism=1 rate=1.5625%
+  tps=29.1885 delta=-0.765% quality_ok=1
+=== CELL r160_p0_K16384 ===
+  check steps=64 mism=0 rate=0%
+  tps=29.7452 delta=1.127% quality_ok=1
+=== CELL r160_p1_K4096 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=28.6895 delta=-2.462% quality_ok=1
+=== CELL r160_p1_K8192 ===
+  check steps=64 mism=0 rate=0%
+  tps=29.0861 delta=-1.113% quality_ok=1
+=== CELL r160_p1_K16384 ===
+  check steps=64 mism=0 rate=0%
+  tps=28.6068 delta=-2.743% quality_ok=1
+=== CELL r160_p2_K4096 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.0757 delta=-1.149% quality_ok=1
+=== CELL r160_p2_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.7591 delta=1.175% quality_ok=1
+=== CELL r160_p2_K16384 ===
+  check steps=64 mism=0 rate=0%
+  tps=29.5548 delta=0.48% quality_ok=1
+=== CELL r192_p0_K4096 ===
+  check steps=64 mism=1 rate=1.5625%
+  tps=28.3073 delta=-3.761% quality_ok=1
+=== CELL r192_p0_K8192 ===
+  check steps=64 mism=4 rate=6.25%
+  tps=28.1968 delta=-4.137% quality_ok=1
+=== CELL r192_p0_K16384 ===
+  check steps=64 mism=1 rate=1.5625%
+  tps=29.6432 delta=0.781% quality_ok=1
+=== CELL r192_p1_K4096 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.8003 delta=1.315% quality_ok=1
+=== CELL r192_p1_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=28.9013 delta=-1.742% quality_ok=1
+=== CELL r192_p1_K16384 ===
+  check steps=64 mism=0 rate=0%
+  tps=28.9203 delta=-1.677% quality_ok=1
+=== CELL r192_p2_K4096 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=28.3624 delta=-3.574% quality_ok=1
+=== CELL r192_p2_K8192 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=29.0754 delta=-1.15% quality_ok=1
+=== CELL r192_p2_K16384 ===
+  check steps=64 mism=2 rate=3.125%
+  tps=25.1222 delta=-14.59% quality_ok=1
+=== SWEEP DONE csv=/home/antmi/lemon-mlx-engine/docs/experiments/mtp-t1-lmhead-graph/sweep_out/SWEEP_20260801_200647.csv ===
+
+=== ALL CELLS (sorted by delta desc) ===
+r128_p1_K16384       r=128 p=1 K=16384 mism%= 3.125 tps=30.6162 d%=  4.089 q=1
+r64_p2_K8192         r=64  p=2 K=8192  mism%= 3.125 tps=30.3981 d%=  3.347 q=1
+r128_p1_K4096        r=128 p=1 K=4096  mism%=  6.25 tps=30.3509 d%=  3.187 q=1
+r96_p0_K16384        r=96  p=0 K=16384 mism%=1.5625 tps=30.3261 d%=  3.102 q=1
+r64_p0_K8192         r=64  p=0 K=8192  mism%=29.6875 tps=30.3117 d%=  3.053 q=1
+r128_p2_K8192        r=128 p=2 K=8192  mism%= 3.125 tps= 30.279 d%=  2.942 q=1
+r96_p2_K16384        r=96  p=2 K=16384 mism%= 3.125 tps=30.2715 d%=  2.917 q=1
+r96_p2_K8192         r=96  p=2 K=8192  mism%= 3.125 tps= 30.205 d%=  2.691 q=1
+r96_p2_K4096         r=96  p=2 K=4096  mism%= 3.125 tps=30.1604 d%=  2.539 q=1
+r96_p1_K16384        r=96  p=1 K=16384 mism%= 3.125 tps=30.0706 d%=  2.234 q=1
+r64_p2_K4096         r=64  p=2 K=4096  mism%=7.8125 tps=30.0655 d%=  2.216 q=1
+r64_p0_K4096         r=64  p=0 K=4096  mism%= 31.25 tps=30.0068 d%=  2.017 q=1
+r128_p1_K8192        r=128 p=1 K=8192  mism%= 3.125 tps=29.9753 d%=   1.91 q=1
+r96_p1_K4096         r=96  p=1 K=4096  mism%= 9.375 tps= 29.948 d%=  1.817 q=1
+r64_p1_K8192         r=64  p=1 K=8192  mism%=  6.25 tps=29.9468 d%=  1.813 q=1
+r64_p0_K16384        r=64  p=0 K=16384 mism%=14.0625 tps=29.9212 d%=  1.726 q=1
+r64_p1_K4096         r=64  p=1 K=4096  mism%=15.625 tps=29.8782 d%=   1.58 q=1
+r64_p1_K16384        r=64  p=1 K=16384 mism%=     0 tps=29.8469 d%=  1.473 q=1
+r192_p1_K4096        r=192 p=1 K=4096  mism%= 3.125 tps=29.8003 d%=  1.315 q=1
+r160_p2_K8192        r=160 p=2 K=8192  mism%= 3.125 tps=29.7591 d%=  1.175 q=1
+r96_p0_K8192         r=96  p=0 K=8192  mism%= 18.75 tps=29.7502 d%=  1.144 q=1
+r160_p0_K16384       r=160 p=0 K=16384 mism%=     0 tps=29.7452 d%=  1.127 q=1
+r96_p1_K8192         r=96  p=1 K=8192  mism%= 3.125 tps=29.6812 d%=   0.91 q=1
+r192_p0_K16384       r=192 p=0 K=16384 mism%=1.5625 tps=29.6432 d%=  0.781 q=1
+r96_p0_K4096         r=96  p=0 K=4096  mism%=17.1875 tps=29.5945 d%=  0.615 q=1
+r160_p2_K16384       r=160 p=2 K=16384 mism%=     0 tps=29.5548 d%=   0.48 q=1
+r128_p0_K16384       r=128 p=0 K=16384 mism%=1.5625 tps= 29.427 d%=  0.046 q=1
+r160_p0_K8192        r=160 p=0 K=8192  mism%=1.5625 tps=29.1885 d%= -0.765 q=1
+r128_p2_K16384       r=128 p=2 K=16384 mism%= 3.125 tps=29.0974 d%= -1.075 q=1
+r160_p0_K4096        r=160 p=0 K=4096  mism%=  6.25 tps=29.0958 d%=  -1.08 q=1
+r160_p1_K8192        r=160 p=1 K=8192  mism%=     0 tps=29.0861 d%= -1.113 q=1
+r160_p2_K4096        r=160 p=2 K=4096  mism%= 3.125 tps=29.0757 d%= -1.149 q=1
+r192_p2_K8192        r=192 p=2 K=8192  mism%= 3.125 tps=29.0754 d%=  -1.15 q=1
+r192_p1_K16384       r=192 p=1 K=16384 mism%=     0 tps=28.9203 d%= -1.677 q=1
+r192_p1_K8192        r=192 p=1 K=8192  mism%= 3.125 tps=28.9013 d%= -1.742 q=1
+r128_p2_K4096        r=128 p=2 K=4096  mism%= 3.125 tps=28.8786 d%= -1.819 q=1
+r128_p0_K8192        r=128 p=0 K=8192  mism%= 9.375 tps=28.7992 d%= -2.089 q=1
+r128_p0_K4096        r=128 p=0 K=4096  mism%=4.6875 tps=28.7226 d%= -2.349 q=1
+r160_p1_K4096        r=160 p=1 K=4096  mism%= 3.125 tps=28.6895 d%= -2.462 q=1
+r160_p1_K16384       r=160 p=1 K=16384 mism%=     0 tps=28.6068 d%= -2.743 q=1
+r64_p2_K16384        r=64  p=2 K=16384 mism%=     0 tps=28.5438 d%= -2.957 q=1
+r192_p2_K4096        r=192 p=2 K=4096  mism%= 3.125 tps=28.3624 d%= -3.574 q=1
+r192_p0_K4096        r=192 p=0 K=4096  mism%=1.5625 tps=28.3073 d%= -3.761 q=1
+r192_p0_K8192        r=192 p=0 K=8192  mism%=  6.25 tps=28.1968 d%= -4.137 q=1
+r192_p2_K16384       r=192 p=2 K=16384 mism%= 3.125 tps=25.1222 d%= -14.59 q=1
+
+=== CANDIDATES: quality_ok=1 AND mism%<=3.0 AND delta>0 ===
+r96_p0_K16384 delta 3.102 mism% 1.5625
+r64_p1_K16384 delta 1.473 mism% 0
+r160_p0_K16384 delta 1.127 mism% 0
+r192_p0_K16384 delta 0.781 mism% 1.5625
+r160_p2_K16384 delta 0.48 mism% 0
+r128_p0_K16384 delta 0.046 mism% 1.5625
+
+=== CANDIDATES relaxed: quality_ok=1 AND delta>0 ===
+r128_p1_K16384 delta 4.089 mism% 3.125
+r64_p2_K8192 delta 3.347 mism% 3.125
+r128_p1_K4096 delta 3.187 mism% 6.25
+r96_p0_K16384 delta 3.102 mism% 1.5625
+r64_p0_K8192 delta 3.053 mism% 29.6875
+r128_p2_K8192 delta 2.942 mism% 3.125
+r96_p2_K16384 delta 2.917 mism% 3.125
+r96_p2_K8192 delta 2.691 mism% 3.125
+r96_p2_K4096 delta 2.539 mism% 3.125
+r96_p1_K16384 delta 2.234 mism% 3.125
