@@ -10,4 +10,5 @@ Research how **[Redline](https://github.com/warpfront/redline)** (user URL typo 
 - **E0 BUILD_OK** on host ROCm Core **7.13.0** / gfx1150. [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md).  
 - **E1 AQL MEASURED:** ~**2.04** vs ~**1.07** µs/disp (GPU-span fence **~1.91×**). [`E1_FLOOR.md`](E1_FLOOR.md).  
 - **E2 MEASURED:** multi no-op host wall — BoundarySerialized **~1.5–1.6×** vs HIP eager; hipGraph **≈** eager (no win). [`E2_MULTI.md`](E2_MULTI.md).  
+- **E3 DONE:** qmm is AOT pointer-launch (not drop-in HSACO); JIT `.hsaco` exists on disk. [`E3_HSACO.md`](E3_HSACO.md).  
 - **No gen t/s claim.** No product wire. Decode HIP graphs remain **product OFF**.

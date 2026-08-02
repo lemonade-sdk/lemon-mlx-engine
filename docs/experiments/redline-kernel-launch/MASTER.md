@@ -16,11 +16,20 @@
 | E0 build on host ROCm 7.13 | **BUILD_OK** — warpfront `b505a72`; log + HSACO; 7.14 not hard compile gate |
 | E1 floor bench gfx1150 | **AQL MEASURED** — ~2.04 vs ~1.07 µs/disp (1.91× BoundarySerialized); PM4 example tail FAIL gfx12 |
 | E2 toy multi-kernel | **MEASURED** — N=64 host BoundarySerialized **75µs** vs HIP_eager **120µs** (~1.59×); hipGraph ≈ eager |
-| E3 MLX HSACO inventory | **PENDING** |
-| E4 design hook | **PENDING** (E1 green → design allowed next) |
+| E3 MLX HSACO inventory | **DONE** — qmm AOT **not** drop-in; JIT `.hsaco` on disk; see [`E3_HSACO.md`](E3_HSACO.md) |
+| E4 design hook | **PENDING** (E1 green; informed by E3) |
 | Engine wire | **NOT STARTED** (design only) |
 
 ## Fire log
+
+### 2026-08-02 — E3 MLX HSACO inventory
+
+- **Primary E-step:** E3 (hot op = quantized matmul / qmm).  
+- Clear Thought: sequentialthinking, decisionframework (op choice), metacognitivemonitoring, collaborative critique; explore pass on ROCm backend.  
+- **AOT qmm:** `quantized/qmm.hip` → `hip_objs/quantized/qmm.o` with offload bundle; launches via **`hipLaunchKernel` function pointers** (`add_kernel_node`), not `hipModule` symbols. **Drop-in Redline load: NOT FEASIBLE.**  
+- **JIT path:** disk cache `/tmp/mlx/0.32.0/hsaco/gfx1150/` (10× `.hsaco` + `.txt` maps) via `jit_module.cpp` / `hipModuleLoadData` — **format-feasible**, not hot qmm.  
+- Evidence: [`E3_HSACO.md`](E3_HSACO.md).  
+- **Next:** E4 `MLX_REDLINE_DECODE` design (prefer encoder shim / fixed small-op IB / recompile slice — not qmm unbundle-first).
 
 ### 2026-08-02 — E2 multi-kernel HIP wall vs AQL
 

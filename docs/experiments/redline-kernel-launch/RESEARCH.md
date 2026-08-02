@@ -123,7 +123,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | **E0** | Build Redline (warpfront) against local ROCm; note 7.13 vs 7.14 | **BUILD_OK** — see [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) |
 | **E1** | Run `dispatch_floor` / hipfire-6409 microbench on **gfx1150** if ROCm allows | **AQL MEASURED** — see [`E1_FLOOR.md`](E1_FLOOR.md) (~1.91× BoundarySerialized vs system-every); PM4 example tail N/A on gfx1150 |
 | **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | **MEASURED** — [`E2_MULTI.md`](E2_MULTI.md) (~1.5–1.6× host wall BoundarySerialized vs HIP eager; hipGraph ≈ eager) |
-| **E3** | Inventory whether MLX can export HSACO for one QMM | Feasible / not |
+| **E3** | Inventory whether MLX can export HSACO for one QMM | **DONE** — drop-in **not** feasible; JIT CO yes; see [`E3_HSACO.md`](E3_HSACO.md) |
 | **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | Design doc only until E1 green |
 
 **HARD BAN:** No fake TPS; no claiming Redline wins without logs on **this** GPU; no re-opening killed HIP-graph product decode.
@@ -155,6 +155,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) | E0 compile + HSACO evidence |
 | [`E1_FLOOR.md`](E1_FLOOR.md) | E1 AQL µs/dispatch on gfx1150 |
 | [`E2_MULTI.md`](E2_MULTI.md) | E2 HIP wall vs retained AQL |
+| [`E3_HSACO.md`](E3_HSACO.md) | MLX qmm / JIT HSACO feasibility |
 | [`harness/`](harness/) | E2 HIP + AQL host-wall sources |
 | [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
 | [`logs/`](logs/) | E0–E2 logs + floor CO |
