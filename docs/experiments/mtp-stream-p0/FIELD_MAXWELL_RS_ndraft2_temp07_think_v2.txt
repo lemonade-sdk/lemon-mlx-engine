@@ -1,0 +1,108 @@
+START 2026-08-01T17:55:28-07:00 tip=eba422d11efdba23a06394f5b6caa3c83dc0c7ad cell=MAXWELL_RS_SHORT_MT_v2_buffer_fix
+ENV QUANT_FUSE=1 QUANT_FUSE_GDN=1 LOAD_MTP_HEAD=1 --use-mtp --n-draft 2 --temperature 0.7 --top-p 0.9 thinking=ON max_tokens=512
+FIX: draft_buffer fill parity in mtp_speculative_step_sampled
+PROMPTS: T1 Maxwell overview; T2 Gauss differential; quit
+---
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled: n_draft=2 temperature=0.7 top_p=0.9 (rejection-sampling)
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [MTP] sampled mode (rejection sampling): MTP sampled mode (rejection sampling): temperature=0.7 top_p=0.9
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+Here's a thinking process:
+
+1.  **Analyze User Input:**
+   - **Topic:** Maxwell's equations
+   - **Format:** 8-12 short sentences
+   - **Requirements:** Name all four equations, give one physical meaning for each
+   - **Tone/Style:** Accurate and concise
+
+2.  **Identify Key Components:**
+   - Need to list all four Maxwell equations by name (or commonly accepted names)
+   - Provide one physical meaning for each
+   - Keep total sentence count between 8 and 12
+   - Ensure accuracy and conciseness
+
+3.  **Recall Maxwell's Equations & Names:**
+   - Gauss's Law for Electricity
+   - Gauss's Law for Magnetism
+   - Faraday's Law of Induction
+   - Ampère-Maxwell Law (or Ampère's Circuital Law with Maxwell's correction)
+
+4.  **Draft - Sentence by Sentence (mental):**
+   1. Maxwell’s equations are four fundamental laws that describe classical electromagnetism.
+   2. Gauss’s law for electricity states that electric charges produce electric fields.
+   3. It quantifies how electric flux through a closed surface equals the enclosed charge divided by permittivity.
+   4. Gauss’s law for magnetism asserts that magnetic monopoles do not exist.
+   5. It means magnetic field lines always form continuous closed loops with zero net flux.
+   6. Faraday’s law of induction explains how changing magnetic fields generate electric fields.
+   7. This principle underlies electromagnetic induction and powers electrical generators.
+   8. The Ampère-Maxwell law shows that electric currents and changing electric fields produce magnetic fields.
+   9. It unifies magnetism with moving charges and displacement current.
+   10. Together, these four equations predict that light is an electromagnetic wave.
+
+5.  **Check Constraints:**
+   - Count sentences: 10 (within 8-12 range) ✓
+   - Name all four: Gauss's law for electricity, Gauss's law for magnetism, Faraday's law of induction, Ampère-Maxwell law ✓
+   - One physical meaning for each: ✓ (each has a clear physical interpretation)
+   - Accurate and concise: ✓
+   - Check sentence count carefully: Let's count them explicitly.
+     1. Maxwell’s
+Prompt:     41 tokens, 41.3023 tokens/s, 0.992681s
+Generation: 512 tokens, 26.1388 tokens/s, 19.5878s
+
+
+> 
+Assistant: Here's a thinking process:
+
+1.  **Analyze User Input:**
+   - **Topic:** Gauss's law for electricity in differential form
+   - **Requirement 1:** Write only the equation in differential form
+   - **Requirement 2:** Provide exactly one sentence explaining its meaning
+   - **Constraints:** Implicitly, keep it concise and accurate as per the previous prompt's tone.
+
+2.  **Identify Key Components:**
+   - Equation: $\nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0}$
+   - Meaning: It states that the divergence of the electric field at a point is proportional to the electric charge density at that point.
+
+3.  **Draft Response:**
+   $\nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0}$
+   This equation means that electric charge is the source of diverging electric field lines in free space.
+
+4.  **Check Constraints:**
+   - Only differential form? Yes.
+   - One sentence on meaning? Yes.
+   - Accurate? Yes.
+   - Concise? Yes.
+
+   Wait, let's verify the exact wording of the prompt: "Now write only Gauss's law for electricity in differential form, then one sentence on what it means."
+   I should make sure I strictly follow "write only [equation] ... then one sentence". I'll format it clearly.
+
+   Equation: $\nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0}$
+   Meaning: It states that the divergence of the electric field at any point is directly proportional to the electric charge density at that point.
+
+   Count sentences: Exactly one for the meaning. The equation itself isn't a sentence, but I'll present it clearly. I'll make sure the entire response is just the equation and one sentence.
+
+   Let's double-check the differential form: $\nabla \cdot \mathbf{E} = \rho / \varepsilon_0$. Correct.
+   One sentence meaning: "This equation means that electric charge acts as a source for diverging electric field lines in space." (1 sentence)
+
+   All constraints met. Output matches.✅
+   I will output exactly that. No extra fluff.📝
+   *Self-Correction/Refinement during thought
+Prompt:     583 tokens, 124.722 tokens/s, 4.67438s
+Generation: 512 tokens, 26.2073 tokens/s, 19.5365s
+
+
+> EXIT:0 2026-08-01T17:56:18-07:00

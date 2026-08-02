@@ -1058,18 +1058,22 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
         }
     }
 
-    // Emit: d0 always, then accepted drafts.
-    std::vector<int> out;
-    out.reserve(static_cast<size_t>(accepted + 1));
-    out.push_back(draft_tokens[0]);
+    // Emit protocol must match greedy mtp_speculative_step:
+    // next() returns only d0 and drains draft_buffer_ for d1..d_accepted.
+    // y_ holds residual (reject) or bonus (full accept) as the *next* step's d0.
+    // Returning [d0, d1, ...] here without filling draft_buffer_ dropped every
+    // accepted draft under temp>0 (Maxwell garble: missing function words).
+    draft_buffer_.clear();
     for (int a = 0; a < accepted; ++a) {
-        out.push_back(draft_tokens[a + 1]);
+        draft_buffer_.push_back(draft_tokens[static_cast<size_t>(a + 1)]);
     }
+    draft_buffer_idx_ = 0;
+
     record_acceptance(n_draft, accepted);
     mtp_draft_proposed_ += std::max(0, n_draft - 1);
     mtp_draft_accepted_ += accepted;
     mtp_speculative_steps_++;
-    return out;
+    return {draft_tokens[0]};
 }
 
 std::vector<int> TokenIterator::mtp_speculative_step() {

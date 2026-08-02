@@ -1,0 +1,95 @@
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=21.9 GB, peak=21.9 GB, cache=10.5 GB
+MTP enabled: n_draft=2 temperature=0.7 top_p=0.9 (rejection-sampling)
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [MTP] sampled mode (rejection sampling): MTP sampled mode (rejection sampling): temperature=0.7 top_p=0.9
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+Here a process
+
+. **An User:**   **:**'s
+   **:**81 short, name all, one meaning for, accurate concise
+   ** Requirements 
+     Exactly81 sentences (short
+     Name four
+     Provide physical meaning per equation     Acc and
+
+2 Ident Maxwell FourationsStandard -/Integral, but'll use names clarity
+ -'s Law Electricity
+   Gauss Law forism   Faraday Law Ind
+   Amp-Mwell
+
+3 D Physical for:**   Gauss's Law (): charges produce fields thatge positive and on charges
+   Gauss's (agnetic Magneticoles not; field always closed.   Far's: changing field a electric field
+   Ampère-Mwell: currents changing fields generate circulating fields
+
+. ** Sent (ing -2 short sentences total):**   Maxwell’s unify electricity magnet into classical electromism 
+   First, Gauss law for electricity that charges diverging fields 
+  ,’s forism declares magneticoles not, magnetic lines close on.  ,aday’s explains a-ving field a electric field 
+  , Amp-Mwell reveals electric and changing fields both circulating fields 
+  , four describe how fields as waves 
+   predict the existence light and under all electromagnetic.5. ** Constraints
+   Count sentences 7 sentences Need -2
+   Let adjust exactly81 short while it and.   I split or a sentence to the, ensuring stays short.   draft
+ Maxwell’s unify electricity magnet into classical electromism 
+  ,’s for electricity states electric produce diver electric.  ,’s forism that monop do exist 
+ Consequently magnetic lines form closed.  ,aday’s explains a-ving field a electric field 
+  , Ampère-Mwell reveals electric and changing fields generate circulating fields 
+   four mathatically electromagnetic behavior 
+   collectively predict electromagnetic propagation at speed light
+
+  :8. All. Named all. Each has physical. Acc and.6. ** Accuracy & Concess
+   Gauss's (): Charges → field (∇· =�ε)..   Gauss's (agnetic No charge field lines close∇B )..   Far's: B induced E�× =�B�t Correct
+   Ampère-Mwell law Current changing E induced (�× =₀ +₀₀�E�t Correct
+   Physical meanings standard accurate
+   Sentence count exactly8 (Fits81 constraint
+   All short?, average ~1-2 words
+   Named all?.   One physical each Yes
+
+Prompt:     41 tokens, 28.6062 tokens/s, 1.43325s
+Generation: 512 tokens, 15.3924 tokens/s, 33.2631s
+
+
+> 
+Assistant: Here a process
+
+. **An User:**   Request "Now only Gauss's for in form, one sentence on it."   Constraints 
+     Only Gauss law for (ifferential)     Followed exactly sentence its
+     Must accurate concise2 Ident Key Components
+ -'s for (ifferential): � · =� /₀   Standard notation ��E �/₀ ( with permittivity free ε)   One-s physical: It that divergence the field any is to electric density that, electric are sources or of electric.3 Check Constraints
+ - form Yes ��E �/₀   Only that law Yes
+ - sentence on?.   Acc and?.4 Draft Response
+ �⋅E �/ε
+   equation that divergence the field any is proportional the charge at point meaning electric act the or of electric.5 Ref (-CrectionVerification
+ - notation Standard physics notation ε for permivity free. it just ε for general media but is for's context I stick ε.   Check: Differential form correct
+   Check sentence count for meaning Exactly sentence
+   Checkisen: It direct accurate
+ - constraints.   output the.
+   will exactly.
+  :'ll sure formatting clean No extra. Just equation the-s explanation as.
+  . 
+  : �⋅E �/ε
+   equation that divergence the field any is proportional the charge at point meaning electric act the or of electric.
+   (-CrectionVerification thought I ensure notation is andambiguous Using \nlacdotmath{} \ /vpsilon0 fine in plain as �⋅ =�/₀ The sayswrite only... then one sentence", I keep strictly that.)✅  .✅
+   matches response✅
+  Proceed]</think>�⋅ =�ε
+
+ equation that divergence the field any is proportional the charge at point meaning electric act the or of electric.
+<|im_start|><|im_start|>
+
+Prompt:     575 tokens, 126.591 tokens/s, 4.54217s
+Generation: 395 tokens, 14.8792 tokens/s, 26.5472s
+
+
+> 
