@@ -1,8 +1,8 @@
 # lemonade-sdk/lemon-mlx-engine — Complete Branch Map
 
 **Repo:** https://github.com/lemonade-sdk/lemon-mlx-engine  
-**As of:** 2026-08-02  
-**Working tip (this document lives on):** `fix/mtp-stream-p0` @ `6a59066`  
+**As of:** 2026-08-02 (S4 probe stamped on `exp/mtp-tps-ceiling`)  
+**Working tip (parent archive):** `fix/mtp-stream-p0` @ `875a39d` · **S4 child:** `exp/mtp-tps-ceiling`  
 **Canonical product PR for MTP stream work:** [#77](https://github.com/lemonade-sdk/lemon-mlx-engine/pull/77) (`fix/mtp-product`)  
 **Method:** full `git branch -r` / local inventory + open/merged PR scan + Clear Thought (sequentialthinking, first-principles, decisionframework, visualreasoning, metacognitivemonitoring).
 
@@ -66,6 +66,7 @@ origin/main  ──┬── fix/mtp-product          (#77 OPEN)     lean produc
 | **`fix/mtp-stream-p0`** | `6a59066` | **+45** (diverged base) | **Full WIP tip:** StreamGuard → C1–C15 ladder → RS → residuals → Maxwell → review docs; **all probe .txt** | No — use #77 for review |
 | **`exp/mtp-stream-full`** | `6a59066` (same as above) | +45 | Explicit **experiment archive alias** of full tip | No |
 | **`exp/prefill-hip-graph`** | `b99cb2f` | +1 | Prefill F1–F3 docs/A-B only (missed ≥10% pp/s bar); mlx `use_hip_graphs` opt-in patch note | Optional draft docs PR only |
+| **`exp/mtp-tps-ceiling`** | (child of `875a39d`) | parent+docs | **S4 batch-verify re-probe + n_draft=3 post-P0-B** — **KILL**; plateau ~27 t/s | No product PR (evidence only) |
 
 ### Experiment doc trees on full tip
 
@@ -178,8 +179,8 @@ Create with: `git checkout -b exp/<name> origin/main` **or** from `fix/mtp-strea
 
 | Proposed branch | Create-from | Hypothesis | Kill / exit criteria | Priority |
 |-----------------|-------------|------------|----------------------|----------|
-| **`exp/mtp-batch-verify-reprobe`** | `fix/mtp-stream-p0` | Post-fuse stack may amortize batch T=2 verify (C1-era was 86 ms = 2.26×T₁) | `MLX_MTP_BATCH_VERIFY=1`, n≥3 pinned Fourier; **kill if T₂ > 67.7 ms**; reopen WS if ≤60 ms | **P0 — next probe day** |
-| **`exp/mtp-ndraft3-p0b`** | `fix/mtp-stream-p0` | Pre-P0-B n_draft=3 22.71 t/s is **invalid** (final-draft KV starve) | Measure n_draft=3 greedy + RS after P0-B; kill deep-draft if still < C7 | **P0 — same day as batch** |
+| ~~**`exp/mtp-batch-verify-reprobe`**~~ | → merged into **`exp/mtp-tps-ceiling`** | — | **DONE S4: T₂ mean 77.1 ms > 67.7 → KILL** | closed |
+| ~~**`exp/mtp-ndraft3-p0b`**~~ | → same | — | **DONE S4: seq n3 = 18.29 t/s still < n2** | closed |
 | **`exp/mtp-rs-batch-verify`** | after batch probe if live | RS −7% vs greedy is serial T=1 structure; batch verify reclaims | Only if batch probe reopens WS; else N/A | P1 |
 | **`exp/mtp-h1-dgpu`** | product or tip | MTP relative win scales on launch-bound dGPU vs 890M 8 CU | Hardware day; A/B eager vs MTP batch/seq; decide product surface | **P1 strategic** |
 | **`exp/mtp-h2-small-model`** | tip (H2 logs already exist) | 0.8B ~100 t/s is the real MTP home if 35B plateaus | Formalize n≥5 protocol, document product claim | P2 (docs formalize) |

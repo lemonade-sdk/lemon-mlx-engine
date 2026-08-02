@@ -1,8 +1,15 @@
 # MASTER_WORKLOG — mtp-stream-p0
 
-**Branch:** `fix/mtp-stream-p0`  
+**Branch:** `fix/mtp-stream-p0` (S4 TPS ceiling child: `exp/mtp-tps-ceiling`)  
 **Model:** LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit · gfx1150 · single process only  
 **Hard bans:** LoopBrake / auto-disable MTP; dual 35B; fake TPS; claim Maxwell green without log  
+
+## 2026-08-01 S4 — TPS ceiling probe (06 §4) — **KILL / PLATEAU**
+- Branch: `exp/mtp-tps-ceiling` ← child of tip `875a39d`; full stack (fuse, StreamGuard, P0-B, RS) behind it.
+- Env **included `MTP_TIMING=1`** (141–145 `[mtp-t]` rows; code gate requires getenv set).
+- Kill line **67.7 ms** (not 55). Batch n2 verify_on_accept **mean 77.1 / med 71.2 ms**; gen **20.89 t/s** vs seq **27.22**.
+- Seq n3 post-P0-B **18.29 t/s** (old 22.71 invalid) — deep draft still dead.
+- **No** product batch-verify rewrite. Plateau ~27 t/s sequential n_draft=2. Logs: `docs/experiments/mtp-tps-ceiling/`. 
 
 ## Stop bar
 - (a) Maxwell-quality gate PASS for MTP temp=0.7 thinking with coherent multi-turn log, **AND**

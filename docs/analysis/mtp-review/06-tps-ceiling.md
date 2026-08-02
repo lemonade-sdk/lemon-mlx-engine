@@ -51,24 +51,45 @@ The old batch path remains compiled behind `MLX_MTP_BATCH_VERIFY=1` — which is
 
 ## 4. The one untried lever: re-probe batch verify on the current stack
 
-The 86 ms datum is **C1-era**. Since then the stack gained quant-fuse (+GDN-fuse opt-in), graph-decode mode maturity, and the P0-B draft-cache fix. **Nobody has re-measured batch verify on this stack.** The probe is 30 minutes:
+The 86 ms datum is **C1-era**. Since then the stack gained quant-fuse (+GDN-fuse opt-in), graph-decode mode maturity, and the P0-B draft-cache fix. **Status: MEASURED 2026-08-01 on `exp/mtp-tps-ceiling` (child of `fix/mtp-stream-p0`).**
+
+### 4.0 Field result — **KILL** (plateau stamped)
+
+Full write-up: [`docs/experiments/mtp-tps-ceiling/RESULTS.md`](../../experiments/mtp-tps-ceiling/RESULTS.md).  
+**MTP_TIMING was on** (`MTP_TIMING=1` in env; 141–145 `[mtp-t]` rows per n_draft=2 log — code only prints those when `getenv("MTP_TIMING")` is set).
+
+| Config | gen t/s | Batch verify on accept (mean / median) | Warm mean total ms | Decision |
+|--------|---------|----------------------------------------|--------------------|----------|
+| **Seq n_draft=2** (baseline) | **27.216** | n/a (C4 residual verify field ~4 ms; wall = **total 66.5 ms**) | 66.5 | = C7 plateau |
+| **Batch n_draft=2** `MLX_MTP_BATCH_VERIFY=1` | **20.890** | **77.1 / 71.2 ms** | 84.0 | **KILL (>67.7)** |
+| Seq n_draft=3 post-P0-B | 18.290 | — | 121.9 | deep draft still loses |
+| Batch n_draft=3 | 10.152 | 175.7 / 101.4 ms | 188.5 | kill |
+
+**Timer note:** sequential C4/C7 path attributes first trunk T=1 into the `draft=` field (joint draft‖verify); use **gen t/s** and **`total=`** for sequential wall. Batch path attributes multi-token forward to **`verify=`** — that is the correct §4 comparator to 67.7 ms.
+
+**Product:** do **not** open batch-verify rewrite WS on gfx1150 35B. Keep sequential default; leave `MLX_MTP_BATCH_VERIFY=1` opt-in only.
+
+---
+
+### 4.1 Pre-committed kill table (unchanged; kill line = **67.7 ms**, not 55)
 
 ```bash
 MLX_MTP_BATCH_VERIFY=1 MLX_ENABLE_QUANT_FUSE=1 MLX_ENABLE_QUANT_FUSE_GDN=1 \
-  ./build/examples/chat --model LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit \
-  --use-mtp --n-draft 2 --temperature 0 MTP_TIMING=1   # pinned Fourier prompt, n≥3
+  MTP_TIMING=1 MTP_DEBUG=1 MLX_LOAD_MTP_HEAD=1 \
+  ./build/chat LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit \
+  --use-mtp --n-draft 2 --temperature 0 --top-p 1 --max-tokens 256 --no-think --ignore-eos
 ```
 
 **Break-even algebra** (E[tokens]=1.85; current wall 67.7 ms/step = 27.34 t/s):
 
-| Batch T=2 verify | Resulting t/s | Δ vs C7 | Decision |
-|---|---|---|---|
-| ≤ 50 ms | ≥ 37.0 (up to ~41 at 45ms) | **+35–50%** | **Reopen: build batch verify for real** (3–5 d: per-position hidden stash, causal mask over draft tokens, KV rollback on reject — `set_position` rollback API already exists, kv_cache.h:93-95; golden tests) |
-| 50–60 ms | 30.8–37.0 | +13–35% | Worth building; size the win at n=3 too |
-| 60–67 ms | 27.6–30.8 | +1–13% | Marginal — only if n=3 batch tips it |
-| **> 67.7 ms** | < 27.34 | **≤ 0** | **KILL — declare plateau with this row as evidence** (C1's 86 ms ⇒ 21.5 t/s, confirming why C2 was right) |
+| Batch T=2 verify | Resulting t/s | Δ vs C7 | Decision | S4 outcome |
+|---|---|---|---|---|
+| ≤ 50 ms | ≥ 37.0 (up to ~41 at 45ms) | **+35–50%** | **Reopen: build batch verify for real** | — |
+| 50–60 ms | 30.8–37.0 | +13–35% | Worth building | — |
+| 60–67 ms | 27.6–30.8 | +1–13% | Marginal | — |
+| **> 67.7 ms** | < 27.34 | **≤ 0** | **KILL — declare plateau** | **HIT (77.1 mean / 71.2 med; gen 20.89)** |
 
-**Same probe day, second row:** `--n-draft 3` under the **P0-B fix**. The 22.71 regression was measured while the final draft step was KV-starved (finding B) — that datum is invalid. Batch T=3 break-even is 94 ms (E[tokens] ≈ 1+p+p² ≈ 2.57); at T₃=60 ms that's ~43 t/s. One measurement restores or retires deep draft.
+**n_draft=3 under P0-B:** old 22.71 was invalid (final-draft KV starve). **New valid seq row = 18.29 t/s** — still regresses vs n_draft=2. Deep draft retired on this machine.
 
 ## 5. What changes the verdict if §4 kills
 
@@ -85,13 +106,13 @@ None of the open items from `05-p0-review.md` (R-1 residual temp-scaling, R-2/R-
 
 ## 7. Recommendation & decision log
 
-1. **Run the §4 probe (today, ~30 min).** Two ladder rows: batch T=2, and n_draft=3 post-P0-B. Kill criteria pre-committed above.
-2. If T₂ ≤ 60 ms → open WS5 "batch verify" (3–5 d, golden-tested, rollback-first). If T₂ > 67.7 ms → plateau memo, MTP stays opt-in on 890M.
-3. Either way, escalate **H1 dGPU day** as the stakeholder decision on MTP's product scope (risk register R6 companion).
-4. Do not fund further draft-side micro-optimization (C11–C15 class) — §2 proves the term is inert under sequential verify.
+1. ~~**Run the §4 probe.**~~ **DONE** (`exp/mtp-tps-ceiling`, RESULTS.md). T₂ mean **77.1 ms > 67.7** → **KILL**.
+2. ~~If T₂ ≤ 60 ms → open WS5.~~ **Not opened.** Plateau memo = this section + RESULTS.
+3. Escalate **H1 dGPU day** as the stakeholder decision on MTP's product scope (only plausible reopen for batch amortization).
+4. Do not fund further draft-side micro-optimization (C11–C15 class) — §2 identity confirmed by S4 (accept rate healthy, wall still sequential).
 
-**Decision record (`mtp-tps-next-action`, weighted-criteria):** probe dominates (cost 0.06 d, decision value maximal, HARD-BAN-exact); dGPU-day is the strategic follow-on; T₁ work is orthogonal; declare-plateau is the evidence-backed default if the probe fails.
+**Decision record (`mtp-tps-next-action`, post-S4):** probe closed; **declare plateau ~27 t/s** single-stream 35B @ 890M; sequential default; batch opt-in only; H1/H2 strategic; T₁ work orthogonal (don't credit MTP).
 
 ## 8. Confidence & limits
 
-Overall 0.9 on the ceiling arithmetic (identity, not estimate — confirmed by C6 rows: verify=35.7 ms/token exactly T₁). 0.85 that batch verify will re-measure ≥ 60 ms (GDN recurrence argument + C1 datum), i.e., **prior says plateau likely; the probe exists because the fuse-stack delta is genuinely unmeasured**, not because optimism demands it. 0.7 on the GDN-linearity claim (C2 comment + quant-fuse GDN flag are the evidence; per-layer GDN fraction not exhaustively audited). No invented numbers: every value in §1 traces to a named log or code comment.
+Overall 0.9 on the ceiling arithmetic (identity). **Post-S4: 0.95 that batch verify does not win on this stack** (measured, not prior). Prior 0.85 on fail was directionally correct. Residual limits: single Fourier-style prompt family; one thermal order (seq before batch); batch timer includes mamba capture/rollback — a rewrite might shave some ms but **gen wall already −23% vs sequential**, so product rewrite is not justified. No invented numbers: every S4 value traces to named logs under `docs/experiments/mtp-tps-ceiling/`.
