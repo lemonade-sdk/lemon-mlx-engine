@@ -24,7 +24,7 @@ Program state (high level):
 | Field | Value |
 |-------|--------|
 | **Result** | **PROGRESS** (not PLATEAU-STOPPED) |
-| **Branch** | `exp/mtp-t1-attack` @ `e6a5eab` (pre-commit; post-commit updates this row if needed) |
+| **Branch** | `exp/mtp-t1-attack` @ `199a804` |
 | **Parent archive** | `fix/mtp-stream-p0` / siblings @ `875a39d` |
 | **Product tip** | `fix/mtp-product` @ `777f398` (#77) |
 | **GPU** | ROCm GPU use **2%** at fire start — idle enough, but **no new probe** (docs formalize only) |
