@@ -1,0 +1,19 @@
+START 2026-08-01T16:52:07-07:00 probe=short_absorb_one_graph tip=56d131b
+ENV_BANNER: short | ABSORB+ONE_GRAPH+USE_HIP_GRAPHS+REPLAY STEP=128
+---
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=18.3 GB, peak=20.8 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [prefill-graph] ONE_GRAPH=1 ABSORB_TAIL=1 HIP_GRAPH_PREFILL=<unset> HIP_GRAPH_DECODE=<unset> USE_HIP_GRAPHS=1 PREFILL_REPLAY=1 PREFILL_STEP=128 prompt_tokens=22 window=128
+[prefill] prompt_tokens=22 host_build=0.754251s gpu_exec=0.0353807s total=0.789632s pp/s=27.8611
+Maxwell's equations are a set of
+Prompt:     22 tokens, 27.8611 tokens/s, 0.789632s
+Generation: 8 tokens, 31.6999 tokens/s, 0.252366s
+
+
+> EXIT:0

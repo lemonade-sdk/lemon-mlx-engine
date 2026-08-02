@@ -1,0 +1,44 @@
+diff --git a/mlx/backend/rocm/device.cpp b/mlx/backend/rocm/device.cpp
+index f71cd702..96c0a613 100644
+--- a/mlx/backend/rocm/device.cpp
++++ b/mlx/backend/rocm/device.cpp
+@@ -38,15 +38,31 @@ inline bool is_empty_dim(dim3 dim) {
+ static std::atomic<bool> g_graph_decode_mode{false};
+ 
+ bool use_hip_graphs() {
+-  // The rebuild-every-eval graph-build path is a net loss vs eager (and the
+-  // prefill variant segfaults on RDNA3.5). Decode uses build-once
+-  // capture/replay (decode_capture_*) and prefill uses the WMMA GEMM — neither
+-  // goes through here — so this path is permanently off.
++  // Default OFF. The rebuild-every-eval graph-build path was a net loss vs
++  // eager and historically segfaulted on RDNA3.5 prefill; pure decode uses
++  // decode_capture_* instead. Opt-in restored for honest prefill-graph A/B
++  // (lemon-mlx prefill-hip-graph experiment):
++  //   MLX_HIP_GRAPH_PREFILL=1  — multi-token / non-decode-mode evals
++  //   MLX_HIP_GRAPH_DECODE=1   — L=1 when graph_decode_mode is on
++  //   MLX_USE_HIP_GRAPHS=1     — both
++  // Pair with MLX_GRAPH_PREFILL_REPLAY=1 to ExecUpdate stable prefill-chunk
++  // topologies. Leave unset for product (eager).
+   //
+-  // Train graphs: also hard-off until a TrainArena (see RocmAllocator
+-  // train_arena_*) wraps the step tape with stable addresses. Flipping this
+-  // without an arena reintroduces aperture violations / wrong loss.
+-  return false;
++  // Train graphs: also require a TrainArena (stable addresses) or aperture
++  // violations / wrong loss return.
++  static const bool legacy = [] {
++    const char* e = std::getenv("MLX_USE_HIP_GRAPHS");
++    return e && (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0);
++  }();
++  static const bool prefill = legacy || [] {
++    const char* e = std::getenv("MLX_HIP_GRAPH_PREFILL");
++    return e && (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0);
++  }();
++  static const bool decode = legacy || [] {
++    const char* e = std::getenv("MLX_HIP_GRAPH_DECODE");
++    return e && (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0);
++  }();
++  return g_graph_decode_mode.load(std::memory_order_relaxed) ? decode : prefill;
+ }
+ 
+ // Count of inline (graph-splitting) launches — library GEMM / JIT / memset run
