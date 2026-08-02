@@ -304,3 +304,17 @@ On the field 35B MTP mlx-4bit model, **lm_head is already quantized (U32 pack + 
 | **Decision** | **Agree directionally** with field data: product decode HIP **OFF**; pure **OFF**; prefill **opt-in only** |
 | **Doc** | `docs/experiments/mtp-t1-lmhead-graph/HIP_GRAPH_STANCE.md` |
 
+
+## Fire 2026-08-02 — further improve review (still open)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** (roadmap, not re-probe killed levers) |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **User** | Still willing to review and improve further |
+| **Clear Thought** | decisionframework remaining levers + sequential open/closed map |
+| **Doc** | `mtp-t1-lmhead-graph/FURTHER_IMPROVE.md` |
+| **Still open** | Design C1 lm_head residual (largest on-box tax ~11.5% T₁); product hygiene; H1/H2 |
+| **Closed** | L2 batch, L4 decode HIP, C11–C15, pure graph, “quantize head” |
+| **Next if continue** | C1 temp=0 two-stage / shortlist implement + e2e measure (any +Δ notable) |
+

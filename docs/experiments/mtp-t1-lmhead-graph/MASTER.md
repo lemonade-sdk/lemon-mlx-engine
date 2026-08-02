@@ -14,8 +14,8 @@
 | # | Lever | Status | Notes |
 |---|--------|--------|-------|
 | **2** | Batch-verify re-probe (06 §4) | **LEVER2_CLOSED / KILL** | Confirmed from `exp/mtp-tps-ceiling` S4 — **do not re-run** |
-| **3** | lm_head traffic cut (T₁) | **A+B+C DONE — implement PARKED** | 4-bit; **3.87 ms ~11.5% T₁**; design [`DESIGN_C.md`](DESIGN_C.md); free-head ceiling ~+13% sketch only |
-| **4** | Graph decode MoE+GDN 35B | **LEVER4_KILL** | HIP −3.6% vs eager; pure **garble + fake TPS ban**; see [`LEVER4_graph_inventory.md`](LEVER4_graph_inventory.md) |
+| **3** | lm_head traffic cut (T₁) | **OPEN for implement** | 4-bit tax **~3.87 ms ~11.5% T₁**; design done — **C1 next** if we keep improving ([`FURTHER_IMPROVE.md`](FURTHER_IMPROVE.md)) |
+| **4** | Graph decode MoE+GDN 35B | **LEVER4_KILL** | HIP −3.6%; pure VOID; prefill-only stance [`HIP_GRAPH_STANCE.md`](HIP_GRAPH_STANCE.md) |
 
 ---
 
