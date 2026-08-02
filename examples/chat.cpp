@@ -80,7 +80,9 @@ struct CliArgs {
     int kv_group_size = 64; // KV cache quantization group size
     int ctx_size = 0;       // Context size for KV cache pre-allocation (0=auto)
     bool use_mtp = false;
-    int n_draft_tokens = 1;
+    int n_draft_tokens = 2;   // γ≈1 productive default (C7); was 1 (no speculation)
+    bool temperature_set = false;
+    bool top_p_set = false;
     int device = -1;          // GPU index to use (-1 = auto / default device 0)
     bool list_devices = false;
     bool ignore_eos = false;  // Benchmark: keep generating to --max-tokens (ignore EOS)
@@ -92,17 +94,17 @@ static CliArgs parse_args(int argc, char* argv[]) {
         std::cerr << "Usage: " << argv[0] << " <model_id_or_directory> [options]\n"
                   << "  --system-prompt \"...\"   System instructions\n"
                   << "  --max-tokens N          Max tokens to generate (default: 4096)\n"
-                  << "  --temperature T         Sampling temperature (default: 0.7)\n"
-                  << "  --top-p P               Nucleus sampling (default: 0.9)\n"
-                  << "  --repetition-penalty F  Repetition penalty (default: off)\n"
+                  << "  --temperature T         Sampling temperature (default: 0.7; forced 0 with --use-mtp)\n"
+                  << "  --top-p P               Nucleus sampling (default: 0.9; forced 1 with --use-mtp)\n"
+                  << "  --repetition-penalty F  Repetition penalty (default: off; disallowed with --use-mtp)\n"
                   << "  --memory-limit MB       GPU wired memory limit\n"
                   << "  --no-think              Disable thinking/reasoning (Qwen3)\n"
                   << "  --raw                   Skip chat template, raw encoding\n"
                   << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                   << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
-                  << "  --use-mtp               Enable MTP speculative decode (scaffolding)\n"
-                  << "  --n-draft N             MTP block size per step (default: 1; try 2 or 4)\n"
+                  << "  --use-mtp               Enable MTP speculative decode (v1 greedy-only: temp=0, top_p=1)\n"
+                  << "  --n-draft N             MTP block size per step (default: 2)\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
         std::exit(1);
@@ -116,8 +118,10 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.max_tokens = std::stoi(argv[++i]);
         } else if (flag == "--temperature" && i + 1 < argc) {
             args.temperature = std::stof(argv[++i]);
+            args.temperature_set = true;
         } else if (flag == "--top-p" && i + 1 < argc) {
             args.top_p = std::stof(argv[++i]);
+            args.top_p_set = true;
         } else if (flag == "--repetition-penalty" && i + 1 < argc) {
             args.repetition_penalty = std::stof(argv[++i]);
         } else if (flag == "--memory-limit" && i + 1 < argc) {
@@ -145,6 +149,12 @@ static CliArgs parse_args(int argc, char* argv[]) {
         } else if (flag == "--ignore-eos") {
             args.ignore_eos = true;
         }
+    }
+    // MTP v1 is greedy-only: coerce unset chat defaults (0.7/0.9) so bare
+    // --use-mtp works; explicit non-greedy flags still fail at TokenIterator.
+    if (args.use_mtp) {
+        if (!args.temperature_set) args.temperature = 0.0f;
+        if (!args.top_p_set) args.top_p = 1.0f;
     }
     return args;
 }
@@ -263,8 +273,10 @@ int main(int argc, char* argv[]) {
         if (const char* e = std::getenv("MLX_PREFILL_STEP"))
             params.prefill_step_size = std::atoi(e);
         if (args.use_mtp) {
-            std::cerr << "MTP enabled (scaffolding): n_draft="
-                      << args.n_draft_tokens << "\n";
+            std::cerr << "MTP enabled (v1 greedy-only): n_draft="
+                      << args.n_draft_tokens
+                      << " temperature=" << args.temperature
+                      << " top_p=" << args.top_p << "\n";
         }
 
         // Use ChatSession if chat template is available and not in raw mode.

@@ -47,7 +47,7 @@ struct CliArgs {
     bool no_download = false;
     int max_loaded = 1;
     bool use_mtp = false;
-    int n_draft_tokens = 3;
+    int n_draft_tokens = 2;  // γ≈1 C7 default; was 3 (hits multi-draft KV path)
 };
 
 static CliArgs parse_args(int argc, char* argv[]) {
@@ -95,9 +95,9 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --host HOST             Bind address (default: 127.0.0.1)\n"
                       << "  --port PORT             Listen port (default: 8080)\n"
                       << "  --max-tokens N          Default max tokens (default: 4096)\n"
-                      << "  --temperature T         Default temperature (default: 0.6)\n"
+                      << "  --temperature T         Default temperature (default: 0.6; forced 0 with --use-mtp)\n"
                       << "  --top-p P               Default top-p (default: 1.0)\n"
-                      << "  --repetition-penalty F  Default repetition penalty (off)\n"
+                      << "  --repetition-penalty F  Default repetition penalty (off; disallowed with --use-mtp)\n"
                       << "  --memory-limit MB       GPU wired memory limit\n"
                       << "  --no-think              Disable thinking/reasoning\n"
                       << "  --no-download           Don't auto-download models from HF Hub\n"
@@ -105,8 +105,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                       << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                       << "  --ctx-size N            Pre-allocate KV cache (0=auto)\n"
-                      << "  --use-mtp               Enable MTP speculative decoding (model must have mtp.* weights)\n"
-                      << "  --n-draft-tokens N      MTP draft tokens per step (default: 3)\n"
+                      << "  --use-mtp               Enable MTP speculative decoding (v1 greedy-only; model needs mtp.*)\n"
+                      << "  --n-draft-tokens N      MTP draft tokens per step (default: 2)\n"
                       << "\n"
                       << "Endpoints:\n"
                       << "  GET  /health              Health check\n"
@@ -158,6 +158,13 @@ int main(int argc, char* argv[]) {
         manager->set_max_loaded(args.max_loaded);
 
         // Build default params.
+        // MTP v1 is greedy-only: when --use-mtp, default temperature/top_p to
+        // greedy so omitted OpenAI request fields do not brick the server.
+        // Per-request non-greedy + use_mtp is rejected with HTTP 400 in server.cpp.
+        if (args.use_mtp) {
+            args.temperature = 0.0f;
+            args.top_p = 1.0f;
+        }
         mlx_lm::GenerateParameters default_params;
         default_params.temperature = args.temperature;
         default_params.top_p = args.top_p;

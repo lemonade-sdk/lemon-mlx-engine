@@ -3,6 +3,12 @@
 **Branch:** `fix/mtp-stream-p0`  
 **Model:** LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit · gfx1150 · full quant fuse ON  
 
+### Fire 1 — P0-A/P0-B correctness (greedy contract + γ>1 draft KV)
+
+- **P0-A:** MTP draft+verify are device `argmax` only; non-greedy `temperature`/`top_p`/`repetition_penalty` now **hard-error** (`mtp_greedy_only_violation` → `TokenIterator` throw; server HTTP 400). Chat `--use-mtp` coerces unset temp/top_p to 0/1. **MTP v1 = greedy-only.**
+- **P0-B:** `mtp_run_draft_chain` passes MTP KV on the **final** draft step when `use_mtp_kv` (n_draft≥3); n_draft=2 still skips MTP KV (C7).
+- **Defaults:** chat + server `n_draft` default **2** (server was 3).
+
 ## Field ladder (256-tok, no-think, temp=0, n_draft=2 unless noted)
 
 | Config | gen t/s | warm draft_ms | warm verify_ms | Notes |

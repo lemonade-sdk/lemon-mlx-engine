@@ -13,6 +13,7 @@
 #include <numeric>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
 
 #if defined(MLX_BUILD_ROCM)
 // Decode-mode toggle (defined in mlx/backend/rocm/eval.cpp; declared here to
@@ -193,6 +194,38 @@ AnySampler AnySampler::from_params(const GenerateParameters& params) {
         return AnySampler(TopPSampler(params.temperature, params.top_p));
     } else {
         return AnySampler(CategoricalSampler(params.temperature));
+    }
+}
+
+std::string mtp_greedy_only_violation(const GenerateParameters& params) {
+    // Match AnySampler::from_params greedy branch: temp==0 is ArgMax.
+    // top_p in (0,1) would engage nucleus if sampling were wired; refuse it.
+    // repetition_penalty absent or exactly 1.0 is a no-op in RepetitionProcessor.
+    if (params.temperature != 0.0f) {
+        return "MTP v1 is greedy-only: require temperature=0, top_p=1, and no "
+               "repetition_penalty (or 1.0). Got temperature=" +
+               std::to_string(params.temperature) +
+               ". Pass --temperature 0 (chat) or \"temperature\": 0 (API).";
+    }
+    if (params.top_p > 0.0f && params.top_p < 1.0f) {
+        return "MTP v1 is greedy-only: require temperature=0, top_p=1, and no "
+               "repetition_penalty (or 1.0). Got top_p=" +
+               std::to_string(params.top_p) + ".";
+    }
+    if (params.repetition_penalty.has_value() &&
+        params.repetition_penalty.value() != 1.0f) {
+        return "MTP v1 is greedy-only: require temperature=0, top_p=1, and no "
+               "repetition_penalty (or 1.0). Got repetition_penalty=" +
+               std::to_string(params.repetition_penalty.value()) + ".";
+    }
+    return {};
+}
+
+static void enforce_mtp_greedy_only(const GenerateParameters& params) {
+    auto err = mtp_greedy_only_violation(params);
+    if (!err.empty()) {
+        std::cerr << "[MTP] " << err << "\n";
+        throw std::invalid_argument(err);
     }
 }
 
@@ -702,6 +735,8 @@ TokenIterator::TokenIterator(
     // short-circuits to MTP when use_mtp_, so pure never runs on the same request —
     // but operators may set both env flags by mistake. Log once so M6 is auditable.
     if (use_mtp_) {
+        // P0-A: draft+verify are argmax-only; refuse non-greedy sampling params.
+        enforce_mtp_greedy_only(params);
         const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
         if (pure && pure[0] == '1' && pure[1] == '\0') {
             static bool logged = false;
@@ -768,6 +803,8 @@ TokenIterator::TokenIterator(
     , accept_history_(kAcceptHistorySize, 1)
 {
     if (use_mtp_) {
+        // P0-A: draft+verify are argmax-only; refuse non-greedy sampling params.
+        enforce_mtp_greedy_only(params);
         const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
         if (pure && pure[0] == '1' && pure[1] == '\0') {
             static bool logged_ext = false;
@@ -803,6 +840,9 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
     // C7: MTP KV only needed when drafting ≥2 tokens in one chain (n_draft≥3).
     // Default γ≈1 path is n_draft=2 → a single draft step; skip cache reset +
     // update (rope offset 0, no write) to cut draft bandwidth/launches.
+    // P0-B: when use_mtp_kv, pass the cache on every draft step including the
+    // final one so the last draft can attend to prior draft keys (RoPE offset).
+    // Previously i < n_draft-1 nulled the final step and starved self-attn history.
     const bool use_mtp_kv = (n_draft > 2) && !mtp_caches_.empty();
     if (use_mtp_kv) {
         for (auto& c : mtp_caches_) {
@@ -828,10 +868,8 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
 
     for (int i = 1; i < n_draft; ++i) {
         auto prev_embed = context_.embed_fn(prev_tok_arr);
-        // Pass MTP KV only when a later draft step will read it (i < n_draft-1).
-        KVCache* mtp_cache = (use_mtp_kv && i < n_draft - 1)
-            ? &mtp_caches_[0]
-            : nullptr;
+        // Pass MTP KV for all multi-draft steps (read prior keys on final step too).
+        KVCache* mtp_cache = use_mtp_kv ? &mtp_caches_[0] : nullptr;
         hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{}, mtp_cache);
         auto norm_h = mtp_head->apply_output_norm(hidden);
         auto logits = context_.apply_lm_head_fn(norm_h);

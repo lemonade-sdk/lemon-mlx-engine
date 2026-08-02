@@ -454,15 +454,30 @@ struct Server::Impl {
         }
 
         // Build generation parameters from request + defaults.
+        // Only override sampling fields when the client JSON includes them so
+        // server --use-mtp greedy defaults (temperature=0) are not clobbered by
+        // ChatCompletionRequest struct defaults (temperature=0.6).
         GenerateParameters params = defaults;
-        params.temperature = chat_req.temperature;
-        params.top_p = chat_req.top_p;
+        if (body.contains("temperature") && !body.at("temperature").is_null()) {
+            params.temperature = chat_req.temperature;
+        }
+        if (body.contains("top_p") && !body.at("top_p").is_null()) {
+            params.top_p = chat_req.top_p;
+        }
         params.max_tokens = chat_req.max_tokens;
         if (chat_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = chat_req.repetition_penalty;
         }
         if (chat_req.use_mtp) {
             params.use_mtp = chat_req.use_mtp;
+        }
+        // P0-A: MTP v1 is greedy-only — fail closed with HTTP 400 before work.
+        if (params.use_mtp) {
+            auto mtp_err = mtp_greedy_only_violation(params);
+            if (!mtp_err.empty()) {
+                send_error(res, 400, mtp_err);
+                return;
+            }
         }
 
         if (chat_req.stream) {
@@ -506,14 +521,25 @@ struct Server::Impl {
         }
 
         GenerateParameters params = defaults;
-        params.temperature = comp_req.temperature;
-        params.top_p = comp_req.top_p;
+        if (body.contains("temperature") && !body.at("temperature").is_null()) {
+            params.temperature = comp_req.temperature;
+        }
+        if (body.contains("top_p") && !body.at("top_p").is_null()) {
+            params.top_p = comp_req.top_p;
+        }
         params.max_tokens = comp_req.max_tokens;
         if (comp_req.repetition_penalty > 0.0f) {
             params.repetition_penalty = comp_req.repetition_penalty;
         }
         if (comp_req.use_mtp) {
             params.use_mtp = comp_req.use_mtp;
+        }
+        if (params.use_mtp) {
+            auto mtp_err = mtp_greedy_only_violation(params);
+            if (!mtp_err.empty()) {
+                send_error(res, 400, mtp_err);
+                return;
+            }
         }
 
         handle_completion_blocking(res, model, comp_req, params);

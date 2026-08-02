@@ -95,6 +95,13 @@ private:
     SamplerVariant impl_;
 };
 
+// MTP v1 sampling contract: draft+verify use device argmax only, so temperature,
+// top_p, and repetition_penalty are not applied on the speculative path.
+// Returns empty if params are allowed for MTP; otherwise a human-readable error.
+// Callers that will actually run MTP (use_mtp with a loaded head) must refuse
+// non-empty results rather than silently falling back to greedy.
+std::string mtp_greedy_only_violation(const GenerateParameters& params);
+
 // ---------------------------------------------------------------------------
 // LogitProcessor — interface for modifying logits before sampling.
 //
