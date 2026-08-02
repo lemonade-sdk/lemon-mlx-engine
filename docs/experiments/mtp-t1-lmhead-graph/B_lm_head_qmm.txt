@@ -1,0 +1,57 @@
+=== RUN bench_lm_head real weights ===
+date=2026-08-01T19:34:02-07:00 tip=108d937 branch=exp/mtp-t1-lmhead-graph
+gpu_before:
+
+
+======================================== ROCm System Management Interface ========================================
+================================================== Concise Info ==================================================
+Device  Node  IDs              Temp    Power     Partitions          SCLK  MCLK  Fan  Perf  PwrCap  VRAM%  GPU%  
+[3m              (DID,     GUID)  (Edge)  (Socket)  (Mem, Compute, ID)                                              [0m
+==================================================================================================================
+0       1     0x150e,   57550  42.0°C  11.013W   N/A, N/A, 0         N/A   N/A   0%   auto  N/A     14%    2%    
+==================================================================================================================
+============================================== End of ROCm SMI Log ===============================================
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+=== bench_lm_head ===
+device_default note: MLX default device
+geometry vocab=248320 hidden=2048 bits=4 group_size=64
+warm=3 timed_iters=10
+loading "/tmp/lmhead_bench/lm_head_only.safetensors" ...
+load wall_ms=0.04257 n_tensors=3
+lm_head.weight shape=(248320,256) dtype=uint32
+lm_head.scales shape=(248320,32) dtype=bfloat16
+lm_head.biases shape=(248320,32) dtype=bfloat16
+warm[0] wall_ms=40.0794 out_shape=(1,248320)
+warm[1] wall_ms=4.02701 out_shape=(1,248320)
+warm[2] wall_ms=3.87389 out_shape=(1,248320)
+iter[0] wall_ms=3.82485
+iter[1] wall_ms=3.83194
+iter[2] wall_ms=4.12021
+iter[3] wall_ms=3.86601
+iter[4] wall_ms=3.87006
+iter[5] wall_ms=3.83319
+iter[6] wall_ms=3.84784
+iter[7] wall_ms=3.77107
+iter[8] wall_ms=3.96296
+iter[9] wall_ms=3.76766
+
+=== SUMMARY ===
+source=/tmp/lmhead_bench/lm_head_only.safetensors
+qmm_mean_ms=3.86958
+qmm_min_ms=3.76766
+qmm_max_ms=4.12021
+n_timed=10
+approx_store_MiB_formula=272.812
+NOTE: isolated qmm only; T1 fraction requires decode gen t/s log.
+exit=0
+
+
+======================================== ROCm System Management Interface ========================================
+================================================== Concise Info ==================================================
+Device  Node  IDs              Temp    Power     Partitions          SCLK  MCLK  Fan  Perf  PwrCap  VRAM%  GPU%  
+[3m              (DID,     GUID)  (Edge)  (Socket)  (Mem, Compute, ID)                                              [0m
+==================================================================================================================
+0       1     0x150e,   57550  43.0°C  20.085W   N/A, N/A, 0         N/A   N/A   0%   auto  N/A     14%    7%    
+==================================================================================================================
+============================================== End of ROCm SMI Log ===============================================

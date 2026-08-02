@@ -14,9 +14,73 @@ Program state (high level):
 | S4 batch verify + n_draft=3 | **LEVER2_CLOSED / KILL** (`exp/mtp-tps-ceiling`) |
 | C11–C15 draft fuses | **Dead** (`exp/mtp-c11-topk-close`) — do not reopen |
 | T1 fuse / KV@256 / dense_kept / long-ctx KV | **Closed** (`exp/mtp-t1-attack`) — do not reopen |
-| **Lever 3 lm_head traffic** | **Inventory A done** — head **already 4-bit**; microbench B next (`mtp-t1-lmhead-graph/`) |
-| **Lever 4 graph decode 35B** | Pending after #3 B or #3 close |
-| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` (new funded loop) |
+| **Lever 3 lm_head traffic** | **A+B done** — already 4-bit; qmm **3.87 ms ≈ 11.5% T₁** → **OPEN for design C** |
+| **Lever 4 graph decode 35B** | Pending after #3 C or close |
+| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` |
+
+---
+
+## Fire 2026-08-02T02:34Z — PROGRESS (microbench B: 4-bit lm_head qmm)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` @ tip after this commit |
+| **GPU** | ~2% idle → bench + one eager chat |
+| **Lever worked** | #3 step **B** (isolated qmm + same-fire T₁) |
+| **MASTER path** | `docs/experiments/mtp-t1-lmhead-graph/{MASTER,RESULTS}.md` |
+
+### Clear Thought
+
+- `sequentialthinking` — B only this fire; LEVER2 already closed  
+- `decisionframework` — real-weight qmm bench (C++ `bench_lm_head`) over design C  
+- `scientificmethod` — H-qmm-expensive: **supported on % fund bar**, not abs ≥5 ms  
+- `metacognitivemonitoring` — no invent; free-head +13% is **sketch only**  
+
+### Reviewed
+
+- Prior inventory: 4-bit head, vocab 248320  
+- Built `examples/bench_lm_head.cpp`  
+
+### Tested
+
+| Log | Key number |
+|-----|------------|
+| `mtp-t1-lmhead-graph/B_lm_head_qmm.txt` | qmm mean **3.86958 ms** (min 3.77, max 4.12, n=10) |
+| `mtp-t1-lmhead-graph/B_t1_eager_ref.txt` | Generation **29.68** t/s (128 tok, SAFE fuse) |
+
+Fraction: 3.86958 / (1000/29.68) = **11.48%** of T₁.
+
+### Decision
+
+1. **Do not CLOSE** lever 3 (kill needs &lt;5% T₁; observed ~11.5%).  
+2. **Fund design C** next (two-stage / further cut) — meets ≥8–10% bar; **do not** claim win %.  
+3. Absolute head is already **~3.9 ms class** (matches program’s “4-bit → 3–4 ms” sketch).  
+4. Free-head ceiling sketch ~+13% gen t/s if head free — **not a claim**.  
+5. Not STOPPED.  
+
+### Insight
+
+Residual lm_head cost after 4-bit quant is **~3.9 ms / ~11–12% of T₁** on gfx1150 — still fundable for **smarter** head reduction, **not** for “quantize the head.”
+
+### Next step
+
+- **Design C** only: two-stage top-k / vocab-slice sampler plan + quality risk (no implement unless design fits one fire).  
+- Then lever 4 graph-decode code inventory.  
+
+### Confidence
+
+**0.90** on qmm wall ms (logged). **0.75** that isolated qmm ≈ in-path head. **0.95** on 29.68 gen t/s log.
+
+### Supervisor honesty
+
+| Claim | Verdict | Path |
+|-------|---------|------|
+| qmm mean 3.86958 ms | **OK** | `B_lm_head_qmm.txt` |
+| gen 29.68 t/s | **OK** | `B_t1_eager_ref.txt` |
+| ~11.5% of T₁ | **OK** (arithmetic) | both logs |
+| +15–25% product win | **NOT claimed** | — |
+| free-head ~+13% | **sketch only** | arithmetic ceiling |
 
 ---
 

@@ -130,15 +130,50 @@ Any “~13–14 ms BF16” style estimate from the program sketch **does not app
 
 ---
 
-## 5. Next measure (microbench B) — protocol sketch only
+## 5. Microbench B — isolated 4-bit lm_head qmm (MEASURED)
 
-When GPU free, one of:
+**Tool:** `examples/bench_lm_head.cpp` → `build/bench_lm_head`  
+**Weights:** real `lm_head.{weight,scales,biases}` extracted from LemonMLXE package (header-matched U32/BF16).  
+**Op:** `mx::quantized_matmul(x, w, scales, biases, transpose=true, gs=64, bits=4)` with `x` shape **[1, 2048]** BF16.  
+**Device log:** `[mlx-rocm] bound HIP device 0: gfx1150 … cus=8`  
+**Full log:** [`B_lm_head_qmm.txt`](B_lm_head_qmm.txt)
 
-1. **Isolated:** warm ≥3 iters of `linear_fwd` / quantized lm_head on `[1,1,2048]` hidden; log wall ms.  
-2. **Delta:** full decode step vs forward that stops before lm_head (or logits disabled) on same prompt/tokens; ≥3 warm.
+| Phase | wall_ms |
+|-------|---------|
+| warm[0] (cold) | 40.0794 |
+| warm[1] | 4.02701 |
+| warm[2] | 3.87389 |
+| **timed mean (n=10)** | **3.86958** |
+| timed min | 3.76766 |
+| timed max | 4.12021 |
 
-Kill bar (program): **&lt;5% T₁** or **&lt;5 ms** → close lever 3.  
-Fund bar: **≥8–10% T₁** or **≥5 ms** → design step C only after B.
+### Same-fire T₁ denominator (eager SAFE fuse, 128 gen tok)
+
+Log: [`B_t1_eager_ref.txt`](B_t1_eager_ref.txt)
+
+```
+Prompt:     23 tokens, 30.5125 tokens/s, 0.753791s
+Generation: 128 tokens, 29.68 tokens/s, 4.31267s
+```
+
+| Derived (arithmetic from logs only) | Value |
+|-------------------------------------|--------|
+| T₁ ms = 1000 / 29.68 | **33.6927 ms** |
+| head fraction = 3.86958 / 33.6927 | **11.48%** |
+| Kill &lt;5% T₁? | **No** |
+| Fund ≥8–10% T₁? | **Yes** |
+| Fund ≥5 ms abs? | **No** (3.87 &lt; 5) |
+| Free-head ceiling (sketch only): T₁−mean → t/s | ~33.53 t/s (~+13% vs 29.68) — **not measured** |
+
+### Limitations (honesty)
+
+- Isolated qmm **≠** full `call_impl` residual; no stop-before-lm_head delta this fire.  
+- Fraction uses T₁ that **includes** head cost (ratio, not pure leave-one-out).  
+- Do **not** claim product +15–25% or two-stage wins until implemented and measured.
+
+### Verdict
+
+**Lever 3 stays OPEN** → next fire **design C** (two-stage top-k / vocab slice) with quality risk notes. Already-4-bit conversion path remains **void**.
 
 ---
 

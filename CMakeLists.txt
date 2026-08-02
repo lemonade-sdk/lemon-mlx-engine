@@ -248,6 +248,10 @@ if(MLX_LM_BUILD_EXAMPLES)
     add_executable(test_qbits examples/test_qbits.cpp)
     target_link_libraries(test_qbits PRIVATE mlx)
 
+    # Isolated lm_head quantized_matmul microbench (T1 lever inventory follow-up).
+    add_executable(bench_lm_head examples/bench_lm_head.cpp)
+    target_link_libraries(bench_lm_head PRIVATE mlx)
+
     add_executable(test_dynslice examples/test_dynslice.cpp)
     target_link_libraries(test_dynslice PRIVATE mlx)
 
