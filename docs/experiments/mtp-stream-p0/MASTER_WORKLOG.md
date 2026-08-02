@@ -79,3 +79,16 @@
 - Quality: unit `[mtp]` still **15 cases / 68 asserts PASS** (no full 35B remeasure this residual fire).
 - Next: optional env/doc debt cleanup; optional multi-seed Maxwell.
 
+## 2026-08-01 full Maxwell re-run (post-residual tip df1f199)
+- Goal: Reconfirm quality after registry lifecycle + Leviathan residual sample.
+- Config: same as max8k full SAR — QUANT_FUSE+GDN, MTP n_draft=2, temp=0.7, top_p=0.9, thinking ON, **max_tokens=8192**.
+- Log: `FIELD_MAXWELL_FULL_RS_ndraft2_temp07_think_max8k_post_residual.txt`
+- Result: **EXIT:0**. 5/5 turns closed think + correct finals.
+  - T1: 2249 tok @ 25.15 t/s — 8-sentence four-law overview
+  - T2: 1199 @ 25.68 — ∇·E=ρ/ε₀
+  - T3: 1167 @ 25.07 — ∇×E=−∂B/∂t
+  - T4: 875 @ 25.35 — Ampère–Maxwell full SI
+  - T5: 861 @ 25.70 — ∇·B=0
+  - Mean gen **~25.4 t/s**, total gen **6351** tokens
+- Verdict: **PASS** (matches pre-residual full Maxwell quality; residual dist did not break multi-turn).
+
