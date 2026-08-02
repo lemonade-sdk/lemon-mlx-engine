@@ -8,6 +8,6 @@ Research how **[Redline](https://github.com/warpfront/redline)** (user URL typo 
 
 ### Status
 - **E0 BUILD_OK** on host ROCm Core **7.13.0** / gfx1150 (warpfront build + floor HSACO). See [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md).  
-- Redline README **≥ 7.14** is **not** a hard *compile* gate here; optional 7.14-only FFI / product cert still prefer upgrade ([`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md)).  
-- **E1** floor µs/dispatch **not** measured yet. No product wire.  
-- Decode HIP graphs remain **product OFF** (separate from Redline retained-PM4).
+- **E1 AQL MEASURED** on gfx1150: ~**2.04** vs ~**1.07** µs/disp (BoundarySerialized **~1.91×**). PM4 example tail needs gfx12. See [`E1_FLOOR.md`](E1_FLOOR.md).  
+- Redline README **≥ 7.14** is **not** a hard *compile* gate here ([`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md)).  
+- **No gen t/s claim.** No product wire. Decode HIP graphs remain **product OFF**.

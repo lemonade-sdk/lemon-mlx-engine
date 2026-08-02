@@ -76,7 +76,8 @@ From engine map ([`SUBAGENT_ENGINE_LAUNCH_MAP.md`](SUBAGENT_ENGINE_LAUNCH_MAP.md
 | Floor HSACO gfx1150 | **Built** (`hipcc --genco --offload-arch=gfx1150`) | Load/`dispatch_floor` pending E1 |
 
 **Confidence we can *build* on 890M today:** **high** (E0 log).  
-**Confidence of *productive* gen-t/s win:** still **medium-low** until E1–E2 on-device evidence.
+**Confidence of *dispatch-floor* win on no-op:** **high** on this host (E1 AQL ~1.91× BoundarySerialized).  
+**Confidence of *productive* gen-t/s win:** still **medium-low** until E2+ engine-shaped work (no-op ≠ 35B).
 
 ---
 
@@ -120,7 +121,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | ID | Experiment | Pass / fail |
 |----|------------|-------------|
 | **E0** | Build Redline (warpfront) against local ROCm; note 7.13 vs 7.14 | **BUILD_OK** — see [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) |
-| **E1** | Run `dispatch_floor` / hipfire-6409 microbench on **gfx1150** if ROCm allows | Report µs/dispatch vs HIP |
+| **E1** | Run `dispatch_floor` / hipfire-6409 microbench on **gfx1150** if ROCm allows | **AQL MEASURED** — see [`E1_FLOOR.md`](E1_FLOOR.md) (~1.91× BoundarySerialized vs system-every); PM4 example tail N/A on gfx1150 |
 | **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | ≥ measurable wall cut |
 | **E3** | Inventory whether MLX can export HSACO for one QMM | Feasible / not |
 | **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | Design doc only until E1 green |
@@ -152,8 +153,9 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | [`RESEARCH.md`](RESEARCH.md) | This synthesis |
 | Local clones (not in git) | `/tmp/redline-pwilkin`, `/tmp/redline-warpfront` |
 | [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) | E0 compile + HSACO evidence |
+| [`E1_FLOOR.md`](E1_FLOOR.md) | E1 AQL µs/dispatch on gfx1150 |
 | [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
-| [`logs/`](logs/) | E0 build / HSACO logs |
+| [`logs/`](logs/) | E0/E1 logs + floor CO |
 
 ## 9. References
 

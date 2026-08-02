@@ -1,0 +1,29 @@
+=== E1 dispatch_floor meta ===
+2026-08-02T14:28:50-07:00
+host=antmi-AI-Series
+7.13.0
+/opt/rocm/core/bin/hipcc
+HIP version: 7.13.99004-3309c611
+AMD clang version 23.0.0git (https://github.com/ROCm/llvm-project.git 43215c73116c407735c85a180d174f718798c328+PATCHED:2506c552d8428e2cc1778bef048b20f818e06bb3)
+Target: x86_64-unknown-linux-gnu
+  Name:                    AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+  Marketing Name:          AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+  Vendor Name:             CPU                                
+  Name:                    gfx1150                            
+  Marketing Name:          AMD Radeon 890M Graphics           
+  Vendor Name:             AMD                                
+      Name:                    amdgcn-amd-amdhsa--gfx1150         
+      Name:                    amdgcn-amd-amdhsa--gfx11-generic   
+-rw-rw-r-- 1 antmi antmi 8144 Aug  2 14:26 /tmp/redline-warpfront-hsaco/floor_kernel-gfx1150.co
+-rwxrwxr-x 2 antmi antmi 739192 Aug  2 14:25 /tmp/redline-warpfront-target/release/examples/dispatch_floor
+REDLINE_FLOOR_HSACO=/tmp/redline-warpfront-hsaco/floor_kernel-gfx1150.co
+=== run dispatch_floor (defaults N=64 M=200 warmup=20) ===
+dispatch-floor: N=64 dispatches/replay, M=200 timed replays, 20 warmup
+  policy                                                       us    us/disp  vs floor
+  SystemEveryDispatch      (HIP per-dispatch floor)       130.486     2.0388    1.000x
+  SystemAcquireAgentRelease                               123.512     1.9299    1.056x
+  AgentEveryInternalDispatch                              108.276     1.6918    1.205x
+  BoundarySerialized       (redline safe / decode)         68.328     1.0676    1.910x
+  BoundaryIndependent      (redline aggressive / indep-only)     60.674     0.9480    2.151x
+Error: ArchitectureMismatch { required: "gfx12", actual: "gfx1150" }
+EXIT:1

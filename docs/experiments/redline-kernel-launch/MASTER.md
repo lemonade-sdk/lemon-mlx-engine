@@ -14,7 +14,7 @@
 | Identity (pwilkin vs warpfront) | **DONE** — pwilkin fork; upstream warpfront |
 | Architecture / integration map | **DONE** — RESEARCH + subagent docs |
 | E0 build on host ROCm 7.13 | **BUILD_OK** — warpfront `b505a72`; log + HSACO; 7.14 not hard compile gate |
-| E1 floor bench gfx1150 | **PENDING** — CO ready; no µs/dispatch yet |
+| E1 floor bench gfx1150 | **AQL MEASURED** — ~2.04 vs ~1.07 µs/disp (1.91× BoundarySerialized); PM4 example tail FAIL gfx12 |
 | E2 toy multi-kernel | **PENDING** |
 | E3 MLX HSACO inventory | **PENDING** |
 | E4 design hook | **PENDING** |
@@ -22,7 +22,20 @@
 
 ## Fire log
 
-### 2026-08-02 — E0 host build (this fire)
+### 2026-08-02 — E1 dispatch_floor gfx1150
+
+- **Primary E-step:** E1.  
+- Clear Thought: sequentialthinking, scientificmethod (hypothesis→analysis), metacognitivemonitoring, collaborative critique.  
+- Ran `dispatch_floor` with `REDLINE_FLOOR_HSACO=floor_kernel-gfx1150.co`, N=64 M=200 warmup=20 on ROCm **7.13** / **gfx1150**.  
+- **AQL fence spectrum (GPU-timed):** SystemEveryDispatch **2.0388** µs/disp; BoundarySerialized **1.0676** µs/disp (**1.910×**); BoundaryIndependent 0.9480 µs/disp (2.151×).  
+- Evidence: [`logs/e1-dispatch-floor-gfx1150-20260802-142850.log`](logs/e1-dispatch-floor-gfx1150-20260802-142850.log), [`E1_FLOOR.md`](E1_FLOOR.md).  
+- Process **EXIT 1** after table: PM4 IB `ArchitectureMismatch { required: "gfx12", actual: "gfx1150" }` (example hardcodes Gfx12; library has gfx11 path unused by example).  
+- **Not claimed:** gen t/s, 35B win, PM4 IB numbers on 890M.  
+- **Next:** E2 toy multi-kernel retained vs HIP wall.
+
+### 2026-08-02 — E0 host build
+
+
 
 - **Primary E-step:** E0.  
 - Clear Thought: sequentialthinking, scientificmethod (observation), decisionframework, metacognitivemonitoring, collaborative critique.  
