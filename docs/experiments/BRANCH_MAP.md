@@ -180,8 +180,9 @@ Create with: `git checkout -b exp/<name> origin/main` **or** from `fix/mtp-strea
 
 | Proposed branch | Create-from | Hypothesis | Kill / exit criteria | Priority |
 |-----------------|-------------|------------|----------------------|----------|
-| **`exp/mtp-batch-verify-reprobe`** | `fix/mtp-stream-p0` | Post-fuse stack may amortize batch T=2 verify (C1-era was 86 ms = 2.26×T₁) | `MLX_MTP_BATCH_VERIFY=1`, n≥3 pinned Fourier; **kill if T₂ > 67.7 ms**; reopen WS if ≤60 ms | **P0 — next probe day** |
-| **`exp/mtp-ndraft3-p0b`** | `fix/mtp-stream-p0` | Pre-P0-B n_draft=3 22.71 t/s is **invalid** (final-draft KV starve) | Measure n_draft=3 greedy + RS after P0-B; kill deep-draft if still < C7 | **P0 — same day as batch** |
+| ~~**`exp/mtp-batch-verify-reprobe`**~~ | → **`exp/mtp-tps-ceiling`** | — | **DONE S4: KILL** | closed |
+| ~~**`exp/mtp-ndraft3-p0b`**~~ | → same | — | **DONE S4: seq n3 still loses** | closed |
+| ~~C11 re-measure / RS×top_k~~ | → **`exp/mtp-c11-topk-close`** | — | **CLOSED** three-way kill; hygiene only | closed |
 | **`exp/mtp-rs-batch-verify`** | after batch probe if live | RS −7% vs greedy is serial T=1 structure; batch verify reclaims | Only if batch probe reopens WS; else N/A | P1 |
 | **`exp/mtp-h1-dgpu`** | product or tip | MTP relative win scales on launch-bound dGPU vs 890M 8 CU | Hardware day; A/B eager vs MTP batch/seq; decide product surface | **P1 strategic** |
 | **`exp/mtp-h2-small-model`** | tip (H2 logs already exist) | 0.8B ~100 t/s is the real MTP home if 35B plateaus | Formalize n≥5 protocol, document product claim | P2 (docs formalize) |
