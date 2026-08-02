@@ -1,0 +1,36 @@
+=== RUN L4_E0_eager_ctrl ===
+date=2026-08-01T19:41:11-07:00 tip=b677fd8 branch=exp/mtp-t1-lmhead-graph
+env_extra: 
+args: --temperature 0 --top-p 1 --max-tokens 128 --no-think --ignore-eos
+Loading model: LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] Found 0 quantized weight groups (shape-inference dequant only; runtime keeps packed unless MLX_MTP_DEQUANT=1)
+[MTP] Shape-map has 20 weight tensors (temp; not retained for runtime)
+[MTP] Got head_dim=256 from mtp.layers.0.self_attn.q_norm.weight (norm-weight ground truth)
+[MTP] head_dim=256 num_attention_heads=16 (from o_proj attn_dim=4096)
+[MTP] Inferred config: hidden_size=2048 head_dim=256 num_attention_heads=16 num_key_value_heads=2 intermediate_size=14336 quant_bits=4 quant_group_size=64 (used base model fallback)
+[MTP] RMSNorm glue: no shift needed (pre_fc_norm_hidden mean=0.4937 ≥ 0.2; package already γ-style / converted)
+[MTP] load_mtp_weights: registered_ckpt=0 auto_quantized=13 dense_kept=7 dequantized=0 norm_shifted=0 bits=4 gs=64
+[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Model loaded. Memory: active=20.5 GB, peak=21.5 GB, cache=10.5 GB
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: [hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+# Technical Overview: The Fourier Transform for Engineers
+
+## 1. Introduction
+
+The **Fourier Transform (FT)** is a fundamental mathematical tool in engineering that decomposes a function of time (a signal) into its constituent frequencies. It reveals the frequency spectrum of a signal, transforming it from the **time domain** to the **frequency domain**.
+
+### Why It Matters
+- **Signal Analysis**: Identify dominant frequencies, noise, and harmonics.
+- **System Design**: Design filters, modulators, and communication systems.
+- **Data Compression**: JPEG, MP3, and video codecs rely on frequency-domain transformations.
+
+Prompt:     23 tokens, 30.8208 tokens/s, 0.74625s
+Generation: 128 tokens, 29.8084 tokens/s, 4.2941s
+
+
+> === DONE L4_E0_eager_ctrl exit=0 ===

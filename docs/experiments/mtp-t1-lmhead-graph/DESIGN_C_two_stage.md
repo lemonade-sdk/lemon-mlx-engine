@@ -56,13 +56,16 @@ If product modes (0.7+think+RS) cannot use C1 and C2 quality fails: **close resi
 
 ---
 
-## Kill / fund
+## Notable vs fund (see [`../NOTABLE_WINS.md`](../NOTABLE_WINS.md))
 
-| Result | Action |
-|--------|--------|
-| C1 only: ≥5% gen t/s at temp=0, no quality drop | Fund C1 product (greedy path only) |
-| C2: ≥5% at temp=0.7 with quality gates | Fund C2 (3–5 d) |
-| Neither | **CLOSE** residual lm_head lever; move to lever 4 / H1 |
+**User policy:** any measured performance improvement is **notable** — including &lt;5%.
+
+| Result | Notable? | Fund / ship |
+|--------|----------|-------------|
+| C1 any **logged** gen t/s or head-ms win at temp=0, quality OK | **YES** | Prefer fund if ≥~3–5% e2e **or** cheap; still document +1–2% |
+| C2 any logged win at temp=0.7 / think / RS, quality OK | **YES** | Fund if multi-% or strategic product path |
+| Measured regress | **YES (as regress)** | Do not ship |
+| No measured delta | — | Design only; no claim |
 
 **HARD BAN:** no +15–25% marketing from BF16 math on this package.
 

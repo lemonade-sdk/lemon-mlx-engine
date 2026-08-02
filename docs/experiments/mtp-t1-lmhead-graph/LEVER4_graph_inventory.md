@@ -24,11 +24,14 @@ If launch overhead dominates T₁, full HIP graph capture of MoE+GDN T=1 could c
 2. **GDN recurrence** — sequential state; multi-token batch already failed S4.  
 3. Prior pure-graph work **flat** on smaller model (historical).  
 
-## Kill criteria (when probing)
+## Measure criteria (when probing)
 
-- Measure eager T₁ (or gen t/s) with graphs on vs off, temp=0 **and** temp=0.7 no-think at minimum.  
-- **KILL** if T₁ stays ≥32 ms equivalent or gen t/s gain &lt;5%.  
-- **KILL** if capture fails / SEGV / thrash.
+See [`../NOTABLE_WINS.md`](../NOTABLE_WINS.md): **any** logged gen t/s / T₁ improvement is **notable**.
+
+- Measure eager T₁ (or gen t/s) with graphs on vs off, temp=0 **and** temp=0.7 no-think at minimum (think cell optional).  
+- **Record** all deltas including +1–4%.  
+- **FUND** multi-day polish if gain is sustained and ≥~5% **or** cheap default-on; still ship notes for smaller notables.  
+- **KILL path only if:** capture fails / SEGV / thrash / **regress**. Flat (~0%) = no win, not “ignore noise only” without n≥2.
 
 ## Next probe (after temp×think baselines)
 

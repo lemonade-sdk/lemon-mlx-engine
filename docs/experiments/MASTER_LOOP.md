@@ -227,3 +227,15 @@ On the field 35B MTP mlx-4bit model, **lm_head is already quantized (U32 pack + 
 | **Next** | Lever4 graph probe or C1 fund decision |
 | **Logs** | `mtp-t1-lmhead-graph/T_*.txt` |
 
+
+## Fire 2026-08-02 — POLICY: all measured gains are NOTABLE
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** (criteria update, not a new probe) |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **Directive** | User: any/all performance improvement shall be notable |
+| **Doc** | `docs/experiments/NOTABLE_WINS.md` |
+| **Change** | Split NOTABLE (log any +Δ) vs FUND (implement cost) vs NOISE; re-label fuse +2–3%, long-ctx KV +1–1.4%, MTP C7 +4.6% as notable; &lt;5% is not “ignore” |
+| **Unchanged** | HARD BAN: no invented TPS; no +15–25% without measure; S4 batch still a notable **regress** |
+

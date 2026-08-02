@@ -238,9 +238,10 @@ Quality is **session-smoke**, not full Maxwell SAR re-certification.
 
 ### Implication for Design C
 
-- **C1 (greedy argmax path):** can fund if ≥5% on E0/M0 only; **does not** cover product default.
-- **C2 (two-stage):** must pass E07 + E07T + M07 + M07T quality gates before product.
+- **C1 (greedy argmax path):** **any** logged win on E0/M0 is **notable** ([`NOTABLE_WINS.md`](../NOTABLE_WINS.md)); fund priority rises with multi-% e2e; **does not** alone cover product default.
+- **C2 (two-stage):** must pass E07 + E07T + M07 + M07T quality gates; any logged product-mode win is notable.
 - **Baselines above** are the A/B denominators for any future C1/C2 implementation.
+- Eager flat across temp/think is itself **notable**: product sampling does **not** regress decode t/s vs greedy on this stack.
 
 ---
 

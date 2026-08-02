@@ -46,13 +46,16 @@ See [`RESULTS.md`](RESULTS.md). Headline:
 - Same-fire eager SAFE fuse gen: **29.68 t/s** → T₁ ≈ **33.69 ms** — log `B_t1_eager_ref.txt`.
 - Fraction: **3.87 / 33.69 ≈ 11.5%** of T₁ (inference: isolated qmm ≈ in-path head).
 
-### Kill / fund (program rules)
+### Notable / fund (program rules) — see [`../NOTABLE_WINS.md`](../NOTABLE_WINS.md)
+
+**Policy:** any measured performance improvement is **notable** (including &lt;5%).
 
 | Outcome | Action | This fire |
 |---------|--------|-----------|
-| Already 4-bit **and** head **&lt;5% T₁** | **CLOSE** lever 3 | **No** (11.5% ≮ 5%) |
-| **≥8–10% T₁** or **≥5 ms** | Design C (two-stage / further cut); **no** unmeasured win claim | **Yes on %** (11.5% ≥ 8–10%); **no** on abs (3.87 &lt; 5 ms) |
+| Head tax measured (~11.5% T₁ / ~3.87 ms) | **NOTABLE tax** — residual cut still interesting | **Yes** |
+| Already 4-bit **and** head trivial (≪5% T₁) | Deprioritize residual head work | **No** (11.5% still material) |
 | “Quantize to 4-bit” as the win | **VOID** | already 4-bit |
+| Any future C1/C2 e2e +Δ% | **NOTABLE**; fund by size/cost | pending implement |
 
 **Theoretical free-head ceiling** (if head→0 and T₁ drops by mean qmm only): 33.69−3.87=29.82 ms → **~33.5 t/s** (~**+13%** vs 29.68). **Not measured**; upper-bound sketch only.
 
