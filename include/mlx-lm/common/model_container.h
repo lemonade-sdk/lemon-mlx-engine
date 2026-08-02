@@ -2,6 +2,7 @@
 #pragma once
 
 #include <mlx-lm/common/generate_params.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <mlx-lm/common/types.h>
 #include <nlohmann/json.hpp>
 #include <functional>
@@ -151,8 +152,22 @@ struct ModelContext {
 // Replaces Swift's actor-based ModelContainer.
 class ModelContainer {
 public:
-    explicit ModelContainer(ModelContext context)
-        : context_(std::make_shared<ModelContext>(std::move(context))) {}
+    explicit ModelContainer(
+        ModelContext context,
+        std::vector<const mlx::core::array*> quant_ptrs = {})
+        : context_(std::make_shared<ModelContext>(std::move(context)))
+        , quant_registry_ptrs_(std::move(quant_ptrs)) {}
+
+    // Unregister quant metadata before model weight arrays are destroyed.
+    ~ModelContainer() {
+        if (!quant_registry_ptrs_.empty()) {
+            QuantizedWeightRegistry::instance().unregister_many(quant_registry_ptrs_);
+            quant_registry_ptrs_.clear();
+        }
+    }
+
+    ModelContainer(const ModelContainer&) = delete;
+    ModelContainer& operator=(const ModelContainer&) = delete;
 
     // Perform an action with exclusive access to the model context.
     template <typename Func>
@@ -170,9 +185,16 @@ public:
 
     const std::string& model_id() const { return context_->model_id; }
 
+    // Extra quant registrations after construction (e.g. late MTP packs).
+    void track_quant_ptr(const mlx::core::array* p) {
+        if (p) quant_registry_ptrs_.push_back(p);
+    }
+
 private:
     std::shared_ptr<ModelContext> context_;
     mutable std::mutex mutex_;
+    // Pointers registered in QuantizedWeightRegistry for this model.
+    std::vector<const mlx::core::array*> quant_registry_ptrs_;
 };
 
 } // namespace mlx_lm

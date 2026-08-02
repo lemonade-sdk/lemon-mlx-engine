@@ -5,7 +5,9 @@
 #include <mlx-lm/common/chat_session.h>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/model_container.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <mlx/mlx.h>
+#include <vector>
 #if defined(MLX_BUILD_ROCM)
 #include <hip/hip_runtime.h>
 #endif
@@ -179,7 +181,12 @@ int main(int argc, char* argv[]) {
     try {
         std::cout << "Loading model: " << args.model_path << std::endl;
 
-        auto ctx = mlx_lm::load_llm(args.model_path);
+        std::vector<const mx::array*> quant_ptrs;
+        mlx_lm::ModelContext ctx;
+        {
+            mlx_lm::QuantizedWeightRegistry::LoadScope quant_scope(quant_ptrs);
+            ctx = mlx_lm::load_llm(args.model_path);
+        }
 
         // Set enable_thinking before any forward (incl. warmup).
         if (ctx.template_extra_context) {
@@ -282,7 +289,8 @@ int main(int argc, char* argv[]) {
         if (has_chat_template && !args.raw_mode) {
             // enable_thinking already set pre-warmup (see above).
 
-            auto container = std::make_shared<mlx_lm::ModelContainer>(std::move(ctx));
+            auto container = std::make_shared<mlx_lm::ModelContainer>(
+                std::move(ctx), std::move(quant_ptrs));
 
             std::optional<std::string> instructions;
             if (!args.system_prompt.empty()) {
@@ -323,7 +331,8 @@ int main(int argc, char* argv[]) {
             if (!has_chat_template) {
                 std::cerr << "Warning: No chat template found. Using raw encoding." << std::endl;
             }
-            auto container = mlx_lm::ModelContainer(std::move(ctx));
+            auto container = mlx_lm::ModelContainer(
+                std::move(ctx), std::move(quant_ptrs));
 
             std::cout << "Type your message (or 'quit' to exit):" << std::endl;
 

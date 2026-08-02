@@ -466,14 +466,25 @@ private:
     // shaped [n_draft-1] (empty optional if no draft slots). Uses
     // mtp_trunk_hidden_ + y_ as d0. Resets mtp_caches_ to position 0.
     // If async_launch, schedules with async_eval (caller must eval later).
-    // When sample_draft is true, samples with sampler_ and fills draft_logprobs.
+    // When sample_draft is true, samples with sampler_, fills draft_logprobs,
+    // and optionally keeps per-step draft logits rows for residual sampling.
     std::optional<mlx::core::array> mtp_run_draft_chain(
         int n_draft, bool async_launch, bool sample_draft = false,
-        std::vector<float>* draft_logprobs = nullptr);
+        std::vector<float>* draft_logprobs = nullptr,
+        std::vector<mlx::core::array>* draft_logits_rows = nullptr);
 
     // Host log-prob of `token` under temperature-scaled logits (last position).
     static float mtp_token_logprob(
         const mlx::core::array& logits, int token, float temperature);
+
+    // Residual logits for rejection sampling: log(max(0, q-p)+eps) so the
+    // sampler draws from the Leviathan residual (not plain target q).
+    // If residual mass is tiny, masks `rejected_token` on target logits instead.
+    static mlx::core::array mtp_residual_logits(
+        const mlx::core::array& target_logits,
+        const mlx::core::array& draft_logits,
+        int rejected_token,
+        float temperature);
 
     // Complete deferred v1 verify: eval pred, set y_, stash hidden, quantize KV.
     void finish_pending_v1_();

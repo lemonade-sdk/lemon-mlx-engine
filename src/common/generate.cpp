@@ -292,8 +292,7 @@ int mtp_adaptive_n_draft(
     return want;
 }
 
-float TokenIterator::mtp_token_logprob(
-    const mx::array& logits, int token, float temperature) {
+static mx::array mtp_last_row_logits(const mx::array& logits) {
     mx::array last = logits;
     if (last.ndim() == 3) {
         int seq_len = last.shape(1);
@@ -301,21 +300,58 @@ float TokenIterator::mtp_token_logprob(
                          {last.shape(0), seq_len, last.shape(2)});
         last = mx::squeeze(last, 1);
     }
-    // [B, V] or [V] → work on last row
     if (last.ndim() == 2 && last.shape(0) == 1) {
         last = mx::squeeze(last, 0);
     }
+    return last;  // [V]
+}
+
+float TokenIterator::mtp_token_logprob(
+    const mx::array& logits, int token, float temperature) {
+    mx::array last = mtp_last_row_logits(logits);
     float t = temperature;
     if (t <= 0.0f) t = 1.0f;
     if (t != 1.0f) {
         last = mx::multiply(last, mx::array(1.0f / t));
     }
     auto lp = mx::log(mx::softmax(last, /*axis=*/-1));
-    // gather log-prob at token index
     auto idx = mx::array(token, mx::int32);
     auto val = mx::take(lp, idx);
     mx::eval(val);
     return val.item<float>();
+}
+
+mx::array TokenIterator::mtp_residual_logits(
+    const mx::array& target_logits,
+    const mx::array& draft_logits,
+    int rejected_token,
+    float temperature) {
+    // Leviathan residual: r = max(0, q - p); sample from r (via log(r+eps)).
+    float t = temperature > 0.0f ? temperature : 1.0f;
+    auto q_logits = mtp_last_row_logits(target_logits);
+    auto p_logits = mtp_last_row_logits(draft_logits);
+    if (t != 1.0f) {
+        q_logits = mx::multiply(q_logits, mx::array(1.0f / t));
+        p_logits = mx::multiply(p_logits, mx::array(1.0f / t));
+    }
+    auto q = mx::softmax(q_logits, /*axis=*/-1);
+    auto p = mx::softmax(p_logits, /*axis=*/-1);
+    auto r = mx::maximum(mx::subtract(q, p), mx::array(0.0f));
+    auto mass = mx::sum(r);
+    mx::eval(mass);
+    float m = mass.item<float>();
+    if (!(m > 1e-8f)) {
+        // Residual mass collapsed — sample from target with rejected token masked.
+        auto masked = mtp_last_row_logits(target_logits);
+        // Set rejected index to large negative via where on arange mask.
+        auto idx = mx::arange(0, masked.shape(0), mx::int32);
+        auto is_rej = mx::equal(idx, mx::array(rejected_token, mx::int32));
+        float ninf = -1.0e9f;
+        masked = mx::where(is_rej, mx::array(ninf), masked);
+        return mx::reshape(masked, {1, masked.shape(0)});
+    }
+    auto log_r = mx::log(mx::add(r, mx::array(1e-10f)));
+    return mx::reshape(log_r, {1, log_r.shape(0)});
 }
 
 // ---------------------------------------------------------------------------
@@ -936,7 +972,8 @@ TokenIterator::TokenIterator(
 
 std::optional<mx::array> TokenIterator::mtp_run_draft_chain(
     int n_draft, bool async_launch, bool sample_draft,
-    std::vector<float>* draft_logprobs) {
+    std::vector<float>* draft_logprobs,
+    std::vector<mx::array>* draft_logits_rows) {
     if (n_draft <= 1 || context_.get_mtp_head_fn == nullptr
         || context_.embed_fn == nullptr || context_.apply_lm_head_fn == nullptr) {
         return std::nullopt;
@@ -973,6 +1010,7 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(
     std::vector<mx::array> draft_tok_arrs;
     draft_tok_arrs.reserve(static_cast<size_t>(n_draft - 1));
     if (draft_logprobs) draft_logprobs->clear();
+    if (draft_logits_rows) draft_logits_rows->clear();
 
     for (int i = 1; i < n_draft; ++i) {
         auto prev_embed = context_.embed_fn(prev_tok_arr);
@@ -989,6 +1027,9 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(
             if (draft_logprobs) {
                 draft_logprobs->push_back(
                     mtp_token_logprob(logits, tid, mtp_temperature_));
+            }
+            if (draft_logits_rows) {
+                draft_logits_rows->push_back(mtp_last_row_logits(logits));
             }
             prev_tok_arr = mx::reshape(mx::astype(tok, mx::int32), {1, 1});
         } else {
@@ -1020,6 +1061,7 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
     pending_draft_dev_.reset();
 
     std::vector<float> draft_lps;
+    std::vector<mx::array> draft_logit_rows;
     std::vector<int> draft_tokens;
     draft_tokens.reserve(static_cast<size_t>(n_draft));
 
@@ -1028,7 +1070,8 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
 
     if (n_draft > 1) {
         auto drafts_dev = mtp_run_draft_chain(
-            n_draft, /*async_launch=*/false, /*sample_draft=*/true, &draft_lps);
+            n_draft, /*async_launch=*/false, /*sample_draft=*/true, &draft_lps,
+            &draft_logit_rows);
         if (drafts_dev.has_value()) {
             mx::eval(*drafts_dev);
             const int n_extra = static_cast<int>(drafts_dev->size());
@@ -1097,8 +1140,15 @@ std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
                 note_sample(mx::array(draft_tok, mx::int32));
                 continue;
             }
-            // Reject: sample residual from target (approx; full residual dist later).
-            auto tok = sampler_.sample(logits);
+            // Reject: sample from Leviathan residual max(0,q-p) when draft
+            // logits available; else mask rejected token on target.
+            mx::array sample_logits = logits;
+            if (static_cast<size_t>(i) < draft_logit_rows.size()) {
+                sample_logits = mtp_residual_logits(
+                    logits, draft_logit_rows[static_cast<size_t>(i)], draft_tok,
+                    temp);
+            }
+            auto tok = sampler_.sample(sample_logits);
             mx::eval(tok);
             note_sample(tok);
             y_ = LMInput::Text(mx::reshape(mx::astype(tok, mx::int32), {1}));

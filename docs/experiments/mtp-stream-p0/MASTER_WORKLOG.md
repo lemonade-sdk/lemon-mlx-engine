@@ -71,3 +71,11 @@
   - T5: 326 tok @ 25.9 t/s — \(\nabla\cdot B=0\) + monopoles.
 - Verdict: **FULL MAXWELL multi-turn PASS** at temp=0.7 + MTP + fuse + thinking with high token budget.
 
+## 2026-08-01 residuals (registry + RS residual dist)
+- Goal: Close agreed non-P0 residuals (not prefill thrash).
+- Implemented:
+  1. **Quant registry lifecycle (P1):** `QuantizedWeightRegistry::LoadScope` records every `register_weight` during model load; `ModelContainer` destructor calls `unregister_many`; `unload`/`unload_all`/LRU clear orphans when empty. Paths: `quantized_linear.h`, `model_container.h`, `model_manager.cpp`, `examples/chat.cpp`.
+  2. **RS residual distribution:** on reject, sample from Leviathan residual \(\max(0,q-p)\) via `mtp_residual_logits` (draft logits rows stored at draft time); if residual mass ~0, mask rejected token on target. Path: `generate.cpp` / `generate.h`.
+- Quality: unit `[mtp]` still **15 cases / 68 asserts PASS** (no full 35B remeasure this residual fire).
+- Next: optional env/doc debt cleanup; optional multi-seed Maxwell.
+

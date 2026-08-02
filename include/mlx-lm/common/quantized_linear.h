@@ -42,6 +42,10 @@ public:
         registry_.insert_or_assign(
             weight_ptr,
             QuantizationInfo{std::move(scales), std::move(biases), group_size, bits});
+        // Capture into active load scope (if any) so unload can unregister.
+        if (load_scope_ptrs_ != nullptr) {
+            load_scope_ptrs_->push_back(weight_ptr);
+        }
     }
 
     const QuantizationInfo* find(const mlx::core::array* weight_ptr) const {
@@ -55,12 +59,34 @@ public:
         registry_.erase(weight_ptr);
     }
 
+    void unregister_many(const std::vector<const mlx::core::array*>& ptrs) {
+        for (auto* p : ptrs) registry_.erase(p);
+    }
+
     void clear() { registry_.clear(); }
     size_t size() const { return registry_.size(); }
+
+    // RAII: all register_weight calls while alive are recorded into `out`.
+    // ModelContainer uses this so destructor can unregister on unload.
+    struct LoadScope {
+        explicit LoadScope(std::vector<const mlx::core::array*>& out)
+            : prev_(QuantizedWeightRegistry::instance().load_scope_ptrs_) {
+            QuantizedWeightRegistry::instance().load_scope_ptrs_ = &out;
+        }
+        ~LoadScope() {
+            QuantizedWeightRegistry::instance().load_scope_ptrs_ = prev_;
+        }
+        LoadScope(const LoadScope&) = delete;
+        LoadScope& operator=(const LoadScope&) = delete;
+    private:
+        std::vector<const mlx::core::array*>* prev_;
+    };
 
 private:
     QuantizedWeightRegistry() = default;
     std::unordered_map<const mlx::core::array*, QuantizationInfo> registry_;
+    // Non-owning: points at the active LoadScope's vector (or null).
+    std::vector<const mlx::core::array*>* load_scope_ptrs_ = nullptr;
 };
 
 // Quantization-aware linear forward pass.
