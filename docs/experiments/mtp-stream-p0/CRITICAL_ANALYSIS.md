@@ -234,7 +234,9 @@ Package: local `mlx-community/Qwen3.5-0.8B-MTP-4bit` delta (guru87 head + mlx 0.
 
 **Verdict:** **FAIL / slight REGRESS** vs C7 (−0.40 gen t/s). Accept dropped (0.85→0.72) so tokens/step fell enough to erase any step-wall savings. Joint timer slot **inflated** (38→60 ms) — fewer experts did **not** shrink the draft‖first-verify window on this stack (argpartition/gather shape change + accept pattern; not a free δ cut). Flag remains **opt-in default-off** for future top_k A/B; do **not** ship top_k=2 as default.
 
-**Implication:** Confirms post-C7 plateau — draft MoE expert count is not the remaining lever to beat ~27.3 on gfx1150 35B. Next real cuts: C5 fused/cheaper lm_head only if joint still draft-bound under a new measurement; otherwise H1/H2/H3 for ≥100.
+**Closed three ways (2026-08-01 / `exp/mtp-c11-topk-close`):** (1) premise falsified — this MTP head loses accept hard at k=2 (C14 shared-skip agrees, expert-count sensitive); (2) savings don't exist on gfx1150 — joint 38→60 ms despite less FLOP (launch-bound; same mechanism as C13/C14); (3) structurally inert under greedy C4 + 06 §2 — draft hidden under T₁, so only accept penalty surfaces. RS serial-draft corner is not funded without accept recovery (C14 says no). Hygiene only: rewrite falsified comment + static env once. Full note: `docs/experiments/mtp-c11-topk-close/RESULTS.md`.
+
+**Implication:** Confirms post-C7 plateau — draft MoE expert count is not the remaining lever to beat ~27.3 on gfx1150 35B. Next real cuts: not C11-class; H1/H2/H3 for ≥100 (S4 batch-verify also KILL on `exp/mtp-tps-ceiling`).
 
 ## C12 pipeline second-verify under d0 emit (2026-08-01 fire)
 

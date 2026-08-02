@@ -22,17 +22,32 @@ inline mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
 }
 
 // C11: optional draft MoE top-k override (MLX_MTP_DRAFT_TOPK=N).
-// Qwen3.6-35B MTP head ships num_experts_per_tok=8 over 256 experts — each
-// draft step pays 8× SwitchGLU gathers + shared expert. Speculative draft can
-// often keep high accept with fewer experts (routing shortcut). Clamped to
-// [1, num_experts]. Unset → trained top_k_. Logged once when active.
+// Research opt-in only — default remains trained top_k_.
+//
+// Premise "routing shortcut: fewer experts, high accept" is FALSIFIED for the
+// Qwen3.6-35B MTP head on gfx1150 (C11 measure, 2026-08-01):
+//   MLX_MTP_DRAFT_TOPK=2 vs trained k=8 → accept 0.85→0.72, joint 38→60 ms,
+//   gen 26.94 vs C7 27.34 (−0.4 t/s). See C11_TPS_probe_ndraft2_topk2.txt and
+//   docs/experiments/mtp-c11-topk-close/RESULTS.md.
+// C14 (skip shared expert) hit the same accept cliff from the other side —
+// this head is expert-count sensitive. On launch-bound 8 CU, shrinking k also
+// does not cut wall (worse GEMM shapes; fixed routing/lm_head costs dominate).
+// Under greedy C4 overlap, draft is hidden under T₁ anyway (06 §2), so a
+// successful draft speedup would show ≈+0 t/s; only the accept penalty surfaces.
+//
+// Flag retained for research A/B. Clamped to [1, num_experts]. Unset → trained.
+// Env is read once (static) — not getenv+atoi on every forward.
 inline int effective_draft_top_k(int trained_top_k, int num_experts) {
-    const char* env = std::getenv("MLX_MTP_DRAFT_TOPK");
-    int k = trained_top_k;
-    if (env && env[0] != '\0') {
+    // 0 = unset (use trained). Positive = override from MLX_MTP_DRAFT_TOPK.
+    static const int env_override = []() -> int {
+        const char* env = std::getenv("MLX_MTP_DRAFT_TOPK");
+        if (!env || env[0] == '\0') return 0;
         int v = std::atoi(env);
-        if (v > 0) k = v;
-    }
+        return v > 0 ? v : 0;
+    }();
+
+    int k = trained_top_k;
+    if (env_override > 0) k = env_override;
     if (k < 1) k = 1;
     if (num_experts > 0 && k > num_experts) k = num_experts;
     if (k != trained_top_k) {
@@ -40,7 +55,7 @@ inline int effective_draft_top_k(int trained_top_k, int num_experts) {
         if (!logged) {
             std::cerr << "[MTP] C11 draft MoE top_k override: trained="
                       << trained_top_k << " effective=" << k
-                      << " (MLX_MTP_DRAFT_TOPK)\n";
+                      << " (MLX_MTP_DRAFT_TOPK; measured REGRESS on 35B gfx1150)\n";
             logged = true;
         }
     }
@@ -224,7 +239,8 @@ mx::array MTPDecoderLayerMoE::operator()(
     auto post = mx::fast::rms_norm(h, post_attention_layernorm_weight_, args_.rms_norm_eps);
 
     // Routing: compute expert gates and select top-k experts.
-    // C11: MLX_MTP_DRAFT_TOPK can shrink k for cheaper draft (see effective_draft_top_k).
+    // C11: MLX_MTP_DRAFT_TOPK research override (default trained k; see
+    // effective_draft_top_k — C11 measured REGRESS at k=2 on 35B gfx1150).
     const int use_top_k = effective_draft_top_k(top_k_, num_experts_);
     auto gates = mx::softmax(linear_no_bias(post, gate_weight_), -1);
     int kth = gates.shape(-1) - use_top_k;

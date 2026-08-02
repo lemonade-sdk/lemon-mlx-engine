@@ -15,6 +15,12 @@
 - Prior FIELD SAR temp0.7 (tip 975e2de) confounded by greedy-only — not valid quality evidence.
 - P0 Stream gates M1–M6 PASS (see P0_MTP_GATES.md / gates/RESULTS.md).
 
+## 2026-08-01 C11 close (`exp/mtp-c11-topk-close`, sibling of S4)
+- Clean negative: k=2 accept 0.85→0.72, joint 38→60 ms, −0.4 t/s vs C7.
+- Dead three ways: premise falsified; no gfx1150 savings; §2 inert under C4.
+- Hygiene: R-11 rewrite falsified comment; static getenv for `effective_draft_top_k`.
+- Flag stays research opt-in. Do not fund RS×top_k without accept recovery (C14 says no).
+
 ## 2026-08-01 fire 1
 - Goal: Quality short multi-turn Maxwell SAR with MTP + rejection sampling (temp=0.7, thinking ON); create MASTER_WORKLOG; harden if FAIL.
 - Tried:
