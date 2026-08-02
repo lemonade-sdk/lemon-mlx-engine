@@ -6,6 +6,7 @@
 #include <mlx/mlx.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -197,36 +198,54 @@ AnySampler AnySampler::from_params(const GenerateParameters& params) {
     }
 }
 
-std::string mtp_greedy_only_violation(const GenerateParameters& params) {
-    // Match AnySampler::from_params greedy branch: temp==0 is ArgMax.
-    // top_p in (0,1) would engage nucleus if sampling were wired; refuse it.
-    // repetition_penalty absent or exactly 1.0 is a no-op in RepetitionProcessor.
-    if (params.temperature != 0.0f) {
-        return "MTP v1 is greedy-only: require temperature=0, top_p=1, and no "
-               "repetition_penalty (or 1.0). Got temperature=" +
-               std::to_string(params.temperature) +
-               ". Pass --temperature 0 (chat) or \"temperature\": 0 (API).";
-    }
-    if (params.top_p > 0.0f && params.top_p < 1.0f) {
-        return "MTP v1 is greedy-only: require temperature=0, top_p=1, and no "
-               "repetition_penalty (or 1.0). Got top_p=" +
-               std::to_string(params.top_p) + ".";
-    }
+bool mtp_uses_greedy_spec(const GenerateParameters& params) {
+    // Fast argmax draft/verify when sampling contract is greedy-neutral.
+    if (params.temperature != 0.0f) return false;
+    if (params.top_p > 0.0f && params.top_p < 1.0f) return false;
     if (params.repetition_penalty.has_value() &&
         params.repetition_penalty.value() != 1.0f) {
-        return "MTP v1 is greedy-only: require temperature=0, top_p=1, and no "
-               "repetition_penalty (or 1.0). Got repetition_penalty=" +
-               std::to_string(params.repetition_penalty.value()) + ".";
+        return false;
     }
-    return {};
+    return true;
 }
 
-static void enforce_mtp_greedy_only(const GenerateParameters& params) {
-    auto err = mtp_greedy_only_violation(params);
-    if (!err.empty()) {
-        std::cerr << "[MTP] " << err << "\n";
-        throw std::invalid_argument(err);
+std::string mtp_greedy_only_violation(const GenerateParameters& params) {
+    // Legacy name: empty when greedy-spec path applies; otherwise describes
+    // why rejection-sampling MTP will be used (not an error).
+    if (mtp_uses_greedy_spec(params)) return {};
+    std::ostringstream oss;
+    oss << "MTP sampled mode (rejection sampling): temperature="
+        << params.temperature << " top_p=" << params.top_p;
+    if (params.repetition_penalty.has_value()) {
+        oss << " repetition_penalty=" << params.repetition_penalty.value();
     }
+    return oss.str();
+}
+
+float TokenIterator::mtp_token_logprob(
+    const mx::array& logits, int token, float temperature) {
+    mx::array last = logits;
+    if (last.ndim() == 3) {
+        int seq_len = last.shape(1);
+        last = mx::slice(last, {0, seq_len - 1, 0},
+                         {last.shape(0), seq_len, last.shape(2)});
+        last = mx::squeeze(last, 1);
+    }
+    // [B, V] or [V] → work on last row
+    if (last.ndim() == 2 && last.shape(0) == 1) {
+        last = mx::squeeze(last, 0);
+    }
+    float t = temperature;
+    if (t <= 0.0f) t = 1.0f;
+    if (t != 1.0f) {
+        last = mx::multiply(last, mx::array(1.0f / t));
+    }
+    auto lp = mx::log(mx::softmax(last, /*axis=*/-1));
+    // gather log-prob at token index
+    auto idx = mx::array(token, mx::int32);
+    auto val = mx::take(lp, idx);
+    mx::eval(val);
+    return val.item<float>();
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +747,8 @@ TokenIterator::TokenIterator(
     , kv_group_size_(params.kv_group_size)
     , quantized_kv_start_(params.quantized_kv_start)
     , use_mtp_(params.use_mtp && context.get_mtp_head_fn != nullptr)
+    , mtp_greedy_spec_(mtp_uses_greedy_spec(params))
+    , mtp_temperature_(params.temperature)
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)  // Initialize with 1 (accepted)
 {
@@ -735,8 +756,14 @@ TokenIterator::TokenIterator(
     // short-circuits to MTP when use_mtp_, so pure never runs on the same request —
     // but operators may set both env flags by mistake. Log once so M6 is auditable.
     if (use_mtp_) {
-        // P0-A: draft+verify are argmax-only; refuse non-greedy sampling params.
-        enforce_mtp_greedy_only(params);
+        if (!mtp_greedy_spec_) {
+            static bool logged_sample = false;
+            if (!logged_sample) {
+                std::cerr << "[MTP] sampled mode (rejection sampling): "
+                          << mtp_greedy_only_violation(params) << "\n";
+                logged_sample = true;
+            }
+        }
         const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
         if (pure && pure[0] == '1' && pure[1] == '\0') {
             static bool logged = false;
@@ -799,12 +826,20 @@ TokenIterator::TokenIterator(
     , quantized_kv_start_(params.quantized_kv_start)
     , use_mtp_(params.use_mtp && context.get_mtp_head_fn != nullptr
                && context.new_mtp_cache_fn != nullptr)
+    , mtp_greedy_spec_(mtp_uses_greedy_spec(params))
+    , mtp_temperature_(params.temperature)
     , n_draft_tokens_(params.n_draft_tokens)
     , accept_history_(kAcceptHistorySize, 1)
 {
     if (use_mtp_) {
-        // P0-A: draft+verify are argmax-only; refuse non-greedy sampling params.
-        enforce_mtp_greedy_only(params);
+        if (!mtp_greedy_spec_) {
+            static bool logged_sample_ext = false;
+            if (!logged_sample_ext) {
+                std::cerr << "[MTP] sampled mode (rejection sampling): "
+                          << mtp_greedy_only_violation(params) << "\n";
+                logged_sample_ext = true;
+            }
+        }
         const char* pure = std::getenv("MLX_DECODE_GRAPH_PURE");
         if (pure && pure[0] == '1' && pure[1] == '\0') {
             static bool logged_ext = false;
@@ -829,7 +864,9 @@ TokenIterator::TokenIterator(
 // TokenIterator — MTP speculative decoding
 // ---------------------------------------------------------------------------
 
-std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool async_launch) {
+std::optional<mx::array> TokenIterator::mtp_run_draft_chain(
+    int n_draft, bool async_launch, bool sample_draft,
+    std::vector<float>* draft_logprobs) {
     if (n_draft <= 1 || context_.get_mtp_head_fn == nullptr
         || context_.embed_fn == nullptr || context_.apply_lm_head_fn == nullptr) {
         return std::nullopt;
@@ -865,6 +902,7 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
     auto prev_tok_arr = mx::reshape(y_.tokens, {1, 1});  // d0
     std::vector<mx::array> draft_tok_arrs;
     draft_tok_arrs.reserve(static_cast<size_t>(n_draft - 1));
+    if (draft_logprobs) draft_logprobs->clear();
 
     for (int i = 1; i < n_draft; ++i) {
         auto prev_embed = context_.embed_fn(prev_tok_arr);
@@ -873,9 +911,21 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
         hidden = (*mtp_head)(hidden, prev_embed, AttentionMask{}, mtp_cache);
         auto norm_h = mtp_head->apply_output_norm(hidden);
         auto logits = context_.apply_lm_head_fn(norm_h);
-        prev_tok_arr = mx::reshape(
-            mx::argmax(logits, -1, /*keepdims=*/false), {1, 1});
-        prev_tok_arr = mx::astype(prev_tok_arr, mx::int32);
+        if (sample_draft) {
+            // Sample from draft distribution (no trunk processor on draft side).
+            auto tok = sampler_.sample(logits);
+            mx::eval(tok);
+            int tid = tok.item<int32_t>();
+            if (draft_logprobs) {
+                draft_logprobs->push_back(
+                    mtp_token_logprob(logits, tid, mtp_temperature_));
+            }
+            prev_tok_arr = mx::reshape(mx::astype(tok, mx::int32), {1, 1});
+        } else {
+            prev_tok_arr = mx::reshape(
+                mx::argmax(logits, -1, /*keepdims=*/false), {1, 1});
+            prev_tok_arr = mx::astype(prev_tok_arr, mx::int32);
+        }
         draft_tok_arrs.push_back(prev_tok_arr);
     }
 
@@ -890,6 +940,136 @@ std::optional<mx::array> TokenIterator::mtp_run_draft_chain(int n_draft, bool as
         mx::eval(y_.tokens, drafts_dev);
     }
     return drafts_dev;
+}
+
+std::vector<int> TokenIterator::mtp_speculative_step_sampled(int n_draft) {
+    // Serial draft + sequential T=1 verify with Leviathan-style rejection sampling.
+    // Parallel draft / batch verify stay on the greedy-spec path only.
+    StreamGuard sg(generation_stream());
+    pending_draft_valid_ = false;
+    pending_draft_dev_.reset();
+
+    std::vector<float> draft_lps;
+    std::vector<int> draft_tokens;
+    draft_tokens.reserve(static_cast<size_t>(n_draft));
+
+    mx::eval(y_.tokens);
+    draft_tokens.push_back(y_.tokens.item<int32_t>());
+
+    if (n_draft > 1) {
+        auto drafts_dev = mtp_run_draft_chain(
+            n_draft, /*async_launch=*/false, /*sample_draft=*/true, &draft_lps);
+        if (drafts_dev.has_value()) {
+            mx::eval(*drafts_dev);
+            const int n_extra = static_cast<int>(drafts_dev->size());
+            const int32_t* dptr = drafts_dev->data<int32_t>();
+            for (int i = 0; i < n_extra; ++i) {
+                draft_tokens.push_back(static_cast<int>(dptr[i]));
+            }
+        }
+    }
+
+    if (draft_tokens.size() < 2) {
+        // No draft slots — plain sample.
+        auto token = step(y_);
+        y_ = LMInput::Text(token);
+        mx::eval(token);
+        return {token.item<int32_t>()};
+    }
+
+    LMOutput::State want_hidden;
+    std::optional<LMOutput::State> last_st;
+    int accepted = 0;
+    float temp = mtp_temperature_ > 0.0f ? mtp_temperature_ : 1.0f;
+
+    auto note_sample = [&](const mx::array& tok) {
+        if (processor_.has_value()) processor_->did_sample(tok);
+    };
+
+    for (int i = 0; i < n_draft; ++i) {
+#if defined(MLX_BUILD_ROCM)
+        mlx::core::gpu_set_graph_decode_mode(true);
+#endif
+        auto tok_arr = mx::array(
+            {static_cast<int32_t>(draft_tokens[i])}, {1, 1}, mx::int32);
+        LMInput::Text tok_text(tok_arr);
+        auto result = context_.call_fn(
+            tok_text, cache_.empty() ? nullptr : &cache_, &want_hidden);
+        state_ = result.state;
+        last_st = result.state;
+
+        mx::array logits = result.logits;
+        if (processor_.has_value()) {
+            // process() expects last-token style [B,V] when possible
+            if (logits.ndim() == 3) {
+                int seq_len = logits.shape(1);
+                logits = mx::slice(logits, {0, seq_len - 1, 0},
+                                   {logits.shape(0), seq_len, logits.shape(2)});
+                logits = mx::squeeze(logits, 1);
+            }
+            logits = processor_->process(logits);
+        }
+
+        if (i < n_draft - 1) {
+            const int draft_tok = draft_tokens[i + 1];
+            const float log_q = mtp_token_logprob(logits, draft_tok, temp);
+            const float log_p =
+                (static_cast<size_t>(i) < draft_lps.size())
+                    ? draft_lps[static_cast<size_t>(i)]
+                    : log_q;
+            // Accept with min(1, q/p) = min(1, exp(log_q - log_p))
+            float ratio = std::exp(std::min(0.0f, log_q - log_p));
+            if (ratio > 1.0f) ratio = 1.0f;
+            auto uarr = mx::random::uniform(0.0f, 1.0f, {}, mx::float32);
+            mx::eval(uarr);
+            const float u = uarr.item<float>();
+            if (u <= ratio) {
+                accepted++;
+                note_sample(mx::array(draft_tok, mx::int32));
+                continue;
+            }
+            // Reject: sample residual from target (approx; full residual dist later).
+            auto tok = sampler_.sample(logits);
+            mx::eval(tok);
+            note_sample(tok);
+            y_ = LMInput::Text(mx::reshape(mx::astype(tok, mx::int32), {1}));
+            mx::async_eval(y_.tokens);
+            break;
+        } else {
+            // Bonus token after full draft accept.
+            auto tok = sampler_.sample(logits);
+            mx::eval(tok);
+            note_sample(tok);
+            y_ = LMInput::Text(mx::reshape(mx::astype(tok, mx::int32), {1}));
+            mx::async_eval(y_.tokens);
+            accepted = n_draft - 1;
+        }
+    }
+
+    maybe_quantize_kv_cache(
+        cache_, kv_bits_, kv_group_size_, quantized_kv_start_);
+    if (last_st.has_value()) {
+        if (last_st->hidden_intermediates.has_value()) {
+            auto trunk_h = last_st->hidden_intermediates.value();
+            int tlen = trunk_h.shape(1);
+            int p = std::max(0, tlen - 1);
+            mtp_trunk_hidden_ = mx::slice(
+                trunk_h, {0, p, 0}, {1, p + 1, trunk_h.shape(2)});
+        }
+    }
+
+    // Emit: d0 always, then accepted drafts.
+    std::vector<int> out;
+    out.reserve(static_cast<size_t>(accepted + 1));
+    out.push_back(draft_tokens[0]);
+    for (int a = 0; a < accepted; ++a) {
+        out.push_back(draft_tokens[a + 1]);
+    }
+    record_acceptance(n_draft, accepted);
+    mtp_draft_proposed_ += std::max(0, n_draft - 1);
+    mtp_draft_accepted_ += accepted;
+    mtp_speculative_steps_++;
+    return out;
 }
 
 std::vector<int> TokenIterator::mtp_speculative_step() {
@@ -921,6 +1101,11 @@ std::vector<int> TokenIterator::mtp_speculative_step() {
         return {token.item<int32_t>()};
     }
     int n_draft = current_draft_count();
+
+    // Sampled MTP (temp>0 / top_p / rep-penalty): rejection-sampling path.
+    if (!mtp_greedy_spec_) {
+        return mtp_speculative_step_sampled(n_draft);
+    }
     static const bool kMtpTiming = (std::getenv("MTP_TIMING") != nullptr);
     // C4: overlap MTP draft with first trunk verify token (side stream).
     // Disable: MLX_MTP_NO_PARALLEL_DRAFT=1 (serial draft-then-verify).

@@ -95,7 +95,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --host HOST             Bind address (default: 127.0.0.1)\n"
                       << "  --port PORT             Listen port (default: 8080)\n"
                       << "  --max-tokens N          Default max tokens (default: 4096)\n"
-                      << "  --temperature T         Default temperature (default: 0.6; forced 0 with --use-mtp)\n"
+                      << "  --temperature T         Default temperature (default: 0.6; works with --use-mtp)\n"
                       << "  --top-p P               Default top-p (default: 1.0)\n"
                       << "  --repetition-penalty F  Default repetition penalty (off; disallowed with --use-mtp)\n"
                       << "  --memory-limit MB       GPU wired memory limit\n"
@@ -105,7 +105,7 @@ static CliArgs parse_args(int argc, char* argv[]) {
                       << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                       << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                       << "  --ctx-size N            Pre-allocate KV cache (0=auto)\n"
-                      << "  --use-mtp               Enable MTP speculative decoding (v1 greedy-only; model needs mtp.*)\n"
+                      << "  --use-mtp               Enable MTP speculative decoding (greedy at temp=0; rejection sampling at temp>0)\n"
                       << "  --n-draft-tokens N      MTP draft tokens per step (default: 2)\n"
                       << "\n"
                       << "Endpoints:\n"
@@ -157,14 +157,7 @@ int main(int argc, char* argv[]) {
         manager->set_no_think(args.no_think);
         manager->set_max_loaded(args.max_loaded);
 
-        // Build default params.
-        // MTP v1 is greedy-only: when --use-mtp, default temperature/top_p to
-        // greedy so omitted OpenAI request fields do not brick the server.
-        // Per-request non-greedy + use_mtp is rejected with HTTP 400 in server.cpp.
-        if (args.use_mtp) {
-            args.temperature = 0.0f;
-            args.top_p = 1.0f;
-        }
+        // Build default params. MTP accepts temperature/top_p (rejection sampling).
         mlx_lm::GenerateParameters default_params;
         default_params.temperature = args.temperature;
         default_params.top_p = args.top_p;

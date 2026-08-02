@@ -44,34 +44,36 @@ TEST_CASE("GenerateParameters defaults", "[generate]") {
     REQUIRE(!params.max_kv_size.has_value());
 }
 
-// P0-A: MTP v1 greedy-only contract (no GPU / no TokenIterator).
-TEST_CASE("mtp_greedy_only_violation", "[generate][mtp]") {
+// MTP path selection: greedy-spec vs rejection-sampling (not an error).
+TEST_CASE("mtp_uses_greedy_spec", "[generate][mtp]") {
     mlx_lm::GenerateParameters ok;
     ok.temperature = 0.0f;
     ok.top_p = 1.0f;
+    REQUIRE(mlx_lm::mtp_uses_greedy_spec(ok));
     REQUIRE(mlx_lm::mtp_greedy_only_violation(ok).empty());
 
     mlx_lm::GenerateParameters temp;
     temp.temperature = 0.7f;
     temp.top_p = 1.0f;
+    REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(temp));
     REQUIRE_FALSE(mlx_lm::mtp_greedy_only_violation(temp).empty());
 
     mlx_lm::GenerateParameters topp;
     topp.temperature = 0.0f;
     topp.top_p = 0.9f;
-    REQUIRE_FALSE(mlx_lm::mtp_greedy_only_violation(topp).empty());
+    REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(topp));
 
     mlx_lm::GenerateParameters rep;
     rep.temperature = 0.0f;
     rep.top_p = 1.0f;
     rep.repetition_penalty = 1.1f;
-    REQUIRE_FALSE(mlx_lm::mtp_greedy_only_violation(rep).empty());
+    REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(rep));
 
     mlx_lm::GenerateParameters rep_one;
     rep_one.temperature = 0.0f;
     rep_one.top_p = 1.0f;
     rep_one.repetition_penalty = 1.0f;
-    REQUIRE(mlx_lm::mtp_greedy_only_violation(rep_one).empty());
+    REQUIRE(mlx_lm::mtp_uses_greedy_spec(rep_one));
 }
 
 TEST_CASE("NaiveStreamingDetokenizer", "[generate]") {

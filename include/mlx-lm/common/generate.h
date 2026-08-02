@@ -95,11 +95,12 @@ private:
     SamplerVariant impl_;
 };
 
-// MTP v1 sampling contract: draft+verify use device argmax only, so temperature,
-// top_p, and repetition_penalty are not applied on the speculative path.
-// Returns empty if params are allowed for MTP; otherwise a human-readable error.
-// Callers that will actually run MTP (use_mtp with a loaded head) must refuse
-// non-empty results rather than silently falling back to greedy.
+// True when MTP can use the fast argmax draft/verify path (temp==0, no nucleus,
+// no active repetition penalty). False ⇒ use rejection-sampling MTP (temp>0 etc.).
+bool mtp_uses_greedy_spec(const GenerateParameters& params);
+
+// Empty when greedy-spec is OK; otherwise a short note (for logs / older callers).
+// Does NOT mean "refuse MTP" — sampled MTP is supported when this is non-empty.
 std::string mtp_greedy_only_violation(const GenerateParameters& params);
 
 // ---------------------------------------------------------------------------
@@ -392,6 +393,8 @@ private:
 
     // MTP speculative decoding state.
     bool use_mtp_ = false;
+    bool mtp_greedy_spec_ = true;  // false → rejection-sampling path
+    float mtp_temperature_ = 0.0f;
     int n_draft_tokens_ = 2;
     std::vector<KVCache> mtp_caches_;  // Per-layer KV cache for MTP head
     std::optional<mlx::core::array> mtp_trunk_hidden_;  // Trunk hidden state for MTP input
@@ -426,11 +429,21 @@ private:
     // verifies against trunk model, returns accepted tokens.
     std::vector<int> mtp_speculative_step();
 
+    // Sampled MTP (temp>0 / top_p / rep-penalty): serial draft + rejection sampling.
+    std::vector<int> mtp_speculative_step_sampled(int n_draft);
+
     // Run MTP draft chain for d1..d_{n_draft-1}; returns device int array
     // shaped [n_draft-1] (empty optional if no draft slots). Uses
     // mtp_trunk_hidden_ + y_ as d0. Resets mtp_caches_ to position 0.
     // If async_launch, schedules with async_eval (caller must eval later).
-    std::optional<mlx::core::array> mtp_run_draft_chain(int n_draft, bool async_launch);
+    // When sample_draft is true, samples with sampler_ and fills draft_logprobs.
+    std::optional<mlx::core::array> mtp_run_draft_chain(
+        int n_draft, bool async_launch, bool sample_draft = false,
+        std::vector<float>* draft_logprobs = nullptr);
+
+    // Host log-prob of `token` under temperature-scaled logits (last position).
+    static float mtp_token_logprob(
+        const mlx::core::array& logits, int token, float temperature);
 
     // Complete deferred v1 verify: eval pred, set y_, stash hidden, quantize KV.
     void finish_pending_v1_();

@@ -94,16 +94,16 @@ static CliArgs parse_args(int argc, char* argv[]) {
         std::cerr << "Usage: " << argv[0] << " <model_id_or_directory> [options]\n"
                   << "  --system-prompt \"...\"   System instructions\n"
                   << "  --max-tokens N          Max tokens to generate (default: 4096)\n"
-                  << "  --temperature T         Sampling temperature (default: 0.7; forced 0 with --use-mtp)\n"
-                  << "  --top-p P               Nucleus sampling (default: 0.9; forced 1 with --use-mtp)\n"
-                  << "  --repetition-penalty F  Repetition penalty (default: off; disallowed with --use-mtp)\n"
+                  << "  --temperature T         Sampling temperature (default: 0.7; works with --use-mtp via rejection sampling)\n"
+                  << "  --top-p P               Nucleus sampling (default: 0.9; works with --use-mtp)\n"
+                  << "  --repetition-penalty F  Repetition penalty (default: off; applied on trunk under --use-mtp)\n"
                   << "  --memory-limit MB       GPU wired memory limit\n"
                   << "  --no-think              Disable thinking/reasoning (Qwen3)\n"
                   << "  --raw                   Skip chat template, raw encoding\n"
                   << "  --kv-bits N             KV cache quantization (0=off, 4 or 8)\n"
                   << "  --kv-group-size N       KV cache quant group size (default: 64)\n"
                   << "  --ctx-size N            Pre-allocate KV cache for N tokens (0=auto)\n"
-                  << "  --use-mtp               Enable MTP speculative decode (v1 greedy-only: temp=0, top_p=1)\n"
+                  << "  --use-mtp               Enable MTP speculative decode (greedy argmax at temp=0; rejection sampling at temp>0)\n"
                   << "  --n-draft N             MTP block size per step (default: 2)\n"
                   << "  --device N              GPU index to run on (default: auto)\n"
                   << "  --list-devices          List available GPUs and exit\n";
@@ -150,12 +150,8 @@ static CliArgs parse_args(int argc, char* argv[]) {
             args.ignore_eos = true;
         }
     }
-    // MTP v1 is greedy-only: coerce unset chat defaults (0.7/0.9) so bare
-    // --use-mtp works; explicit non-greedy flags still fail at TokenIterator.
-    if (args.use_mtp) {
-        if (!args.temperature_set) args.temperature = 0.0f;
-        if (!args.top_p_set) args.top_p = 1.0f;
-    }
+    // Bare --use-mtp keeps chat defaults (temp 0.7 / top_p 0.9) → sampled MTP.
+    // Pass --temperature 0 for the fast greedy-spec path.
     return args;
 }
 
@@ -273,10 +269,13 @@ int main(int argc, char* argv[]) {
         if (const char* e = std::getenv("MLX_PREFILL_STEP"))
             params.prefill_step_size = std::atoi(e);
         if (args.use_mtp) {
-            std::cerr << "MTP enabled (v1 greedy-only): n_draft="
-                      << args.n_draft_tokens
+            std::cerr << "MTP enabled: n_draft=" << args.n_draft_tokens
                       << " temperature=" << args.temperature
-                      << " top_p=" << args.top_p << "\n";
+                      << " top_p=" << args.top_p
+                      << (args.temperature == 0.0f && args.top_p >= 1.0f
+                              ? " (greedy-spec)"
+                              : " (rejection-sampling)")
+                      << "\n";
         }
 
         // Use ChatSession if chat template is available and not in raw mode.

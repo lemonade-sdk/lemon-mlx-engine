@@ -455,8 +455,7 @@ struct Server::Impl {
 
         // Build generation parameters from request + defaults.
         // Only override sampling fields when the client JSON includes them so
-        // server --use-mtp greedy defaults (temperature=0) are not clobbered by
-        // ChatCompletionRequest struct defaults (temperature=0.6).
+        // server defaults are not clobbered by ChatCompletionRequest struct defaults.
         GenerateParameters params = defaults;
         if (body.contains("temperature") && !body.at("temperature").is_null()) {
             params.temperature = chat_req.temperature;
@@ -471,14 +470,7 @@ struct Server::Impl {
         if (chat_req.use_mtp) {
             params.use_mtp = chat_req.use_mtp;
         }
-        // P0-A: MTP v1 is greedy-only — fail closed with HTTP 400 before work.
-        if (params.use_mtp) {
-            auto mtp_err = mtp_greedy_only_violation(params);
-            if (!mtp_err.empty()) {
-                send_error(res, 400, mtp_err);
-                return;
-            }
-        }
+        // MTP supports temp>0 via rejection sampling (no HTTP 400).
 
         if (chat_req.stream) {
             handle_chat_stream(res, model, chat_req, params, tools_gate.inject);
@@ -534,13 +526,7 @@ struct Server::Impl {
         if (comp_req.use_mtp) {
             params.use_mtp = comp_req.use_mtp;
         }
-        if (params.use_mtp) {
-            auto mtp_err = mtp_greedy_only_violation(params);
-            if (!mtp_err.empty()) {
-                send_error(res, 400, mtp_err);
-                return;
-            }
-        }
+        // MTP supports temp>0 via rejection sampling (no HTTP 400).
 
         handle_completion_blocking(res, model, comp_req, params);
     }
