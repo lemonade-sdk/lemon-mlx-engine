@@ -74,6 +74,17 @@ See [`DESIGN_C.md`](DESIGN_C.md). Summary:
 
 ## Fire log
 
+### Fire 2026-08-02 — C1 implement spike (quality FAIL, perf flat)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** (negative result is progress) |
+| **Code** | `MLX_LM_HEAD_TWOSTAGE=1` in `qwen35_moe` call_impl |
+| **e2e** | ctrl 29.38 / K4096 29.49 / K1024 29.35 — **no notable win** |
+| **Quality** | **FAIL** garble/loops — do not ship |
+| **Next** | Better stage-1 (SVD) or kernel C2; keep flag research-only |
+
+
 ### Fire 2026-08-02T02:47Z — PROGRESS (stage-2 K-sweep FUND)
 
 | Field | Value |

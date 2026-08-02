@@ -1068,21 +1068,152 @@ PrepareResult Qwen35MoEModel::prepare_impl(const LMInput& input, std::vector<KVC
     return llm_default_prepare(*this, input, cache, ws);
 }
 
+void Qwen35MoEModel::ensure_lm_head_twostage() {
+    if (lm_twostage_ready_ || lm_twostage_failed_) return;
+    static const bool enabled = std::getenv("MLX_LM_HEAD_TWOSTAGE") != nullptr;
+    if (!enabled) {
+        lm_twostage_failed_ = true;
+        return;
+    }
+    if (!lm_head_weight_.has_value()) {
+        lm_twostage_failed_ = true;
+        return;
+    }
+    auto* qi = QuantizedWeightRegistry::instance().find(&lm_head_weight_.value());
+    if (!qi) {
+        std::cerr << "[lm-head-twostage] lm_head not quantized — disabled\n";
+        lm_twostage_failed_ = true;
+        return;
+    }
+
+    const int V = config_.vocab_size;
+    const int H = config_.hidden_size;
+    int r = 64;
+    if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_R")) {
+        int v = std::atoi(e);
+        if (v >= 8 && v <= 256) r = v;
+    }
+    const int gs = qi->group_size;
+    const int bits = qi->bits;
+    const auto& W = lm_head_weight_.value();
+    const auto& scales = qi->scales;
+    const auto biases =
+        qi->biases.has_value() ? qi->biases.value()
+                               : mx::zeros(scales.shape(), scales.dtype());
+
+    std::cerr << "[lm-head-twostage] building stage-1 factors V=" << V
+              << " H=" << H << " r=" << r << " (one-time; may take a bit)\n";
+
+    // R ~ N(0,1/sqrt(H)) : [H, r] float32 then bf16 for matmuls.
+    auto R = mx::divide(
+        mx::random::normal({H, r}, /*dtype=*/mx::float32),
+        mx::array(std::sqrt(static_cast<float>(H)), mx::float32));
+    R = mx::astype(R, mx::bfloat16);
+    mx::eval(R);
+
+    // B [r, V]: stream dequant tiles → tile @ R → write columns of B.
+    const int tile = 4096;
+    std::vector<mx::array> cols;
+    cols.reserve((V + tile - 1) / tile);
+    for (int i = 0; i < V; i += tile) {
+        const int n = std::min(tile, V - i);
+        auto idx = mx::arange(i, i + n, mx::int32);
+        auto w_t = mx::take(W, idx, /*axis=*/0);
+        auto s_t = mx::take(scales, idx, /*axis=*/0);
+        auto b_t = mx::take(biases, idx, /*axis=*/0);
+        auto deq = mx::dequantize(w_t, s_t, b_t, gs, bits); // [n, H]
+        // Bt [n, r] = deq @ R → transpose to [r, n] for column blocks of B
+        auto Bt = mx::transpose(mx::matmul(deq, R));
+        cols.push_back(Bt);
+    }
+    auto B = mx::concatenate(cols, /*axis=*/1); // [r, V]
+    B = mx::astype(B, mx::bfloat16);
+    mx::eval(B);
+
+    lm_stage1_R_ = std::move(R);
+    lm_stage1_B_ = std::move(B);
+    lm_twostage_ready_ = true;
+    std::cerr << "[lm-head-twostage] stage-1 ready (R=[" << H << "," << r
+              << "] B=[" << r << "," << V << "])\n";
+}
+
+std::optional<mx::array> Qwen35MoEModel::try_lm_head_twostage(
+    const mx::array& post_norm) {
+    static const bool enabled = std::getenv("MLX_LM_HEAD_TWOSTAGE") != nullptr;
+    if (!enabled) return std::nullopt;
+
+    // Decode only: last-token [1,1,H] or [1,H]. Prefill multi-token keeps full head.
+    mx::array h = post_norm;
+    if (h.ndim() == 3) {
+        if (h.shape(0) != 1 || h.shape(1) != 1) return std::nullopt;
+        h = mx::reshape(h, {1, h.shape(2)});
+    } else if (h.ndim() == 2) {
+        if (h.shape(0) != 1) return std::nullopt;
+    } else {
+        return std::nullopt;
+    }
+
+    ensure_lm_head_twostage();
+    if (!lm_twostage_ready_ || !lm_stage1_R_ || !lm_stage1_B_ ||
+        !lm_head_weight_.has_value()) {
+        return std::nullopt;
+    }
+
+    auto* qi = QuantizedWeightRegistry::instance().find(&lm_head_weight_.value());
+    if (!qi) return std::nullopt;
+
+    const int V = config_.vocab_size;
+    int K = 4096;
+    if (const char* e = std::getenv("MLX_LM_HEAD_STAGE1_K")) {
+        int v = std::atoi(e);
+        if (v >= 64 && v <= V) K = v;
+    }
+
+    // Stage-1: h [1,H] @ R [H,r] → [1,r] @ B [r,V] → [1,V] approx scores
+    auto hR = mx::matmul(mx::astype(h, mx::bfloat16), *lm_stage1_R_);
+    auto s1 = mx::matmul(hR, *lm_stage1_B_); // [1, V]
+    // Top-K indices (largest scores)
+    auto order = mx::argsort(-s1, /*axis=*/-1); // desc
+    auto idx = mx::slice(order, {0, 0}, {1, K}); // [1, K]
+    mx::eval(idx);
+
+    // Stage-2: exact quant head on K rows
+    auto idx1 = mx::reshape(idx, {K});
+    auto w_k = mx::take(lm_head_weight_.value(), idx1, /*axis=*/0);
+    auto s_k = mx::take(qi->scales, idx1, /*axis=*/0);
+    auto b_k = qi->biases.has_value() ? mx::take(*qi->biases, idx1, /*axis=*/0)
+                                      : mx::zeros(s_k.shape(), s_k.dtype());
+    auto logits_k = mx::quantized_matmul(
+        mx::astype(h, mx::bfloat16), w_k, s_k, b_k,
+        /*transpose=*/true, qi->group_size, qi->bits); // [1, K]
+
+    // Scatter into full vocab (non-candidates very negative for argmax/sample)
+    auto full = mx::full({1, V}, -1.0e4f, mx::float32);
+    auto out = mx::put_along_axis(
+        full, mx::astype(idx, mx::int32), mx::astype(logits_k, mx::float32), -1);
+    return out;
+}
+
 LMOutput Qwen35MoEModel::call_impl(const LMInput::Text& input, std::vector<KVCache>* cache, const LMOutput::State* state) {
     // Use forward_prenorm to get hidden BEFORE the final RMSNorm.
     // The MTP head expects pre-norm hidden and applies its own normalization.
     // The lm_head needs post-norm hidden, so we apply the norm only for logits.
     auto hidden = model_.forward_prenorm(input.tokens, cache);
     auto post_norm = model_.apply_norm(hidden);
+
+    auto logits_from_head = [&]() -> mx::array {
+        if (auto ts = try_lm_head_twostage(post_norm)) return *ts;
+        if (lm_head_weight_.has_value())
+            return linear_fwd(post_norm, lm_head_weight_.value());
+        return model_.embed_as_linear(post_norm);
+    };
+
     if (state) {
         return LMOutput(
-            lm_head_weight_.has_value() ? linear_fwd(post_norm, lm_head_weight_.value())
-                                         : model_.embed_as_linear(post_norm),
+            logits_from_head(),
             LMOutput::State(std::nullopt, hidden));  // Return PRE-norm hidden for MTP
     }
-    return LMOutput(
-        lm_head_weight_.has_value() ? linear_fwd(post_norm, lm_head_weight_.value())
-                                     : model_.embed_as_linear(post_norm));
+    return LMOutput(logits_from_head());
 }
 
 mx::array Qwen35MoEModel::forward_impl(const mx::array& inputs, std::vector<KVCache>* cache) {

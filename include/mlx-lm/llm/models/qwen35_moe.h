@@ -305,6 +305,15 @@ class Qwen35MoEModel
     std::optional<mlx::core::array> lm_head_weight_;
     std::vector<int> kv_heads_;
 
+    // Design C1: MLX_LM_HEAD_TWOSTAGE=1 — low-rank stage-1 shortlist + exact
+    // quant stage-2 on top-K. Decode T=1 only. Experiment for temp=0 greedy.
+    bool lm_twostage_ready_ = false;
+    bool lm_twostage_failed_ = false;
+    std::optional<mlx::core::array> lm_stage1_R_; // [H, r]
+    std::optional<mlx::core::array> lm_stage1_B_; // [r, V]
+    void ensure_lm_head_twostage();
+    std::optional<mlx::core::array> try_lm_head_twostage(const mlx::core::array& post_norm);
+
     // Stash mtp.* weights for MTPHead.
     std::unordered_map<std::string, mlx::core::array> mtp_weights_;
     std::optional<class MTPHead> mtp_head_;
