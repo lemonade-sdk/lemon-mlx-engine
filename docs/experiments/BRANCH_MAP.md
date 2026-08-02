@@ -63,14 +63,20 @@ origin/main  ──┬── fix/mtp-product          (#77 OPEN)     lean produc
 
 | Branch | Tip | vs `origin/main` | Role | Product PR? |
 |--------|-----|------------------|------|-------------|
-| **`fix/mtp-stream-p0`** | `6a59066` | **+45** (diverged base) | **Full WIP tip:** StreamGuard → C1–C15 ladder → RS → residuals → Maxwell → review docs; **all probe .txt** | No — use #77 for review |
-| **`exp/mtp-stream-full`** | `6a59066` (same as above) | +45 | Explicit **experiment archive alias** of full tip | No |
-| **`exp/prefill-hip-graph`** | `b99cb2f` | +1 | Prefill F1–F3 docs/A-B only (missed ≥10% pp/s bar); mlx `use_hip_graphs` opt-in patch note | Optional draft docs PR only |
+| **`fix/mtp-stream-p0`** | `875a39d` (local) / see origin | diverged base | **Full WIP tip** archive parent for exp/* siblings | No — use #77 for review |
+| **`exp/mtp-stream-full`** | same lineage as stream-p0 | — | Explicit **experiment archive alias** of full tip | No |
+| **`exp/mtp-tps-ceiling`** | S4 tip | sibling of stream-p0 | Batch-verify re-probe **KILL** (LEVER2_CLOSED) | No |
+| **`exp/mtp-c11-topk-close`** | C11 tip | sibling | C11–C15 closed | No |
+| **`exp/mtp-t1-attack`** | T1 tip | sibling | Fuse/KV/dense_kept closed | No |
+| **`exp/mtp-t1-lmhead-graph`** | **ACTIVE** | sibling @ `875a39d` parent | Lever 3 lm_head inventory→microbench; lever 4 graph later | No |
+| **`exp/prefill-hip-graph`** | `b99cb2f` | +1 | Prefill F1–F3 docs/A-B only (missed ≥10% pp/s bar) | Optional draft docs PR only |
 
-### Experiment doc trees on full tip
+### Experiment doc trees
 
 | Path | Content |
 |------|---------|
+| `docs/experiments/MASTER_LOOP.md` | Active field loop fires (lmhead-graph era) |
+| `docs/experiments/mtp-t1-lmhead-graph/` | MASTER + RESULTS (lm_head inventory; LEVER2 stamp) |
 | `docs/experiments/mtp-stream-p0/` | MASTER_WORKLOG, CRITICAL_ANALYSIS, C*/H* probes, Maxwell SAR, P0 gates |
 | `docs/experiments/prefill-hip-graph/` | F1–F3 RESULTS, PREFILL_ARENA_DESIGN, mlx patch |
 | `docs/experiments/rocm-decode-degeneration/` | Fuse thrash isolation notes/logs (partial on tip) |
