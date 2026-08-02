@@ -153,9 +153,14 @@ Log: [`B_stage2_K_sweep.txt`](B_stage2_K_sweep.txt). Same-session full qmm mean 
 | 8192 | 0.561 ms | +1.45 ms |
 | 16384 | 1.048 ms | +0.97 ms |
 
-**Verdict:** Stage-2 **passes** the “not already dead” test. Residual risk is **stage-1 shortlist** (ms + argmax match).  
-**Lever 3 status now:** **FUND_STAGE2** — C1 temp=0 implement is the open fundable step (not C4-close on latency alone).  
-**Still forbidden:** claim e2e +% or free-head +13% without logs; product temp0.7/RS stays full head until redesigned.
+**Verdict:** Stage-2 **passes** the “not already dead” test. Residual risk was **stage-1**.  
+
+### 5c. C1a e2e (2026-08-02) — **KILL random / close residual**
+
+See [`C1_IMPLEMENT.md`](C1_IMPLEMENT.md). Random low-rank stage-1: **quality FAIL** + e2e **flat** (~29.4 t/s). Dense full-V stage-1 cancels stage-2 savings on gfx1150.
+
+**Lever 3 status now:** **LEVER3_CLOSED / C4** — accept ~11.5% T₁ tax; flag research-only OFF.  
+**Still forbidden:** claim e2e +% or free-head +13%; product temp0.7/RS stays full head.
 
 ---
 

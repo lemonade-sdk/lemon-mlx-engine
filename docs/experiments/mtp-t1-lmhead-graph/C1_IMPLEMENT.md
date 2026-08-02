@@ -39,11 +39,16 @@ Random `R` + linear sketch of dequant rows is a weak approximation of the true h
 
 Even with cheap stage-2, stage-1 still touches **all V columns** of `B` (BF16 `r×V` ≈ 32 MB at r=64) every token + argsort over V. On this APU that lands ~same wall as the optimized 4-bit full qmm (~4 ms class).
 
-## What would still resolve it (next research)
+## What would still resolve it (off-loop research only)
 
-1. **Better stage-1** offline SVD / trained low-rank of lm_head (not random R).  
-2. **Kernel C2** — faster full 4-bit QMV (quality-neutral).  
-3. **Do not** enable current TWOSTAGE for product temp=0.7 / MTP RS.
+1. **Hierarchical / non-full-V stage-1** (cluster shortlist) — dense full-V stage-1 is latency-void here.  
+2. **Kernel C2** — faster full 4-bit QMV (quality-neutral; mlx-rocm).  
+3. Offline **SVD** may fix quality but still full-V stage-1 traffic unless truncated.  
+4. **Do not** enable current TWOSTAGE for product temp=0.7 / MTP RS / greedy.
+
+## Loop status (2026-08-02T02:55Z)
+
+**LEVER3_CLOSED / C4** — residual ~11.5% T₁ tax accepted for product. Field scheduler **STOPPED**.
 
 ## How to reproduce
 

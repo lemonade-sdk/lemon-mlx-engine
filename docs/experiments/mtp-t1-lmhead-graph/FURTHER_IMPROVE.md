@@ -98,15 +98,13 @@ We’re still willing to improve performance. This is the **honest map** of what
 
 ---
 
-## 6. Bottom line
+## 6. Bottom line (post C1a field)
 
-Yes — we can still improve further, but the **menu is narrow and honest**:
-
-| Still worth it | Not worth it |
-|----------------|--------------|
-| Residual **lm_head** algorithm/kernel (C1/C2) | Decode HIP / pure / batch verify |
+| Still worth it (off-loop) | Not worth it / closed |
+|---------------------------|------------------------|
+| mlx-rocm **faster full QMV** (C2) | Decode HIP / pure / batch verify |
+| Hierarchical shortlist (no full-V stage1) | **C1a random / dense full-V stage1** |
 | Ship **SAFE fuse** + clear flags | Draft-side MoE micro-opts |
-| Prefill-only HIP if pp/s matters | Short-ctx KV complexity for +1% |
 | H1 / H2 for big jumps | 35B@890M “path to 100” fantasy |
 
-**Largest remaining on-box tax:** ~**11.5% of T₁** in the already-4-bit lm_head. That’s the one place left where further engineering can still be **notable** without reopening killed levers.
+**Field loop STOPPED (2026-08-02):** residual **~11.5% T₁** head tax **accepted (C4)** after C1a quality FAIL + flat e2e. Do not re-thrash random TWOSTAGE.

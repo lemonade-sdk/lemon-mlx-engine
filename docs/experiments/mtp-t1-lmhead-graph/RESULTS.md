@@ -295,3 +295,17 @@ Full writeup: [`LEVER4_graph_inventory.md`](LEVER4_graph_inventory.md).
 | Pure product usable | **No** — fake TPS ban + quality EXIT |
 
 **Verdict: LEVER4_KILL.** Do not product-enable pure; do not re-open without new evidence.
+
+---
+
+## 9. C1 two-stage e2e (2026-08-02) — **QUALITY FAIL / LEVER3 C4**
+
+Full writeup: [`C1_IMPLEMENT.md`](C1_IMPLEMENT.md).
+
+| Cell | gen t/s | Quality | Log |
+|------|---------|---------|-----|
+| Ctrl full head | **29.378** | Coherent | `C1_E0_ctrl.txt` |
+| TWOSTAGE K=4096 r=64 | **29.490** | **GARBLE** | `C1_E0_twostage.txt` |
+| TWOSTAGE K=1024 r=64 | **29.345** | **“The” loop** | `C1_E0_twostage_K1024.txt` |
+
+**Verdict:** C1a random stage-1 **KILL**; dense full-V stage-1 latency void; **LEVER3_CLOSED / C4** accept ~11.5% head tax. Flag research-only OFF.

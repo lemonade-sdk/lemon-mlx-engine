@@ -14,12 +14,65 @@ Program state (high level):
 | S4 batch verify + n_draft=3 | **LEVER2_CLOSED / KILL** (`exp/mtp-tps-ceiling`) |
 | C11–C15 draft fuses | **Dead** (`exp/mtp-c11-topk-close`) — do not reopen |
 | T1 fuse / KV@256 / dense_kept / long-ctx KV | **Closed** (`exp/mtp-t1-attack`) — do not reopen |
-| **Lever 3 lm_head traffic** | **A+B+C + stage2 gate** — **FUND_STAGE2**; C1 implement next (`DESIGN_C.md`); free-head ~+13% sketch |
+| **Lever 3 lm_head traffic** | **LEVER3_CLOSED / C4** — C1a quality FAIL + flat t/s; residual ~11.5% T₁ tax accepted |
 | **Lever 4 graph decode 35B** | **LEVER4_KILL** — HIP −3.6% vs eager; pure garble/fake TPS |
-| Field scheduler | **ACTIVE** on `exp/mtp-t1-lmhead-graph` (L3 C1 implement still open) |
+| Field scheduler | **STOPPED** — L2+L3+L4 settled; no open fundable on-box step |
 
 ---
 
+
+## Fire 2026-08-02T02:55Z — PROGRESS → **STOPPED** (C1a_KILL + L3 C4)
+
+| Field | Value |
+|-------|--------|
+| **Result** | **STOPPED** |
+| **Branch** | `exp/mtp-t1-lmhead-graph` |
+| **GPU** | idle; docs + verdict (C1 e2e already logged @ `6ee1612`) |
+| **Lever worked** | #3 C1 implement outcome stamp + residual **C4 CLOSE** |
+| **MASTER path** | `mtp-t1-lmhead-graph/{C1_IMPLEMENT,MASTER,RESULTS}.md` |
+
+### Clear Thought
+
+- `sequentialthinking` — C1a already measured; this fire closes residual, no L4 thrash
+- `decisionframework` — C4 close over SVD thrash (dense stage1 still full-V)
+- `scientificmethod` — H-c1-random-proj **refuted** (quality + no e2e win)
+- `metacognitivemonitoring` — no invent TPS; +0.4% not claimed as win (noise + garble)
+
+### Tested (cite prior logs; no new gen invent)
+
+| Log | gen t/s | Quality |
+|-----|---------|---------|
+| `C1_E0_ctrl.txt` | **29.378** | Coherent Fourier |
+| `C1_E0_twostage.txt` K4096 r64 | **29.490** | **GARBLE** |
+| `C1_E0_twostage_K1024.txt` | **29.345** | **“The” loop** (93 tok) |
+
+### Decision
+
+1. **C1a_KILL** — random low-rank stage-1 not shippable.  
+2. **Dense full-V stage-1** latency **void** on gfx1150 (cancels stage-2).  
+3. **LEVER3_CLOSED / C4** — accept ~11.5% head tax for product.  
+4. Flag `MLX_LM_HEAD_TWOSTAGE` remains research-only default **OFF**.  
+5. **STOPPED** + `scheduler_delete` — L2 KILL · L3 CLOSED · L4 KILL.  
+6. Off-loop only: hierarchical shortlist or mlx-rocm QMV (not this scheduler).
+
+### Insight
+
+Stage-2 was never the problem; full-vocab stage-1 sketches cost ~full head wall and break greedy quality unless trained/structured better than random — out of scope for product path now.
+
+### Confidence
+
+**0.92** C1a quality fail (logged garble). **0.88** L3 C4 close. **0.95** stop criteria.
+
+### Supervisor honesty
+
+| Claim | Verdict | Path |
+|-------|---------|------|
+| ctrl 29.378 | **OK** | `C1_E0_ctrl.txt` |
+| ts 29.490 + garble | **OK** | `C1_E0_twostage.txt` |
+| product two-stage win | **FORBIDDEN** | quality fail |
+| free-head +13% | **NOT achieved** | — |
+
+---
 
 ## Fire 2026-08-02T02:47Z — PROGRESS (Design C stage-2 microbench FUND)
 

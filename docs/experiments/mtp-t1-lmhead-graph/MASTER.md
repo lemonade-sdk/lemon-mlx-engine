@@ -14,7 +14,7 @@
 | # | Lever | Status | Notes |
 |---|--------|--------|-------|
 | **2** | Batch-verify re-probe (06 §4) | **LEVER2_CLOSED / KILL** | Confirmed from `exp/mtp-tps-ceiling` S4 — **do not re-run** |
-| **3** | lm_head traffic cut (T₁) | **FUND_STAGE2 / C1 OPEN** | 4-bit tax **~4.0 ms ~11.5% T₁**; stage2 take+qmm **≪ fund bar** ([`B_stage2_K_sweep.txt`](B_stage2_K_sweep.txt)); **C1 stage-1 implement next** |
+| **3** | lm_head traffic cut (T₁) | **LEVER3_CLOSED / C4** | Tax **~11.5% T₁** accepted; stage2 cheap; **C1a random QUALITY_FAIL + flat t/s**; dense stage1 full-V latency void ([`C1_IMPLEMENT.md`](C1_IMPLEMENT.md)) |
 | **4** | Graph decode MoE+GDN 35B | **LEVER4_KILL** | HIP −3.6%; pure VOID; prefill-only stance [`HIP_GRAPH_STANCE.md`](HIP_GRAPH_STANCE.md) |
 
 ---
@@ -59,20 +59,28 @@ See [`RESULTS.md`](RESULTS.md). Headline:
 
 **Theoretical free-head ceiling** (if head→0 and T₁ drops by mean qmm only): 33.69−3.87=29.82 ms → **~33.5 t/s** (~**+13%** vs 29.68). **Not measured**; upper-bound sketch only.
 
-### Design C (2026-08-02) — complete; stage-2 **FUNDED**
+### Design C + C1 e2e — **LEVER3_CLOSED (C4)**
 
-See [`DESIGN_C.md`](DESIGN_C.md). Summary:
+See [`DESIGN_C.md`](DESIGN_C.md) + [`C1_IMPLEMENT.md`](C1_IMPLEMENT.md).
 
-- **Not** “quantize to 4-bit” (void). Residual is algorithmic (two-stage / hierarchical) or kernel-only qmm.
-- **Ship gate:** temp=0 argmax match 100% vs full head; MTP RS stays full head.
-- **Stage-2 gate (measured 2026-08-02T02:47Z):** full qmm **4.026 ms**; take+qmm K=8192 **0.561 ms** (~14% of full); stage1 budget to 0.5×full ≈ **1.45 ms** — **BUDGET_OK** all K≤16384. Log: `B_stage2_K_sweep.txt`.
-- **Still unmeasured:** stage-1 shortlist cost + argmax quality.
-- **Honest cap:** cannot claim &gt; free-head ~+13% from head work alone; no e2e +Δ yet.
-- **Next:** dedicated C1 temp=0 implement (stage-1 + wire stage-2) **or** stage-1-only microbench.
+- **Not** “quantize to 4-bit” (void). Stage-2 take+qmm **FUNDED** (cheap).  
+- **C1a random low-rank stage-1 e2e:** quality **FAIL** (garble); gen t/s **flat** (~29.4) — stage-1 dense `[1,r]×[r,V]` cancels stage-2 savings.  
+- **Product:** accept residual **~11.5% T₁** head tax; `MLX_LM_HEAD_TWOSTAGE` research-only default **OFF**.  
+- **Off-loop research only:** hierarchical shortlist (no full-V stage1) or mlx-rocm faster full QMV (C2). Not fundable as this field loop’s next step.
 
 ---
 
 ## Fire log
+
+### Fire 2026-08-02T02:55Z — PROGRESS → **LEVER3_CLOSED / STOPPED**
+
+| Field | Value |
+|-------|--------|
+| **Result** | **PROGRESS** then **STOPPED** |
+| **Work** | Stamp C1a_KILL + C4 close residual; docs hygiene (code already @ `6ee1612`) |
+| **Key logs** | `C1_E0_ctrl.txt` 29.378; `C1_E0_twostage.txt` 29.490 + garble; `C1_E0_twostage_K1024.txt` 29.345 + “The” loop |
+| **Verdict** | L2 KILL · L3 **CLOSED** · L4 KILL → program stop criteria met |
+| **Scheduler** | **STOPPED** + delete |
 
 ### Fire 2026-08-02 — C1 implement spike (quality FAIL, perf flat)
 
@@ -82,7 +90,7 @@ See [`DESIGN_C.md`](DESIGN_C.md). Summary:
 | **Code** | `MLX_LM_HEAD_TWOSTAGE=1` in `qwen35_moe` call_impl |
 | **e2e** | ctrl 29.38 / K4096 29.49 / K1024 29.35 — **no notable win** |
 | **Quality** | **FAIL** garble/loops — do not ship |
-| **Next** | Better stage-1 (SVD) or kernel C2; keep flag research-only |
+| **Next** | (superseded) C4 close residual |
 
 
 ### Fire 2026-08-02T02:47Z — PROGRESS (stage-2 K-sweep FUND)
@@ -179,4 +187,4 @@ Clear Thought: sequentialthinking + metacognitivemonitoring + decisionframework 
 
 - STOPPED if lever 3 CLOSED **and** lever 4 KILL/impossible **and** lever 2 already KILL.
 - Or three consecutive fires with no implement/measure.
-- **Now:** L2 KILL · L4 KILL · L3 **FUND_STAGE2** (stage-1 implement still open) → loop **not** STOPPED.
+- **Now:** L2 KILL · L3 **CLOSED (C4)** · L4 KILL → **STOPPED** (2026-08-02T02:55Z).
