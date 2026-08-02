@@ -1,0 +1,31 @@
+=== artifacts ===
+-rw-rw-r-- 2 antmi antmi 27206898 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_dispatch.a
+-rw-rw-r-- 1 antmi antmi     1801 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_dispatch.d
+-rw-rw-r-- 2 antmi antmi  3182036 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_dispatch.rlib
+-rwxrwxr-x 2 antmi antmi  1057160 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_dispatch.so
+-rw-rw-r-- 1 antmi antmi     2671 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_hipgraph.d
+-rw-rw-r-- 2 antmi antmi  1020420 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_hipgraph.rlib
+-rwxrwxr-x 2 antmi antmi   982384 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_hipgraph.so
+-rwxrwxr-x 2 antmi antmi   982384 Aug  2 14:25 /tmp/redline-warpfront-target/release/libredline_hipgraph.so
+/tmp/redline-warpfront-target/release/libredline_hipgraph.d
+/tmp/redline-warpfront-target/release/libredline_dispatch.d
+/tmp/redline-warpfront-target/release/libredline_dispatch.so
+/tmp/redline-warpfront-target/release/libredline_dispatch.a
+/tmp/redline-warpfront-target/release/libredline_hipgraph.rlib
+/tmp/redline-warpfront-target/release/libredline_hipgraph.so
+/tmp/redline-warpfront-target/release/libredline_dispatch.rlib
+/tmp/redline-warpfront-target/release/deps/libredline_dispatch.so
+/tmp/redline-warpfront-target/release/deps/libredline_dispatch.a
+/tmp/redline-warpfront-target/release/deps/libredline_hipgraph.rlib
+/tmp/redline-warpfront-target/release/deps/libredline_hipgraph.so
+/tmp/redline-warpfront-target/release/deps/libredline_dispatch-dd7a4d687d39e106.rlib
+/tmp/redline-warpfront-target/release/deps/libredline_dispatch-dd7a4d687d39e106.rmeta
+/tmp/redline-warpfront-target/release/deps/libredline_rocr-bff236c99af16a6b.rlib
+/tmp/redline-warpfront-target/release/deps/libredline_rocr-bff236c99af16a6b.rmeta
+=== build examples aql_arch_smoke + gpu-related ===
+   Compiling redline-dispatch v0.1.0 (/tmp/redline-warpfront/crates/redline-dispatch)
+    Finished `release` profile [optimized] target(s) in 0.29s
+EXAMPLE_BUILD_EXIT:0
+=== run aql_arch_smoke (short) ===
+Error: "set REDLINE_AQL_HSACO to a matching code object"
+SMOKE_EXIT:1

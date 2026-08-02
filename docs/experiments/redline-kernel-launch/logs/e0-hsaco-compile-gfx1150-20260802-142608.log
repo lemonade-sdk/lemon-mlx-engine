@@ -1,0 +1,46 @@
+=== compile floor_kernel.hip for gfx1150 (E0 artifact prep) ===
+2026-08-02T14:26:08-07:00
+total 24
+drwxrwxr-x 2 antmi antmi  160 Aug  2 13:53 .
+drwxrwxr-x 8 antmi antmi  280 Aug  2 13:53 ..
+-rw-rw-r-- 1 antmi antmi  783 Aug  2 13:53 acc_kernel.hip
+-rw-rw-r-- 1 antmi antmi  909 Aug  2 13:53 decode_chain.hip
+-rw-rw-r-- 1 antmi antmi 4085 Aug  2 13:53 floor_hipgraph.hip
+-rw-rw-r-- 1 antmi antmi  622 Aug  2 13:53 floor_kernel.hip
+-rw-rw-r-- 1 antmi antmi  590 Aug  2 13:53 floor_kernel_ctr.hip
+-rw-rw-r-- 1 antmi antmi  615 Aug  2 13:53 phased_pm4_smoke.hip
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Kaden Schutt <kaden@hipfire.dev>
+//
+// Minimal kernel for the dispatch-floor microbench. The bench measures
+// per-dispatch + fence overhead, not compute, so the body is intentionally
+// trivial. Build to a code object with:
+//   hipcc --genco --offload-arch=gfx1201 floor_kernel.hip -o floor_kernel.co
+// The dispatched symbol is then "floor_k.kd".
+
+extern "C" __global__ void floor_k() {
+    // no-op: one workitem, one workgroup; the cost under test is the dispatch
+    // and its cache fence, which the packet header carries regardless of body.
+}
+HIPCC_EXIT:0
+total 8
+drwxrwxr-x  2 antmi antmi   60 Aug  2 14:26 .
+drwxrwxrwt 70 root  root  2600 Aug  2 14:26 ..
+-rw-rw-r--  1 antmi antmi 8144 Aug  2 14:26 floor_kernel-gfx1150.co
+/tmp/redline-warpfront/crates/radiowave/tests/fixtures/portable_buffer_probe.hip:16:33: error: use of undeclared identifier 'radiowave'
+   16 |     const auto input_resource = radiowave::buffer_resource(input);
+      |                                 ^
+/tmp/redline-warpfront/crates/radiowave/tests/fixtures/portable_buffer_probe.hip:17:34: error: use of undeclared identifier 'radiowave'
+   17 |     const auto output_resource = radiowave::buffer_resource(output);
+      |                                  ^
+/tmp/redline-warpfront/crates/radiowave/tests/fixtures/portable_buffer_probe.hip:19:9: error: use of undeclared identifier 'radiowave'
+   19 |         radiowave::buffer_load_u32(input_resource, 0);
+      |         ^
+/tmp/redline-warpfront/crates/radiowave/tests/fixtures/portable_buffer_probe.hip:20:5: error: use of undeclared identifier 'radiowave'
+   20 |     radiowave::buffer_store_u32(output_resource, 0, value + 1);
+      |     ^
+4 errors generated when compiling for gfx1150.
+failed to execute:/opt/rocm/core/lib/llvm/bin/clang++  --offload-arch=gfx1150 -O3  --cuda-device-only -x hip /tmp/redline-warpfront/crates/radiowave/tests/fixtures/portable_buffer_probe.hip -o "/tmp/redline-warpfront-hsaco/portable_buffer_probe-gfx1150.co"
+PROBE_EXIT:1
+/opt/rocm/core/lib/llvm/bin/llvm-objdump: error: '/tmp/redline-warpfront-hsaco/floor_kernel-gfx1150.co': The file was not recognized as a valid object file
+--: line 30: /opt/rocm/core/bin/roc-obj-ls: No such file or directory

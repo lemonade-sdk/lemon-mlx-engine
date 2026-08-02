@@ -1,0 +1,74 @@
+=== E0 Redline build meta ===
+2026-08-02T14:25:19-07:00
+host: antmi-AI-Series
+cwd: /tmp/redline-warpfront
+git: b505a72df59e0203d467c08081c6ba313e49cb5c
+ROCM_PATH=/opt/rocm/core HIP_PATH=/opt/rocm/core
+PATH head: /opt/rocm/core/bin
+/opt/rocm/core/lib/llvm/bin
+/home/antmi/.local/bin
+/home/antmi/.grok/bin
+/home/antmi/.nvm/versions/node/v20.20.2/bin
+which hipcc: /opt/rocm/core/bin/hipcc
+HIP version: 7.13.99004-3309c611
+AMD clang version 23.0.0git (https://github.com/ROCm/llvm-project.git 43215c73116c407735c85a180d174f718798c328+PATCHED:2506c552d8428e2cc1778bef048b20f818e06bb3)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /opt/rocm/core-7.13/lib/llvm/bin
+7.13.0
+  Name:                    AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+  Marketing Name:          AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+  Vendor Name:             CPU                                
+  Name:                    gfx1150                            
+  Marketing Name:          AMD Radeon 890M Graphics           
+  Vendor Name:             AMD                                
+      Name:                    amdgcn-amd-amdhsa--gfx1150         
+      Name:                    amdgcn-amd-amdhsa--gfx11-generic   
+  Name:                    aie2p                              
+  Marketing Name:          RyzenAI-npu4                       
+rustc 1.96.0 (ac68faa20 2026-05-25)
+cargo 1.96.0 (30a34c682 2026-05-25)
+=== cargo build --release -p redline-dispatch -p redline-capi -p redline-hipgraph ===
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cpufeatures v0.2.17
+  Downloaded generic-array v0.14.7
+  Downloaded block-buffer v0.10.4
+  Downloaded crypto-common v0.1.7
+  Downloaded zmij v1.0.22
+  Downloaded sha2 v0.10.9
+  Downloaded digest v0.10.7
+  Downloaded libloading v0.8.9
+  Downloaded typenum v1.20.1
+  Downloaded syn v2.0.118
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling cfg-if v1.0.4
+   Compiling thiserror v2.0.18
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.22
+   Compiling cpufeatures v0.2.17
+   Compiling serde_json v1.0.150
+   Compiling serde v1.0.228
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling libc v0.2.186
+   Compiling redline-hipgraph v0.1.0 (/tmp/redline-warpfront/crates/redline-hipgraph)
+   Compiling libloading v0.8.9
+   Compiling redline-rocr v0.1.0 (/tmp/redline-warpfront/crates/redline-rocr)
+   Compiling generic-array v0.14.7
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling syn v2.0.118
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling thiserror-impl v2.0.18
+   Compiling serde_derive v1.0.228
+   Compiling redline-dispatch v0.1.0 (/tmp/redline-warpfront/crates/redline-dispatch)
+   Compiling radiowave v0.1.0 (/tmp/redline-warpfront/crates/radiowave)
+   Compiling redline-capi v0.1.0 (/tmp/redline-warpfront/crates/redline-capi)
+    Finished `release` profile [optimized] target(s) in 8.45s
+EXIT:0

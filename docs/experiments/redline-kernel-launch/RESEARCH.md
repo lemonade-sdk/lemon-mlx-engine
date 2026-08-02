@@ -68,13 +68,15 @@ From engine map ([`SUBAGENT_ENGINE_LAUNCH_MAP.md`](SUBAGENT_ENGINE_LAUNCH_MAP.md
 
 | Requirement | Local status | Risk |
 |-------------|--------------|------|
-| ROCm Core SDK **≥ 7.14** (TheRock) | Host shows **7.13.0** | **Blocker** until upgrade or vendor package match |
-| Public AQL / ROCr | Likely present | Need symbol check vs 7.14 |
+| ROCm Core SDK **≥ 7.14** (TheRock) | Host **7.13.0** — **compile OK** (E0 2026-08-02) | 7.14 still preferred for optional HIP FFI + upstream product cert; **not** hard compile gate for dispatch/capi/hipgraph |
+| Public AQL / ROCr | `libhsa-runtime64` present under `/opt/rocm/core/lib` | On-device AQL replay = **E1** (not yet run) |
 | Retained PM4 GFX11 | `gfx11*` → Gfx11 encoder | **Likely maps gfx1150** |
 | Radiowave ArchProfile | Subagent: may treat **gfx1150 ≠ gfx1151** | Re-certify on 890M; don’t assume Strix Halo numbers |
 | Published gfx1151 benches | Strong (Strix Halo) | **Transfer, not proof**, for gfx1150 |
+| Floor HSACO gfx1150 | **Built** (`hipcc --genco --offload-arch=gfx1150`) | Load/`dispatch_floor` pending E1 |
 
-**Confidence we can use it productively on 890M today:** **medium-low** until ROCm ≥ 7.14 and a smoke on-device.
+**Confidence we can *build* on 890M today:** **high** (E0 log).  
+**Confidence of *productive* gen-t/s win:** still **medium-low** until E1–E2 on-device evidence.
 
 ---
 
@@ -117,7 +119,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 
 | ID | Experiment | Pass / fail |
 |----|------------|-------------|
-| **E0** | Build Redline (warpfront) against local ROCm; note 7.13 vs 7.14 | Build succeeds or document blocker |
+| **E0** | Build Redline (warpfront) against local ROCm; note 7.13 vs 7.14 | **BUILD_OK** — see [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) |
 | **E1** | Run `dispatch_floor` / hipfire-6409 microbench on **gfx1150** if ROCm allows | Report µs/dispatch vs HIP |
 | **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | ≥ measurable wall cut |
 | **E3** | Inventory whether MLX can export HSACO for one QMM | Feasible / not |
@@ -137,7 +139,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | Prefer upstream remote | **warpfront/redline** (pwilkin = fork for reading) |
 | Parallel with lm_head C1? | **Yes** — orthogonal (compute cut vs dispatch cut) |
 
-**Overall confidence:** **0.82** on mechanism understanding; **0.55** on near-term gen-t/s win on gfx1150 without ROCm upgrade.
+**Overall confidence:** **0.82** on mechanism understanding; **0.90** on compile feasibility on 7.13 (E0); **0.55** on near-term gen-t/s win on gfx1150 (unmeasured).
 
 ---
 
@@ -149,6 +151,9 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | [`SUBAGENT_ENGINE_LAUNCH_MAP.md`](SUBAGENT_ENGINE_LAUNCH_MAP.md) | lemon/MLX launch path map |
 | [`RESEARCH.md`](RESEARCH.md) | This synthesis |
 | Local clones (not in git) | `/tmp/redline-pwilkin`, `/tmp/redline-warpfront` |
+| [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md) | E0 compile + HSACO evidence |
+| [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
+| [`logs/`](logs/) | E0 build / HSACO logs |
 
 ## 9. References
 
