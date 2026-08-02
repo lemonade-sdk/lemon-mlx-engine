@@ -24,7 +24,7 @@ Program state (high level):
 | Field | Value |
 |-------|--------|
 | **Result** | **PROGRESS** — T1 long-ctx KV matrix **started** (serial); **no TPS verdict this fire** |
-| **Branch** | `exp/mtp-t1-attack` @ pre-commit `251c9f8` → see tip after push |
+| **Branch** | `exp/mtp-t1-attack` @ `508442e` |
 | **Parent archive** | siblings @ `875a39d` / tip lineage |
 | **Product tip** | `fix/mtp-product` @ `777f398` (#77) |
 | **GPU at start** | use **2%**, VRAM ~1.3/8 GB; after start use **~16%** (expected load) |
