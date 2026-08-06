@@ -162,14 +162,25 @@ static mx::array linear_fwd(const mx::array& x, const mx::array& w,
 // fallback) if any source is not quantized or quant params differ. Does not
 // handle a separate per-projection (linear) bias — caller must only fuse
 // bias-free projections.
+// Fuse quantized projections by concat on out-axis + one quantized_matmul.
+// Exact when each row is independently quantized (affine per group_size).
+// Opt-in: MLX_ENABLE_QUANT_FUSE=1. GDN in_proj uses a separate gate (below).
+// CRITICAL: packs must be contiguous — non-contiguous concat of packed uint32
+// quant weights can dequant wrong and was the likely fuse thrash mechanism
+// (historical FUSE@0.7 FAIL at tip without contiguous; FULL fuse PASS after).
 static bool fuse_quant_projections(
     const std::vector<const mx::array*>& srcs,
     std::optional<mx::array>& dst)
 {
     if (dst.has_value()) return true;
-    // Default: separate matmuls. Opt-in fuse: MLX_ENABLE_QUANT_FUSE=1.
     if (std::getenv("MLX_ENABLE_QUANT_FUSE") == nullptr) {
         return false;
+    }
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        std::cerr << "[quant-fuse] MLX_ENABLE_QUANT_FUSE=1 (attn/MLP); "
+                     "GDN in_proj stays unfused unless MLX_ENABLE_QUANT_FUSE_GDN=1\n";
     }
     auto& reg = QuantizedWeightRegistry::instance();
     std::vector<const QuantizationInfo*> qis;
@@ -194,7 +205,6 @@ static bool fuse_quant_projections(
         ss.push_back(qis[i]->scales);
         if (have_biases) bs.push_back(*qis[i]->biases);
     }
-    // Soft-fail on shape mismatch (caller keeps separate matmuls).
     auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
         if (arrs.empty()) return false;
         for (size_t i = 1; i < arrs.size(); ++i) {
@@ -215,11 +225,11 @@ static bool fuse_quant_projections(
     if (have_biases && !concat_axis0_ok(bs)) {
         return false;
     }
-    auto w = mx::concatenate(ws, 0);
-    auto s = mx::concatenate(ss, 0);
+    // Contiguous packs for quantized_matmul (packed uint32 layout).
+    auto w = mx::contiguous(mx::concatenate(ws, 0));
+    auto s = mx::contiguous(mx::concatenate(ss, 0));
     std::optional<mx::array> b;
-    if (have_biases) b = mx::concatenate(bs, 0);
-    // Materialize as constants so they are not recomputed each step.
+    if (have_biases) b = mx::contiguous(mx::concatenate(bs, 0));
     mx::eval(w);
     mx::eval(s);
     if (b) mx::eval(*b);
@@ -415,16 +425,17 @@ void Qwen35MoEGatedDeltaNet::materialize_decode_constants(mx::Dtype act_dtype) {
     }
 }
 
-// Build the fused in_proj weight once: concatenate the qkv/z/b/a quantized
-// weights (and their scales/biases) along the output axis and register the
-// result so linear_fwd routes it through a single quantized_matmul. They share
-// input width (hidden_size) and quantization params, so output rows are
-// independent and concatenation is exact. No-op (leaves fused weight unset, so
-// the caller falls back to four matmuls) if any weight is not quantized or the
-// quant params differ.
+// GDN in_proj fuse is optional and OFF by default even when QUANT_FUSE=1.
+// Historical note: one FUSE@0.7 thrash cell was mis-attributed to a/b sensitivity;
+// retest with contiguous packs + QUANT_FUSE_GDN=1 PASSed Maxwell @0.0 and @0.7.
+// Gate kept as conservative product default (smaller memory; belt-and-suspenders).
+// Force full GDN pack: MLX_ENABLE_QUANT_FUSE=1 and MLX_ENABLE_QUANT_FUSE_GDN=1.
 void Qwen35MoEGatedDeltaNet::ensure_in_proj_fused() {
     if (in_proj_fused_ready_) return;
-    in_proj_fused_ready_ = true; // attempt exactly once
+    in_proj_fused_ready_ = true;
+    if (std::getenv("MLX_ENABLE_QUANT_FUSE_GDN") == nullptr) {
+        return;
+    }
     fuse_quant_projections({&in_proj_qkv_weight_, &in_proj_z_weight_,
                             &in_proj_b_weight_, &in_proj_a_weight_},
                            in_proj_fused_weight_);
