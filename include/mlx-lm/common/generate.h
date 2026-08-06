@@ -7,6 +7,7 @@
 #include <mlx-lm/common/wired_limit_guard.h>
 #include <mlx/mlx.h>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -94,6 +95,48 @@ public:
 private:
     SamplerVariant impl_;
 };
+
+// True when MTP can use the fast argmax draft/verify path (temp==0 and no
+// active repetition penalty). top_p alone does not force RS (nucleus filter is
+// disabled engine-wide). False ⇒ rejection-sampling MTP (temp>0 etc.).
+bool mtp_uses_greedy_spec(const GenerateParameters& params);
+
+// P0-B contract: multi-draft chains (n_draft≥3) use MTP-layer KV on every
+// draft step including the final one. Pure helper for golden tests.
+inline bool mtp_draft_uses_kv(int n_draft) { return n_draft > 2; }
+
+// Empty when greedy-spec is OK; otherwise a short note (for logs / older callers).
+// Does NOT mean "refuse MTP" — sampled MTP is supported when this is non-empty.
+std::string mtp_greedy_only_violation(const GenerateParameters& params);
+
+// ---------------------------------------------------------------------------
+// Pure MTP protocol helpers — golden-testable without loading a model.
+// ---------------------------------------------------------------------------
+
+// Emit contract shared by greedy and sampled speculative steps:
+// next() returns only d0; d1..d_accepted are drained from draft_buffer_.
+// y_ (residual on reject / bonus on full accept) is the *next* step's d0.
+struct MtpEmitPlan {
+    int d0 = 0;
+    std::vector<int> buffered;  // d1..d_accepted (empty if accepted==0)
+};
+
+// draft_tokens[0] = d0; accepted = count of following drafts accepted.
+// Clamps accepted into [0, draft_tokens.size()-1]. Empty draft → d0=0, empty buf.
+MtpEmitPlan mtp_make_emit_plan(const std::vector<int>& draft_tokens, int accepted);
+
+// Leviathan accept probability: min(1, q/p) = min(1, exp(log_q - log_p)).
+// Non-finite → 0. Used by rejection-sampling MTP (temp>0).
+float mtp_accept_ratio(float log_q, float log_p);
+
+// Adaptive n_draft (C3) pure form. min 2 when n_draft_tokens>=2; max cap.
+// history[i] = accepted draft count for recent step i (0..n_draft-1).
+// fixed=true → always n_draft_tokens (MLX_MTP_FIXED_DRAFT).
+int mtp_adaptive_n_draft(
+    int n_draft_tokens,
+    const uint8_t* accept_history,
+    int history_len,
+    bool fixed);
 
 // ---------------------------------------------------------------------------
 // LogitProcessor — interface for modifying logits before sampling.
@@ -385,6 +428,8 @@ private:
 
     // MTP speculative decoding state.
     bool use_mtp_ = false;
+    bool mtp_greedy_spec_ = true;  // false → rejection-sampling path
+    float mtp_temperature_ = 0.0f;
     int n_draft_tokens_ = 2;
     std::vector<KVCache> mtp_caches_;  // Per-layer KV cache for MTP head
     std::optional<mlx::core::array> mtp_trunk_hidden_;  // Trunk hidden state for MTP input
@@ -401,9 +446,53 @@ private:
     size_t accept_history_idx_ = 0;
     static constexpr int kAcceptHistorySize = 64;
 
+    // C4 optional inter-step draft prefetch (MLX_MTP_PREFETCH=1). Default off:
+    // primary C4 win is parallel draft + first verify on a side stream.
+    std::optional<mlx::core::array> pending_draft_dev_;  // d1..d_{K-1} on device
+    int pending_draft_n_ = 0;
+    bool pending_draft_valid_ = false;
+
+    // C12: pipeline second T=1 verify (v1) under host emit of d0 on γ=1 accept.
+    // After joint draft‖v0 match, kick call_fn(d1) without waiting; finish when
+    // draining buffered d1 (or before the next step / stop). Opt-in:
+    // MLX_MTP_PIPELINE_V1=1 (default off — gfx1150 chat regressed vs C7).
+    bool pending_v1_ = false;
+    std::optional<mlx::core::array> pending_v1_pred_;
+    std::optional<LMOutput::State> pending_v1_state_;
+
     // MTP speculative step: generates draft tokens via MTP head,
     // verifies against trunk model, returns accepted tokens.
     std::vector<int> mtp_speculative_step();
+
+    // Sampled MTP (temp>0 / top_p / rep-penalty): serial draft + rejection sampling.
+    std::vector<int> mtp_speculative_step_sampled(int n_draft);
+
+    // Run MTP draft chain for d1..d_{n_draft-1}; returns device int array
+    // shaped [n_draft-1] (empty optional if no draft slots). Uses
+    // mtp_trunk_hidden_ + y_ as d0. Resets mtp_caches_ to position 0.
+    // If async_launch, schedules with async_eval (caller must eval later).
+    // When sample_draft is true, samples with sampler_, fills draft_logprobs,
+    // and optionally keeps per-step draft logits rows for residual sampling.
+    std::optional<mlx::core::array> mtp_run_draft_chain(
+        int n_draft, bool async_launch, bool sample_draft = false,
+        std::vector<float>* draft_logprobs = nullptr,
+        std::vector<mlx::core::array>* draft_logits_rows = nullptr);
+
+    // Host log-prob of `token` under temperature-scaled logits (last position).
+    static float mtp_token_logprob(
+        const mlx::core::array& logits, int token, float temperature);
+
+    // Residual logits for rejection sampling: log(max(0, q-p)+eps) so the
+    // sampler draws from the Leviathan residual (not plain target q).
+    // If residual mass is tiny, masks `rejected_token` on target logits instead.
+    static mlx::core::array mtp_residual_logits(
+        const mlx::core::array& target_logits,
+        const mlx::core::array& draft_logits,
+        int rejected_token,
+        float temperature);
+
+    // Complete deferred v1 verify: eval pred, set y_, stash hidden, quantize KV.
+    void finish_pending_v1_();
 
     // Record acceptance history for adaptive draft length.
     void record_acceptance(int proposed, int accepted);

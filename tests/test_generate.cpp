@@ -4,11 +4,15 @@
 // testRandomStateIsolation (adapted for single-threaded sequential execution).
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/generate_params.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx/mlx.h>
+#include <cmath>
+#include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -42,6 +46,164 @@ TEST_CASE("GenerateParameters defaults", "[generate]") {
     REQUIRE(params.prefill_step_size == 512);
     REQUIRE(!params.max_tokens.has_value());
     REQUIRE(!params.max_kv_size.has_value());
+}
+
+// MTP path selection: greedy-spec vs rejection-sampling (not an error).
+TEST_CASE("mtp_uses_greedy_spec", "[generate][mtp]") {
+    mlx_lm::GenerateParameters ok;
+    ok.temperature = 0.0f;
+    ok.top_p = 1.0f;
+    REQUIRE(mlx_lm::mtp_uses_greedy_spec(ok));
+    REQUIRE(mlx_lm::mtp_greedy_only_violation(ok).empty());
+
+    mlx_lm::GenerateParameters temp;
+    temp.temperature = 0.7f;
+    temp.top_p = 1.0f;
+    REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(temp));
+    REQUIRE_FALSE(mlx_lm::mtp_greedy_only_violation(temp).empty());
+
+    // R-6: top_p alone at temp=0 must NOT force the slow RS path (nucleus
+    // filtering is disabled engine-wide; ArgMaxSampler is selected).
+    mlx_lm::GenerateParameters topp;
+    topp.temperature = 0.0f;
+    topp.top_p = 0.9f;
+    REQUIRE(mlx_lm::mtp_uses_greedy_spec(topp));
+
+    mlx_lm::GenerateParameters rep;
+    rep.temperature = 0.0f;
+    rep.top_p = 1.0f;
+    rep.repetition_penalty = 1.1f;
+    REQUIRE_FALSE(mlx_lm::mtp_uses_greedy_spec(rep));
+
+    mlx_lm::GenerateParameters rep_one;
+    rep_one.temperature = 0.0f;
+    rep_one.top_p = 1.0f;
+    rep_one.repetition_penalty = 1.0f;
+    REQUIRE(mlx_lm::mtp_uses_greedy_spec(rep_one));
+}
+
+// R-5 / P0-B: multi-draft (n_draft≥3) uses MTP KV; emit plan covers γ>1.
+TEST_CASE("mtp_draft_uses_kv and n_draft=3 emit plan (P0-B)",
+          "[generate][mtp][golden]") {
+    REQUIRE_FALSE(mlx_lm::mtp_draft_uses_kv(1));
+    REQUIRE_FALSE(mlx_lm::mtp_draft_uses_kv(2));  // C7 γ≈1: no MTP-KV
+    REQUIRE(mlx_lm::mtp_draft_uses_kv(3));
+    REQUIRE(mlx_lm::mtp_draft_uses_kv(4));
+
+    // n_draft=3 → tokens [d0,d1,d2]; accept 0..2 must buffer correctly.
+    std::vector<int> drafts = {10, 20, 30};
+    auto a0 = mlx_lm::mtp_make_emit_plan(drafts, 0);
+    REQUIRE(a0.d0 == 10);
+    REQUIRE(a0.buffered.empty());
+    auto a1 = mlx_lm::mtp_make_emit_plan(drafts, 1);
+    REQUIRE(a1.buffered.size() == 1);
+    REQUIRE(a1.buffered[0] == 20);
+    auto a2 = mlx_lm::mtp_make_emit_plan(drafts, 2);
+    REQUIRE(a2.buffered.size() == 2);
+    REQUIRE(a2.buffered[0] == 20);
+    REQUIRE(a2.buffered[1] == 30);
+}
+
+// ===== Golden MTP protocol logic (no model load) =====
+// Locks fire-1 emit/buffer contract + Leviathan accept ratio + adaptive n_draft.
+
+TEST_CASE("mtp_make_emit_plan: reject all → d0 only, empty buffer", "[generate][mtp][golden]") {
+    // n_draft=2: [d0, d1], accepted=0 (reject first draft)
+    std::vector<int> drafts = {100, 200};
+    auto plan = mlx_lm::mtp_make_emit_plan(drafts, 0);
+    REQUIRE(plan.d0 == 100);
+    REQUIRE(plan.buffered.empty());
+}
+
+TEST_CASE("mtp_make_emit_plan: accept γ=1 → buffer holds d1 (fire-1 regression)",
+          "[generate][mtp][golden]") {
+    // Fire-1 bug: sampled path returned [d0,d1] but next() only emitted d0 and
+    // never filled draft_buffer_ → d1 dropped. Plan must buffer d1.
+    std::vector<int> drafts = {10, 20};
+    auto plan = mlx_lm::mtp_make_emit_plan(drafts, /*accepted=*/1);
+    REQUIRE(plan.d0 == 10);
+    REQUIRE(plan.buffered.size() == 1);
+    REQUIRE(plan.buffered[0] == 20);
+}
+
+TEST_CASE("mtp_make_emit_plan: n_draft=4 partial accept", "[generate][mtp][golden]") {
+    std::vector<int> drafts = {1, 2, 3, 4};  // d0 + 3 drafts
+    auto plan = mlx_lm::mtp_make_emit_plan(drafts, /*accepted=*/2);
+    REQUIRE(plan.d0 == 1);
+    REQUIRE(plan.buffered == std::vector<int>({2, 3}));
+}
+
+TEST_CASE("mtp_make_emit_plan: full accept all drafts buffered", "[generate][mtp][golden]") {
+    std::vector<int> drafts = {5, 6, 7, 8};
+    auto plan = mlx_lm::mtp_make_emit_plan(drafts, /*accepted=*/3);
+    REQUIRE(plan.d0 == 5);
+    REQUIRE(plan.buffered == std::vector<int>({6, 7, 8}));
+}
+
+TEST_CASE("mtp_make_emit_plan: clamp accepted and empty input", "[generate][mtp][golden]") {
+    auto empty = mlx_lm::mtp_make_emit_plan({}, 5);
+    REQUIRE(empty.d0 == 0);
+    REQUIRE(empty.buffered.empty());
+
+    std::vector<int> drafts = {9, 10};
+    auto over = mlx_lm::mtp_make_emit_plan(drafts, 99);
+    REQUIRE(over.d0 == 9);
+    REQUIRE(over.buffered == std::vector<int>({10}));
+
+    auto neg = mlx_lm::mtp_make_emit_plan(drafts, -1);
+    REQUIRE(neg.d0 == 9);
+    REQUIRE(neg.buffered.empty());
+}
+
+TEST_CASE("mtp_accept_ratio: equal logprobs → 1", "[generate][mtp][golden]") {
+    REQUIRE(mlx_lm::mtp_accept_ratio(/*log_q=*/-1.0f, /*log_p=*/-1.0f) ==
+            Catch::Approx(1.0f));
+}
+
+TEST_CASE("mtp_accept_ratio: target higher than draft → 1", "[generate][mtp][golden]") {
+    // log_q > log_p ⇒ q/p > 1 ⇒ clamp to 1
+    REQUIRE(mlx_lm::mtp_accept_ratio(/*log_q=*/-0.5f, /*log_p=*/-2.0f) ==
+            Catch::Approx(1.0f));
+}
+
+TEST_CASE("mtp_accept_ratio: target lower → q/p < 1", "[generate][mtp][golden]") {
+    // log_q - log_p = -1 ⇒ ratio = exp(-1)
+    float r = mlx_lm::mtp_accept_ratio(/*log_q=*/-2.0f, /*log_p=*/-1.0f);
+    REQUIRE(r == Catch::Approx(std::exp(-1.0f)).margin(1e-5f));
+    REQUIRE(r > 0.0f);
+    REQUIRE(r < 1.0f);
+}
+
+TEST_CASE("mtp_accept_ratio: non-finite → 0", "[generate][mtp][golden]") {
+    REQUIRE(mlx_lm::mtp_accept_ratio(
+                std::numeric_limits<float>::quiet_NaN(), -1.0f) == 0.0f);
+    REQUIRE(mlx_lm::mtp_accept_ratio(
+                -1.0f, std::numeric_limits<float>::infinity()) == 0.0f);
+}
+
+TEST_CASE("mtp_adaptive_n_draft: caps, floor, fixed", "[generate][mtp][golden]") {
+    REQUIRE(mlx_lm::mtp_adaptive_n_draft(2, nullptr, 0, false) == 2);
+    REQUIRE(mlx_lm::mtp_adaptive_n_draft(1, nullptr, 0, false) == 1);
+    REQUIRE(mlx_lm::mtp_adaptive_n_draft(4, nullptr, 0, true) == 4);
+
+    uint8_t high[] = {3, 3, 3, 3};  // full accept on n_draft=4
+    REQUIRE(mlx_lm::mtp_adaptive_n_draft(4, high, 4, false) == 4);
+
+    uint8_t low[] = {0, 0, 0, 0};
+    // mean_acc=0 → want=2 floor
+    REQUIRE(mlx_lm::mtp_adaptive_n_draft(4, low, 4, false) == 2);
+
+    uint8_t mid[] = {1, 1, 1, 1};
+    // mean=1 → want=3
+    REQUIRE(mlx_lm::mtp_adaptive_n_draft(4, mid, 4, false) == 3);
+}
+
+TEST_CASE("GenerateCompletionInfo acceptance_rate golden", "[generate][mtp][golden]") {
+    mlx_lm::GenerateCompletionInfo info;
+    REQUIRE(info.acceptance_rate() == 0.0);
+    info.mtp_draft_tokens_proposed = 10;
+    info.mtp_draft_tokens_accepted = 7;
+    REQUIRE(info.acceptance_rate() == Catch::Approx(0.7));
 }
 
 TEST_CASE("NaiveStreamingDetokenizer", "[generate]") {

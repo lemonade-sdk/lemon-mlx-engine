@@ -2,9 +2,13 @@
 // MTP Decoder Layer with MoE (SwitchGLU) MLP implementation.
 
 #include <mlx-lm/llm/models/mtp_moe.h>
+#include <mlx-lm/common/quantized_linear.h>
 
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <vector>
 
 namespace mx = mlx::core;
 
@@ -12,8 +16,99 @@ namespace mlx_lm {
 
 namespace {
 
-mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
-    return mx::matmul(x, mx::transpose(w));
+// Quant-aware: registry hit → quantized_matmul; else dense matmul (trunk parity).
+inline mx::array linear_no_bias(const mx::array& x, const mx::array& w) {
+    return linear_forward(x, w, nullptr);
+}
+
+// C11: optional draft MoE top-k override (MLX_MTP_DRAFT_TOPK=N).
+// Qwen3.6-35B MTP head ships num_experts_per_tok=8 over 256 experts — each
+// draft step pays 8× SwitchGLU gathers + shared expert. Speculative draft can
+// often keep high accept with fewer experts (routing shortcut). Clamped to
+// [1, num_experts]. Unset → trained top_k_. Logged once when active.
+inline int effective_draft_top_k(int trained_top_k, int num_experts) {
+    const char* env = std::getenv("MLX_MTP_DRAFT_TOPK");
+    int k = trained_top_k;
+    if (env && env[0] != '\0') {
+        int v = std::atoi(env);
+        if (v > 0) k = v;
+    }
+    if (k < 1) k = 1;
+    if (num_experts > 0 && k > num_experts) k = num_experts;
+    if (k != trained_top_k) {
+        static bool logged = false;
+        if (!logged) {
+            std::cerr << "[MTP] C11 draft MoE top_k override: trained="
+                      << trained_top_k << " effective=" << k
+                      << " (MLX_MTP_DRAFT_TOPK)\n";
+            logged = true;
+        }
+    }
+    return k;
+}
+
+// C13: fuse packed quant projections along out-axis (matches trunk qwen35_moe
+// fuse_quant_projections). Opt-in MLX_MTP_QKV_FUSE=1 (default off — gfx1150
+// measured REGRESS vs C7). Contiguous packs only.
+bool fuse_quant_projections_mtp(
+    const std::vector<const mx::array*>& srcs,
+    std::optional<mx::array>& dst)
+{
+    if (dst.has_value()) return true;
+    // Default OFF after C13 measure (25.45 vs C7 27.34). Opt-in only.
+    if (std::getenv("MLX_MTP_QKV_FUSE") == nullptr) return false;
+    if (std::getenv("MLX_MTP_NO_QKV_FUSE") != nullptr) return false;
+    auto& reg = QuantizedWeightRegistry::instance();
+    std::vector<const QuantizationInfo*> qis;
+    qis.reserve(srcs.size());
+    for (auto* w : srcs) {
+        auto* q = reg.find(w);
+        if (!q) return false;
+        qis.push_back(q);
+    }
+    for (size_t i = 1; i < qis.size(); ++i) {
+        if (qis[i]->group_size != qis[0]->group_size ||
+            qis[i]->bits != qis[0]->bits) {
+            return false;
+        }
+    }
+    bool have_biases = true;
+    for (auto* q : qis) {
+        if (!q->biases) have_biases = false;
+    }
+    std::vector<mx::array> ws, ss, bs;
+    ws.reserve(srcs.size());
+    ss.reserve(srcs.size());
+    for (size_t i = 0; i < srcs.size(); ++i) {
+        ws.push_back(*srcs[i]);
+        ss.push_back(qis[i]->scales);
+        if (have_biases) bs.push_back(*qis[i]->biases);
+    }
+    auto concat_axis0_ok = [](const std::vector<mx::array>& arrs) -> bool {
+        if (arrs.empty()) return false;
+        for (size_t i = 1; i < arrs.size(); ++i) {
+            if (arrs[i].ndim() != arrs[0].ndim() || arrs[i].ndim() < 1) {
+                return false;
+            }
+            for (int d = 1; d < arrs[0].ndim(); ++d) {
+                if (arrs[i].shape(d) != arrs[0].shape(d)) return false;
+            }
+        }
+        return true;
+    };
+    if (!concat_axis0_ok(ws) || !concat_axis0_ok(ss)) return false;
+    if (have_biases && !concat_axis0_ok(bs)) return false;
+    auto w = mx::contiguous(mx::concatenate(ws, 0));
+    auto s = mx::contiguous(mx::concatenate(ss, 0));
+    std::optional<mx::array> b;
+    if (have_biases) b = mx::contiguous(mx::concatenate(bs, 0));
+    mx::eval(w);
+    mx::eval(s);
+    if (b) mx::eval(*b);
+    dst = std::move(w);
+    reg.register_weight(
+        &dst.value(), std::move(s), std::move(b), qis[0]->group_size, qis[0]->bits);
+    return true;
 }
 
 }  // namespace
@@ -47,6 +142,21 @@ MTPDecoderLayerMoE::MTPDecoderLayerMoE(const MTPHeadConfig& args, int num_expert
     assert(args_.shared_expert_intermediate_size > 0 || args_.intermediate_size > 0);
 }
 
+void MTPDecoderLayerMoE::ensure_qkv_proj_fused() {
+    if (qkv_proj_fused_ready_) return;
+    qkv_proj_fused_ready_ = true;  // attempt once
+    if (fuse_quant_projections_mtp(
+            {&q_proj_weight_, &k_proj_weight_, &v_proj_weight_},
+            qkv_proj_fused_weight_)) {
+        static bool logged = false;
+        if (!logged) {
+            std::cerr << "[MTP] C13 QKV fuse ON (draft attn 3→1 matmul; "
+                         "MLX_MTP_QKV_FUSE=1). Escape: MLX_MTP_NO_QKV_FUSE=1\n";
+            logged = true;
+        }
+    }
+}
+
 mx::array MTPDecoderLayerMoE::operator()(
     const mx::array& x, const AttentionMask& mask, KVCache* cache) {
     int B = x.shape(0);
@@ -59,14 +169,27 @@ mx::array MTPDecoderLayerMoE::operator()(
 
     // --- self-attention sub-block (same as dense MTPDecoderLayer) ---
     auto normed = mx::fast::rms_norm(x, input_layernorm_weight_, args_.rms_norm_eps);
-    auto q_proj_out = linear_no_bias(normed, q_proj_weight_);
+
+    // C13: one fused q|k|v matmul when quant-fuse packs are available.
+    ensure_qkv_proj_fused();
+    const int q_out = n_heads * hd * 2;
+    const int k_out = n_kv_heads * hd;
+    const int v_out = n_kv_heads * hd;
+    mx::array q_proj_out(0.0f), k(0.0f), v(0.0f);
+    if (qkv_proj_fused_weight_.has_value()) {
+        auto fused = linear_no_bias(normed, *qkv_proj_fused_weight_);
+        q_proj_out = mx::slice(fused, {0, 0, 0}, {B, L, q_out});
+        k = mx::slice(fused, {0, 0, q_out}, {B, L, q_out + k_out});
+        v = mx::slice(fused, {0, 0, q_out + k_out}, {B, L, q_out + k_out + v_out});
+    } else {
+        q_proj_out = linear_no_bias(normed, q_proj_weight_);
+        k = linear_no_bias(normed, k_proj_weight_);
+        v = linear_no_bias(normed, v_proj_weight_);
+    }
     // Reshape to [B, L, num_heads, 2*head_dim] then split into queries + gate
     auto q_proj_reshaped = mx::reshape(q_proj_out, {B, L, n_heads, -1});
     auto queries = mx::slice(q_proj_reshaped, {0, 0, 0, 0}, {B, L, n_heads, hd});
     auto q_gate = mx::slice(q_proj_reshaped, {0, 0, 0, hd}, {B, L, n_heads, 2 * hd});
-
-    auto k = linear_no_bias(normed, k_proj_weight_);
-    auto v = linear_no_bias(normed, v_proj_weight_);
 
     auto q4 = mx::transpose(
         mx::fast::rms_norm(queries, q_norm_weight_, args_.rms_norm_eps), {0, 2, 1, 3});
@@ -101,8 +224,10 @@ mx::array MTPDecoderLayerMoE::operator()(
     auto post = mx::fast::rms_norm(h, post_attention_layernorm_weight_, args_.rms_norm_eps);
 
     // Routing: compute expert gates and select top-k experts.
+    // C11: MLX_MTP_DRAFT_TOPK can shrink k for cheaper draft (see effective_draft_top_k).
+    const int use_top_k = effective_draft_top_k(top_k_, num_experts_);
     auto gates = mx::softmax(linear_no_bias(post, gate_weight_), -1);
-    int kth = gates.shape(-1) - top_k_;
+    int kth = gates.shape(-1) - use_top_k;
     auto inds = mx::argpartition(gates, kth, -1);
     inds = mx::slice(inds, {0, 0, kth}, {inds.shape(0), inds.shape(1), inds.shape(2)});
     auto scores = mx::take_along_axis(gates, inds, -1);
@@ -123,6 +248,20 @@ mx::array MTPDecoderLayerMoE::operator()(
         },
         /*shapeless=*/true);
     auto combined = compiled_combine({expert_out, scores})[0];
+
+    // C14: optional skip of shared expert (always-on SwiGLU on every draft step).
+    // Routed experts still run. Opt-in: MLX_MTP_NO_SHARED=1. Measured A/B vs C7.
+    static const bool kNoShared =
+        std::getenv("MLX_MTP_NO_SHARED") != nullptr;
+    if (kNoShared) {
+        static bool logged = false;
+        if (!logged) {
+            std::cerr << "[MTP] C14 shared expert OFF on draft "
+                         "(MLX_MTP_NO_SHARED=1; routed experts only)\n";
+            logged = true;
+        }
+        return mx::add(h, combined);
+    }
 
     // Shared expert path: sigmoid(gate) * shared_output + combined.
     auto shared_gate = mx::sigmoid(linear_no_bias(post, shared_expert_gate_weight_));

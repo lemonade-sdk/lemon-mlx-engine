@@ -827,9 +827,8 @@ void Qwen35Model::build_mtp_head() {
         if (src.quant_group_size > 0) cfg.quant_group_size = src.quant_group_size;
     }
 
-    // Step 2: Dequantize weights BEFORE reading shapes.
-    // Quantized weights are stored as packed uint32 arrays with shape [M, N*bits/32].
-    // We need the original dimensions for correct head_dim/num_attention_heads inference.
+    // Step 2: Temporary dequantize ONLY for shape inference (same as MoE C1 path).
+    // Runtime load keeps packed weights unless MLX_MTP_DEQUANT=1.
     std::unordered_map<std::string, mx::array> dequantized_weights;
     std::vector<std::string> quant_prefixes;
 
@@ -853,9 +852,12 @@ void Qwen35Model::build_mtp_head() {
         }
     }
 
-    std::cerr << "[MTP] Found " << quant_prefixes.size() << " quantized weight groups" << std::endl;
+    std::cerr << "[MTP] Found " << quant_prefixes.size()
+              << " quantized weight groups (shape-inference dequant only; "
+                 "runtime keeps packed unless MLX_MTP_DEQUANT=1)"
+              << std::endl;
 
-    // Dequantize quantized weights.
+    // Dequantize quantized weights for shape reads only.
     for (const auto& prefix : quant_prefixes) {
         std::string weight_key = prefix + std::string(kWeightSuffix);
         std::string scales_key = prefix + std::string(kScalesSuffix);
@@ -891,7 +893,8 @@ void Qwen35Model::build_mtp_head() {
         }
     }
 
-    std::cerr << "[MTP] Dequantized " << dequantized_weights.size() << " weights total" << std::endl;
+    std::cerr << "[MTP] Shape-map has " << dequantized_weights.size()
+              << " weight tensors (temp; not retained for runtime)" << std::endl;
 
     // --- Pass 1: Determine head_dim from q_norm/k_norm weight shapes (ground truth).
     // q_norm and k_norm are RMSNorm layers applied per-head, so their weight
@@ -988,6 +991,7 @@ void Qwen35Model::build_mtp_head() {
               << (used_fallback ? " (used base model fallback)" : " (weight-derived)")
               << std::endl;
 
+    dequantized_weights.clear();
     mtp_head_ = MTPHead(cfg);
     mtp_head_->load_mtp_weights(mtp_weights_);
 }

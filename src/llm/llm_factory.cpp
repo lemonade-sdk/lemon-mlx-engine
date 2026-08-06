@@ -517,10 +517,14 @@ ModelContext load_mtp_delta_model(
     std::cerr << "[MTP] Loaded base model weights: " << weights.size() << " tensors\n";
 
     // Step 4: Load delta model safetensors (MTP head), prefix keys with "mtp.".
+    // guru87 ships keys already named "mtp.*"; do not double-prefix.
     auto delta_weights = load_safetensors_from_directory(delta_dir);
     int mtp_keys = 0;
     for (auto& [key, value] : delta_weights) {
-        std::string prefixed = "mtp." + key;
+        std::string prefixed = key;
+        if (prefixed.rfind("mtp.", 0) != 0) {
+            prefixed = "mtp." + key;
+        }
         weights.insert_or_assign(prefixed, std::move(value));
         mtp_keys++;
     }

@@ -4,6 +4,7 @@
 #include <mlx-lm/common/hub_api.h>
 #include <mlx-lm/common/base_config.h>
 #include <mlx-lm/common/kv_cache.h>
+#include <mlx-lm/common/quantized_linear.h>
 #include <mlx-lm/llm/llm_factory.h>
 #include <mlx/mlx.h>
 #include <nlohmann/json.hpp>
@@ -106,13 +107,18 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
         }
     }
 
-    // Load the model.
+    // Load the model. Capture every QuantizedWeightRegistry registration so
+    // ModelContainer::~ can unregister on unload (P1 lifecycle residual).
     ModelContext ctx;
-    if (is_mtp_delta) {
-        std::cerr << "[ModelManager] MTP delta model detected, loading with base model merge\n";
-        ctx = load_mtp_delta_model(model_id);
-    } else {
-        ctx = load_llm(model_id);
+    std::vector<const mx::array*> quant_ptrs;
+    {
+        QuantizedWeightRegistry::LoadScope quant_scope(quant_ptrs);
+        if (is_mtp_delta) {
+            std::cerr << "[ModelManager] MTP delta model detected, loading with base model merge\n";
+            ctx = load_mtp_delta_model(model_id);
+        } else {
+            ctx = load_llm(model_id);
+        }
     }
 
     // Qwen3.5 chat templates treat undefined enable_thinking as false and
@@ -141,9 +147,11 @@ std::shared_ptr<ModelContainer> ModelManager::get_or_load(const std::string& mod
 
     std::cerr << "[ModelManager] Model loaded. Memory: active="
               << mx::get_active_memory() / (1024 * 1024) << " MB, peak="
-              << mx::get_peak_memory() / (1024 * 1024) << " MB\n";
+              << mx::get_peak_memory() / (1024 * 1024) << " MB"
+              << ", quant_registry_ptrs=" << quant_ptrs.size() << "\n";
 
-    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    auto container =
+        std::make_shared<ModelContainer>(std::move(ctx), std::move(quant_ptrs));
 
     // Now take the lock, evict if needed, and insert.
     {
@@ -228,9 +236,14 @@ std::string ModelManager::default_model_id() const {
 
 void ModelManager::unload(const std::string& model_id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    // Erase drops ModelContainer when last owner; destructor unregisters quant ptrs.
     loaded_.erase(model_id);
     if (first_loaded_ == model_id) {
         first_loaded_ = loaded_.empty() ? "" : loaded_.begin()->first;
+    }
+    // Belt: if no models remain, clear any orphaned registry entries.
+    if (loaded_.empty()) {
+        QuantizedWeightRegistry::instance().clear();
     }
 }
 
@@ -238,6 +251,7 @@ void ModelManager::unload_all() {
     std::lock_guard<std::mutex> lock(mutex_);
     loaded_.clear();
     first_loaded_.clear();
+    QuantizedWeightRegistry::instance().clear();
 }
 
 void ModelManager::evict_lru_if_needed() {
@@ -258,6 +272,9 @@ void ModelManager::evict_lru_if_needed() {
         loaded_.erase(lru_id);
         if (first_loaded_ == lru_id) {
             first_loaded_ = loaded_.empty() ? "" : loaded_.begin()->first;
+        }
+        if (loaded_.empty()) {
+            QuantizedWeightRegistry::instance().clear();
         }
     }
 }
