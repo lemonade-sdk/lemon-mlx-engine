@@ -1,0 +1,44 @@
+[pr_description]
+# Keep auto-generated descriptions concise — this is a focused C++ engine,
+# not a sprawling monorepo.
+extra_instructions = """
+Focus on:
+1. What behavior changed (not just what code changed)
+2. Backend/platform impact (ROCm, Metal, CPU, NPU)
+3. Breaking API or build changes
+4. Performance implications
+Use bullet points. Keep it under 250 words.
+"""
+
+[pr_reviewer]
+# Review focus areas for the MLX engine codebase.
+extra_instructions = """
+Prioritize:
+1. Thread safety and memory correctness (C++20, raw pointers, HIP streams)
+2. Build correctness — CMakeLists.txt changes, new targets, platform guards (#ifdef __linux__, #ifdef __APPLE__)
+3. Error handling — are new code paths handling allocation failures, HIP errors, file-not-found?
+4. Performance — blocking calls on hot paths, unnecessary copies, missing reserve() calls
+5. Test coverage — do new features have corresponding tests?
+6. Backward compatibility — does this break the HTTP API, CLI interface, or model format?
+
+Ignore minor style nits (naming, formatting) unless they genuinely obscure intent.
+Flag security issues (buffer overflows, unsanitized inputs) as critical.
+"""
+
+[pr_code_suggestions]
+extra_instructions = """
+Suggestions should be actionable and specific. Avoid generic advice like "consider refactoring."
+Prefer concrete rewrites over abstract critiques.
+"""
+
+[pr_questions]
+# Enable /ask for answering questions about PRs.
+enabled = true
+
+[config]
+# Verbose logging in CI is fine — it's ephemeral.
+verbosity_level = 1
+# The model to use — gpt-5-mini for cost efficiency on routine reviews,
+# gpt-5 for deeper reviews when someone explicitly requests /review.
+model = "gpt-5-mini"
+fallback_models = "claude-3-sonnet"
