@@ -1,0 +1,23 @@
+TS=20260808-145812 hostcut=setk1+flag_cache+submit_cwait_split lemon=d0cb5f4 redline=da7dd52
+=== B0 ===
+rc=0
+Generation: 64 tokens, 116.613 tokens/s, 0.548823s
+=== B1p1 ===
+rc=0
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=7.642us pre_sync=193.345us ordered_join=2289.82us submit=0us cwait=0us post_sync=5.581us ib_host_wait=0us | MEAN/call: set_k=0.246516us pre_sync=6.23694us ordered_join=73.865us submit=0us cwait=0us post_sync=0.180032us ib_host_wait=0us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue (async split submit|cwait; NOT pure doorbell; host wall; NOT gen t/s) host_cut=setk1+flag_cache pre_query_skip=0 pre_wait=31 ib_wait_n=0 dbl_skip_wait=0
+Generation: 64 tokens, 112.315 tokens/s, 0.569827s
+=== B1async ===
+rc=0
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=8.167us pre_sync=0us ordered_join=2510.69us submit=2505.03us cwait=5.66us post_sync=1.792us ib_host_wait=17.812us | MEAN/call: set_k=0.263452us pre_sync=0us ordered_join=80.9901us submit=80.8075us cwait=0.182581us post_sync=0.0578065us ib_host_wait=0.574581us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue (async split submit|cwait; NOT pure doorbell; host wall; NOT gen t/s) host_cut=setk1+flag_cache pre_query_skip=0 pre_wait=31 ib_wait_n=27 dbl_skip_wait=4
+Generation: 64 tokens, 110.187 tokens/s, 0.580832s
+=== B1async2 ===
+rc=0
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=6.623us pre_sync=0us ordered_join=2491.69us submit=2486.48us cwait=5.214us post_sync=1.42us ib_host_wait=17.174us | MEAN/call: set_k=0.213645us pre_sync=0us ordered_join=80.3772us submit=80.209us cwait=0.168194us post_sync=0.0458065us ib_host_wait=0.554us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue (async split submit|cwait; NOT pure doorbell; host wall; NOT gen t/s) host_cut=setk1+flag_cache pre_query_skip=0 pre_wait=31 ib_wait_n=27 dbl_skip_wait=4
+Generation: 64 tokens, 110.601 tokens/s, 0.578658s
+=== B0b ===
+rc=0
+Generation: 64 tokens, 116.347 tokens/s, 0.550077s
+DONE

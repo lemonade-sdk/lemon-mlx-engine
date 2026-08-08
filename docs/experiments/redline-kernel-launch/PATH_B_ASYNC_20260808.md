@@ -86,3 +86,27 @@ Path B WaitValue **completes gen** after completion-signal fence (20260808-14425
 | B1async / r2 | **111.1** / **111.1** |
 
 **Residual tax (honest):** ordered_join still ~68–80 µs/call host wall (doorbell + WaitValue enqueue + dual-queue). GPU critical path still waits RMSNorm via WaitValue. **No ≥2% win.** Next levers: faster retained submit, fewer owns, or own heavier ops — not more hostwait hacks.
+
+## Host cut + ordered_join split (20260808-145812)
+
+**Code (lemon):** single contiguous `set_k` (40 B), process-stable hot-flag cache, `pre_wait` only on Query-not-ready, profile split `submit` vs `cwait` inside ordered_join. Label `host_cut=setk1+flag_cache`.
+
+| Arm | gen t/s | Notes |
+|-----|--------:|-------|
+| B0 / B0b | **116.61** / **116.35** | product |
+| B1p1 | **112.32** | ordered mean 73.9 µs |
+| B1async / r2 | **110.19** / **110.60** | phase2-async-used |
+
+**B1async mean ≈ 110.4 vs B0 mean ≈ 116.5 → Δ ≈ −5.2%. No ship.**
+
+### Split (B1async n=31 MEAN/call)
+
+| Bucket | µs/call | Share of ordered_join |
+|--------|--------:|----------------------|
+| **submit** (Query + submit_after / idle submit) | **~80.8** | **~99.8%** |
+| **cwait** (hipStreamWaitValue32 enqueue) | **~0.18** | ~0.2% |
+| ordered_join total | ~81.0 | 100% |
+| set_k (merged) | ~0.26 | — |
+| ib_host_wait | ~0.57 | dual IB; 27 waits / 4 dbl_skip |
+
+**Clear Thought conclusion:** residual host wall is **almost pure `rl_pm4_submit_after_hip_stream_phase2`** (WriteValue + WAIT_REG_MEM rewrite + dual-queue doorbell), not consumer WaitValue enqueue and not set_k/getenv. Idle path still dead mid-token (`pre_query_skip=0`). Next concrete lever: **cut submit_after host path in redline-capi** (lock/rewrite/doorbell), or amortize dual-queue via heavier owned ops — not more WaitValue plumbing.
