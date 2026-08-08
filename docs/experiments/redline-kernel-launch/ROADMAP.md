@@ -43,6 +43,7 @@
 | Gen A/B 0.8B / 35B / all-flags | RUN | No win when additive flags on |
 | Gen A/B OWN_GLUE only (M1) | RUN | ≈ baseline (glue too small vs 395) |
 | Gen A/B OWN_RMSNORM only (M2) | RUN | 0.8B B1 ~−3–5% vs stable B0; B2 slower; [`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md) |
+| Clean + retry2 rebench | RUN | B1 ~−2–3.5% / B2 ~−8–9%; lemonade still holds VRAM; [`GEN_AB_CLEAN_20260808.md`](GEN_AB_CLEAN_20260808.md) [`GEN_AB_RETRY2_20260808.md`](GEN_AB_RETRY2_20260808.md) |
 
 ---
 
