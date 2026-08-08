@@ -2,6 +2,8 @@
 // P2: dlopen Redline C-API init smoke (no forward replacement).
 // P5/P6: optional in-process PM4 micro-op when MLX_REDLINE_HSACO is set;
 //     P6 bakes graph_decode_pos device ptr as accumulator. NOT gen t/s.
+// P7: optional L=1 sidecar (MLX_REDLINE_SIDECAR=1) — retained IB patch+replay
+//     alongside product call_fn; does not replace forward; NOT gen t/s.
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
@@ -78,6 +80,21 @@ using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
     const uint8_t* kernarg,
     size_t len);
 using rl_pm4_ib_free_fn = void (*)(void* ib);
+
+// P7 retained sidecar (process lifetime when MLX_REDLINE_SIDECAR=1 + micro PASS).
+void* g_gpu = nullptr;
+void* g_mod = nullptr;
+void* g_ib = nullptr;
+unsigned int* g_side_acc = nullptr;
+rl_pm4_replay_fn g_fn_replay = nullptr;
+rl_pm4_ib_set_kernargs_fn g_fn_set_k = nullptr;
+rl_gpu_free_fn g_fn_gpu_free = nullptr;
+rl_module_free_fn g_fn_mod_free = nullptr;
+rl_pm4_ib_free_fn g_fn_ib_free = nullptr;
+bool g_sidecar_ready = false;
+uint32_t g_sidecar_n = 0;
+uint64_t g_sidecar_expected = 0;
+bool g_sidecar_first_logged = false;
 
 constexpr int32_t kRlOk = 0;
 
@@ -322,12 +339,6 @@ void try_micro_op(void* lib, void* gpu) {
         g_err += " gd_post=stable";
     }
 
-    ib_free(ib);
-    mod_free(mod);
-
-    // Restore product pos scalar for any later eager/path use.
-    set_graph_decode_pos(0);
-
     const bool pass = (observed == static_cast<unsigned int>(expected));
     g_err += " micro=";
     g_err += pass ? "PASS" : "FAIL";
@@ -336,6 +347,160 @@ void try_micro_op(void* lib, void* gpu) {
     g_err += " tokens=" + std::to_string(tokens);
     g_err += " host_total_us=" + std::to_string(host_total_us);
     g_err += " (NOT gen t/s)";
+
+    // Restore product pos (micro used it as acc).
+    set_graph_decode_pos(0);
+
+    // P7: arm retained sidecar — dedicated hipMalloc acc so product pos stays free.
+    // Default OFF unless MLX_REDLINE_SIDECAR=1 and micro PASS.
+    const bool want_sidecar = env_exact_one("MLX_REDLINE_SIDECAR") && pass;
+    if (!want_sidecar) {
+        ib_free(ib);
+        mod_free(mod);
+        g_err += " sidecar=skip";
+        return;
+    }
+
+    unsigned int* side_acc = nullptr;
+    if (hipMalloc(&side_acc, sizeof(unsigned int)) != hipSuccess || !side_acc) {
+        ib_free(ib);
+        mod_free(mod);
+        g_err += " sidecar=FAIL_hipMalloc";
+        return;
+    }
+    if (hipMemset(side_acc, 0, sizeof(unsigned int)) != hipSuccess) {
+        (void)hipFree(side_acc);
+        ib_free(ib);
+        mod_free(mod);
+        g_err += " sidecar=FAIL_hipMemset";
+        return;
+    }
+    const uint64_t side_ptr =
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(side_acc));
+    if (set_k(ib, 0, 0, reinterpret_cast<const uint8_t*>(&side_ptr), sizeof(side_ptr)) !=
+        kRlOk) {
+        (void)hipFree(side_acc);
+        ib_free(ib);
+        mod_free(mod);
+        g_err += " sidecar=FAIL_rebind_acc";
+        return;
+    }
+    // Clear stale micro val@8; prime new acc pointer; ensure GPU sees memset.
+    {
+        const unsigned int zero = 0;
+        if (set_k(ib, 0, 8, reinterpret_cast<const uint8_t*>(&zero), sizeof(zero)) !=
+            kRlOk) {
+            (void)hipFree(side_acc);
+            ib_free(ib);
+            mod_free(mod);
+            g_err += " sidecar=FAIL_prime_val";
+            return;
+        }
+        if (replay(ib) != kRlOk) {
+            (void)hipFree(side_acc);
+            ib_free(ib);
+            mod_free(mod);
+            g_err += " sidecar=FAIL_prime_replay";
+            return;
+        }
+        if (hipMemset(side_acc, 0, sizeof(unsigned int)) != hipSuccess) {
+            (void)hipFree(side_acc);
+            ib_free(ib);
+            mod_free(mod);
+            g_err += " sidecar=FAIL_rezero";
+            return;
+        }
+        (void)hipDeviceSynchronize();
+    }
+
+    // Inline correctness smoke (does not need model load / L=1).
+    int side_tokens = 16;
+    if (const char* st = std::getenv("MLX_REDLINE_SIDECAR_TOKENS")) {
+        char* end = nullptr;
+        long v = std::strtol(st, &end, 10);
+        if (end != st && v >= 1 && v <= 4096) {
+            side_tokens = static_cast<int>(v);
+        }
+    }
+    uint64_t side_expected = 0;
+    const auto s0 = std::chrono::steady_clock::now();
+    for (unsigned int t = 1; t <= static_cast<unsigned int>(side_tokens); ++t) {
+        if (set_k(ib, 0, 8, reinterpret_cast<const uint8_t*>(&t), sizeof(t)) !=
+            kRlOk) {
+            (void)hipFree(side_acc);
+            ib_free(ib);
+            mod_free(mod);
+            g_err += " sidecar=FAIL_set_kernargs";
+            return;
+        }
+        if (replay(ib) != kRlOk) {
+            (void)hipFree(side_acc);
+            ib_free(ib);
+            mod_free(mod);
+            g_err += " sidecar=FAIL_replay";
+            return;
+        }
+        side_expected += t;
+    }
+    const auto s1 = std::chrono::steady_clock::now();
+    const double side_us =
+        std::chrono::duration<double, std::micro>(s1 - s0).count();
+    unsigned int side_obs = 0;
+    if (hipMemcpy(
+            &side_obs, side_acc, sizeof(unsigned int), hipMemcpyDeviceToHost) !=
+        hipSuccess) {
+        (void)hipFree(side_acc);
+        ib_free(ib);
+        mod_free(mod);
+        g_err += " sidecar=FAIL_hipMemcpy";
+        return;
+    }
+    const bool side_pass = (side_obs == static_cast<unsigned int>(side_expected));
+    g_err += " sidecar=";
+    g_err += side_pass ? "PASS" : "FAIL";
+    g_err += " side_obs=" + std::to_string(side_obs);
+    g_err += " side_exp=" + std::to_string(side_expected);
+    g_err += " side_tokens=" + std::to_string(side_tokens);
+    g_err += " side_host_us=" + std::to_string(side_us);
+    g_err += " (NOT gen t/s)";
+
+    if (!side_pass) {
+        (void)hipFree(side_acc);
+        ib_free(ib);
+        mod_free(mod);
+        return;
+    }
+
+    // Keep retained resources for L=1 ticks (product forward still owns call_fn).
+    if (hipMemset(side_acc, 0, sizeof(unsigned int)) != hipSuccess) {
+        (void)hipFree(side_acc);
+        ib_free(ib);
+        mod_free(mod);
+        g_err += " sidecar=FAIL_reset";
+        return;
+    }
+    g_gpu = gpu;
+    g_mod = mod;
+    g_ib = ib;
+    g_side_acc = side_acc;
+    g_fn_replay = replay;
+    g_fn_set_k = set_k;
+    g_fn_mod_free = mod_free;
+    g_fn_ib_free = ib_free;
+    g_sidecar_ready = true;
+    g_sidecar_n = 0;
+    g_sidecar_expected = 0;
+    g_err += " sidecar_armed=1";
+}
+
+// Returns true if caller should gpu_free(gpu) (sidecar did not retain it).
+bool try_micro_op_and_maybe_arm(void* lib, void* gpu, rl_gpu_free_fn gpu_free) {
+    g_fn_gpu_free = gpu_free;
+    try_micro_op(lib, gpu);
+    if (g_sidecar_ready) {
+        return false; // keep gpu
+    }
+    return true;
 }
 
 bool init_smoke(void* lib) {
@@ -364,9 +529,10 @@ bool init_smoke(void* lib) {
         return true;
     }
     g_err = "abi=" + std::to_string(ver) + " gpu_new=ok";
-    // P5: optional product-adjacent micro-op (default skip unless HSACO set).
-    try_micro_op(lib, gpu);
-    gpu_free(gpu);
+    // P5/P6 micro; optional P7 sidecar arm (keeps gpu when armed).
+    if (try_micro_op_and_maybe_arm(lib, gpu, gpu_free)) {
+        gpu_free(gpu);
+    }
     return true;
 }
 #endif // MLX_BUILD_ROCM
@@ -432,8 +598,7 @@ void maybe_log_redline_session_status() {
             break;
         case RedlineSessionState::Ready:
             std::cerr
-                << "[redline] session READY (P2 init + optional P5/P6 micro; "
-                   "forward still product; "
+                << "[redline] session READY (P2/P5/P6/P7; forward still product; "
                 << redline_session_last_error() << ")\n";
             break;
         case RedlineSessionState::Failed:
@@ -512,6 +677,58 @@ void maybe_probe_redline_graph_decode_bind() {
         std::cerr << "[redline] gd_bind FAIL exception: " << e.what()
                   << " (P6; not gen t/s)\n";
         g_err += " gd_bind=FAIL_exc";
+    }
+#endif
+}
+
+void maybe_redline_sidecar_l1() {
+#if !defined(MLX_BUILD_ROCM)
+    return;
+#else
+    // P7: L=1 retained patch+replay sidecar. Default OFF (MLX_REDLINE_SIDECAR=1).
+    // Does not replace call_fn. NOT gen t/s.
+    if (!env_exact_one("MLX_REDLINE_DECODE") || !env_exact_one("MLX_REDLINE_SIDECAR")) {
+        return;
+    }
+    if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
+        return;
+    }
+
+    // Ensure session/micro/arm ran (early chat probe may have already).
+    (void)redline_session_ensure_init();
+
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (!g_sidecar_ready || !g_ib || !g_fn_set_k || !g_fn_replay) {
+        return;
+    }
+
+    g_sidecar_n += 1;
+    const unsigned int t = g_sidecar_n;
+    if (g_fn_set_k(
+            g_ib, 0, 8, reinterpret_cast<const uint8_t*>(&t), sizeof(t)) !=
+        kRlOk) {
+        if (!g_sidecar_first_logged) {
+            g_sidecar_first_logged = true;
+            std::cerr << "[redline] sidecar L1 FAIL set_kernargs n=" << t
+                      << " (forward still product; NOT gen t/s)\n";
+        }
+        return;
+    }
+    if (g_fn_replay(g_ib) != kRlOk) {
+        if (!g_sidecar_first_logged) {
+            g_sidecar_first_logged = true;
+            std::cerr << "[redline] sidecar L1 FAIL replay n=" << t
+                      << " (forward still product; NOT gen t/s)\n";
+        }
+        return;
+    }
+    g_sidecar_expected += t;
+
+    if (!g_sidecar_first_logged) {
+        g_sidecar_first_logged = true;
+        std::cerr
+            << "[redline] sidecar L1 tick (retained PM4; call_fn still product; "
+               "NOT gen t/s)\n";
     }
 #endif
 }

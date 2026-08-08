@@ -598,11 +598,12 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     {
         int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
         mlx::core::gpu_set_graph_decode_mode(Lstep == 1);
-        // P0/P2/P6: opt-in session status + graph_decode ptr bind probe on L=1
+        // P0/P2/P6/P7: opt-in session + gd_bind + optional sidecar tick on L=1
         // (no forward path change; not gen t/s).
         if (Lstep == 1) {
             maybe_log_redline_session_status();
             maybe_probe_redline_graph_decode_bind();
+            maybe_redline_sidecar_l1();
         }
     }
 #endif

@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (post–Stop A)** — P5+P6 PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (post–Stop A)** — P5+P6+**P7 sidecar** PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
 
 ## Board
 
@@ -28,10 +28,22 @@
 | **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
 | **P5 in-process C-API micro** | **PASS** — chat session `micro=PASS` 2080/2080; host_total_us labeled NOT gen t/s ([`P5_INPROC_MICRO.md`](P5_INPROC_MICRO.md)) |
 | **P6 graph_decode bind** | **PASS** — VRAM ptrs stable + **bake pos as PM4 acc** micro 2080/2080 ([`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md)) |
+| **P7 L1 retained sidecar** | **PASS** — `sidecar=PASS` 136/136 + armed; L=1 hook; call_fn still product ([`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
 | Gen t/s A/B (same-build eager) | **NOT RUN** |
 
 ## Fire log
+
+### 2026-08-08 — P7 L1 sidecar arm PASS
+
+- **Primary:** Retained PM4 sidecar after micro; `MLX_REDLINE_SIDECAR=1`; L=1 tick wire; **call_fn unchanged**.  
+- Clear Thought: sequentialthinking, decisionframework (A sidecar vs B/E), metacognitivemonitoring, debuggingapproach (off-by-one prime fix).  
+- **Code:** `try_micro_op` arm path; `maybe_redline_sidecar_l1`; `generate.cpp` L=1 call.  
+- **Smoke:** off 0×; skip; micro sidecar=skip; **sidecar=PASS 136/136 armed**; xor fail-closed.  
+- **Logs:** `logs/p7-*-20260808-113934.err`.  
+- **Doc:** [`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md) + [`QUALITY_REVIEW_P7.md`](QUALITY_REVIEW_P7.md) **PASS**.  
+- **Not claimed:** gen t/s; default ON; product op replace.  
+- **Next:** optional full-gen L=1 acc verify; gen A/B only after product-path ownership.
 
 ### 2026-08-08 — P6 measured product-buffer bake PASS
 
