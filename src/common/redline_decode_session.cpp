@@ -2189,12 +2189,11 @@ bool redline_try_own_rmsnorm_packed(
     }
 
     // Path B async (opt-in): MLX_REDLINE_PHASE2=1 and MLX_REDLINE_PHASE2_ASYNC=1
-    // → submit_after (no host wait_signal inside redline).
-    // Default: host rl_pm4_wait after submit (phase2-async-hostwait). Correctness
-    // proven 20260808-143154; does NOT cut PRE tax / not a gen win path.
-    // Experimental GPU consumer fence: MLX_REDLINE_ASYNC_WAITVALUE=1 enqueues
-    // hipStreamWaitValue32. Still hangs on gfx1150 after signal-mem fix
-    // (WRITE_DATA never unblocks product stream) — opt-in only, not default.
+    // → submit_after + hipStreamWaitValue32 on product stream (true Path B).
+    // Known hang on gfx1150 (WRITE_DATA may not unblock WaitValue) — still the
+    // meaning of ASYNC; not product default (flags stay opt-in).
+    // Escape hatch only: MLX_REDLINE_ASYNC_HOSTWAIT=1 → host rl_pm4_wait after
+    // submit (proves doorbell; does NOT cut PRE tax; not a gen-win path).
     // Else phase2 sync (PHASE2=1) or phase1 StreamSynchronize ordered path.
     const RedlinePreSync pre_mode = pre_sync_mode();
     bool used_bridge = false;
@@ -2205,9 +2204,8 @@ bool redline_try_own_rmsnorm_packed(
         want_phase2 && env_exact_one("MLX_REDLINE_PHASE2_ASYNC") && g_hip_stream_async &&
         hip_stream && pre_mode != RedlinePreSync::Off &&
         pre_mode != RedlinePreSync::Device;
-    // WaitValue is opt-in; hostwait is the safe default for PHASE2_ASYNC.
-    const bool async_waitvalue = want_async && env_exact_one("MLX_REDLINE_ASYNC_WAITVALUE");
-    const bool async_hostwait = want_async && !async_waitvalue;
+    // Hostwait is explicit only — do not silently rewrite ASYNC into host join.
+    const bool async_hostwait = want_async && env_exact_one("MLX_REDLINE_ASYNC_HOSTWAIT");
 
     if (profile) {
         t0 = mark();

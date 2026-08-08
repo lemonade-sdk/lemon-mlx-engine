@@ -45,10 +45,28 @@ Gen stays near baseline (111–117 t/s). A true **2 ms × 31** per-token tax
 
 | Flag | Role |
 |------|------|
-| `MLX_REDLINE_PHASE2_ASYNC=1` | submit_after + **host wait** (`phase2-async-hostwait`) — safe diagnostic |
-| `MLX_REDLINE_ASYNC_WAITVALUE=1` | experimental GPU WaitValue — **may hang**; not default |
+| `MLX_REDLINE_PHASE2_ASYNC=1` | submit_after + **GPU WaitValue** (`phase2-async-used`) — true Path B; **may hang** on gfx1150 |
+| `MLX_REDLINE_ASYNC_HOSTWAIT=1` | with ASYNC: host `rl_pm4_wait` instead (`phase2-async-hostwait`) — diagnostic only |
+| product default | all of the above **OFF** until ≥2% gen win |
 | profile | `ordered_join` TOTAL + MEAN; labeled not pure doorbell / not gen t/s |
+
+**Note:** An earlier tip briefly made hostwait the silent default for ASYNC (hang avoidance). That was wrong naming — ASYNC means WaitValue; hostwait is opt-in only.
 
 ## Ship bar
 
-Path B is **not shippable** until WaitValue path completes gen **and** B1 shows ≥2% gen win under contention. Until then OWN_RMSNORM remains research / default OFF.
+Path B WaitValue **completes gen** after completion-signal fence (20260808-144253). Still **not product default** until B1 shows ≥2% gen win under contention. OWN_RMSNORM remains research / default OFF.
+
+## Remeasure after reinstall (completion-signal WaitValue)
+
+**TS:** 20260808-144253 · rebuilt `libredline_dispatch.so` + `chat`  
+**Fix:** `rl_pm4_submit_after_hip_stream_phase2` publishes `hsa_amd_signal_value_pointer(completion)` for WaitValue EQ 0 (dropped PM4 WRITE_DATA consumer fence).
+
+| Arm | Mode | rc | gen t/s |
+|-----|------|---:|--------:|
+| B0 | product | 0 | **116.02** |
+| B1p1 | phase1-used | 0 | **112.78** |
+| **B1async** | **phase2-async-used** | **0** | **112.59** |
+| B1asyncHW | phase2-async-hostwait | 0 | **113.41** |
+| B0b | product | 0 | **116.49** |
+
+**Verdict:** real Path B WaitValue **works** (no hang). Gen still ~−3% vs B0 — **continue** Path B for correctness/PRE cut research; **no ship**.
