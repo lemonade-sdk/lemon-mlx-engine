@@ -1,15 +1,24 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
-// P2/P5/P6/P7 research: optional Redline session (exp/redline-kernel-launch).
+// P2/P5/P6/P7/P8 research: optional Redline session (exp/redline-kernel-launch).
 // Default OFF — only when MLX_REDLINE_DECODE=1. Does not replace product forward.
 //
 // P5 micro-op (opt-in HSACO): retained-PM4 load+patch+replay correctness.
 // P6 graph_decode bind: stable input/pos VRAM ptrs; bake pos as micro acc.
 // P7 sidecar (MLX_REDLINE_SIDECAR=1): arm retained IB after micro; L=1 ticks
 // patch+replay alongside product call_fn (instrumentation). NOT gen t/s.
+// P8 small-op (MLX_REDLINE_SMALL_OP=1): engine-owned L=1 op that writes/reads
+// live graph_decode_input VRAM and drives retained PM4 from product token ids.
+// Does not replace call_fn. NOT gen t/s.
 
 #pragma once
 
 #include <string>
+
+namespace mlx {
+namespace core {
+class array;
+} // namespace core
+} // namespace mlx
 
 namespace mlx_lm {
 
@@ -23,11 +32,11 @@ enum class RedlineSessionState {
 
 // Lazy once: if env MLX_REDLINE_DECODE!=1, returns Disabled without loading.
 // When =1: dlopen redline-capi; gpu_new smoke; if MLX_REDLINE_HSACO set, P5/P6
-// PM4 micro; if also MLX_REDLINE_SIDECAR=1 and micro PASS, arm P7 retained IB.
+// PM4 micro; if also SIDECAR=1 or SMALL_OP=1 and micro PASS, arm retained IB.
 // Never enables HIP graphs. Never claims gen t/s. Does not change call_fn.
 RedlineSessionState redline_session_ensure_init();
 
-// One-shot stderr banner for P0/P2/P5/P6/P7 (safe every step).
+// One-shot stderr banner for P0/P2/P5/P6/P7/P8 (safe every step).
 void maybe_log_redline_session_status();
 
 // P6: one-shot probe of stable graph_decode_input/pos buffer pointers
@@ -35,16 +44,23 @@ void maybe_log_redline_session_status();
 // Does not change product forward. Logs [redline] gd_bind PASS|FAIL once.
 void maybe_probe_redline_graph_decode_bind();
 
-// P7: optional L=1 retained-PM4 patch+replay tick. No-op unless
-// MLX_REDLINE_DECODE=1 and MLX_REDLINE_SIDECAR=1 and session armed.
-// Does not replace call_fn. NOT gen t/s.
+// P7: optional L=1 retained-PM4 patch+replay tick (synthetic n=1,2,...).
+// No-op unless DECODE=1 + SIDECAR=1 and armed. Skipped when SMALL_OP=1
+// (product-buffer-driven ticks own the retained IB). Does not replace call_fn.
 void maybe_redline_sidecar_l1();
 
-// P7b: D2H side_acc vs host triangular sum after L=1 ticks (full-gen verify).
-// No-op unless DECODE=1 + SIDECAR=1 + armed and at least one L=1 tick ran.
-// Logs [redline] sidecar L1 fullgen PASS|FAIL once per call. NOT gen t/s.
+// P7b/P8: D2H side_acc vs host expected after L=1 ticks (full-gen verify).
+// SIDECAR-only: triangular sum. SMALL_OP: sum of product token ids from
+// graph_decode_input VRAM. Logs PASS|FAIL once per call. NOT gen t/s.
 // Does not replace call_fn. Safe from TokenIterator destructor / end of gen.
 void maybe_redline_sidecar_verify();
+
+// P8: engine-owned L=1 small op consuming live graph_decode_* VRAM.
+// No-op unless DECODE=1 + SMALL_OP=1 and armed. Writes previous token into
+// graph_decode_input, D2H via device ptr, retained PM4 patch+replay.
+// Does not set graph_external_pos (product RoPE stays host-offset).
+// Does not replace call_fn. NOT gen t/s.
+void maybe_redline_small_op_l1(mlx::core::array& previous_token);
 
 // Human-readable last error / status detail (empty if none / disabled).
 const std::string& redline_session_last_error();

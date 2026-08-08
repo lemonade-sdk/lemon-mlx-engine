@@ -598,12 +598,14 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     {
         int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
         mlx::core::gpu_set_graph_decode_mode(Lstep == 1);
-        // P0/P2/P6/P7: opt-in session + gd_bind + optional sidecar tick on L=1
-        // (no forward path change; not gen t/s).
+        // P0/P2/P6/P7/P8: opt-in session + gd_bind + optional sidecar / small-op
+        // L=1 tick (no forward path change; not gen t/s). SMALL_OP consumes
+        // graph_decode_input VRAM; call_fn remains product.
         if (Lstep == 1) {
             maybe_log_redline_session_status();
             maybe_probe_redline_graph_decode_bind();
             maybe_redline_sidecar_l1();
+            maybe_redline_small_op_l1(batched.tokens);
         }
     }
 #endif
@@ -870,8 +872,8 @@ void TokenIterator::teardown_pure_graph_() {
 }
 
 TokenIterator::~TokenIterator() {
-    // P7b: after L=1 ticks (if any), D2H-verify sidecar acc vs triangular sum.
-    // No-op unless MLX_REDLINE_DECODE=1 + SIDECAR=1 + armed. NOT gen t/s.
+    // P7b/P8: after L=1 ticks (if any), D2H-verify side_acc vs expected
+    // (triangular for SIDECAR; product token-sum for SMALL_OP). NOT gen t/s.
     maybe_redline_sidecar_verify();
     teardown_pure_graph_();
 }

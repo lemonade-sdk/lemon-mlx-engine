@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (post–Stop A)** — P5+P6+P7+**P7b fullgen** PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (post–Stop A)** — P5–P7b+**P8 small-op** PASS; gen t/s A/B **RUN** (no clear win; sidecar not product replace); product default ON **forbidden** |
 
 ## Board
 
@@ -30,11 +30,23 @@
 | **P6 graph_decode bind** | **PASS** — VRAM ptrs stable + **bake pos as PM4 acc** micro 2080/2080 ([`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md)) |
 | **P7 L1 retained sidecar** | **PASS** — `sidecar=PASS` 136/136 + armed; L=1 hook; call_fn still product ([`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md)) |
 | **P7b full-gen L=1 verify** | **PASS** — model load + L=1 ticks; `fullgen PASS n=17 side_obs=153 side_exp=153`; call_fn still product ([`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md)) |
-| Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
+| **P8 engine-owned small op** | **PASS** — live `graph_decode_input` VRAM L=1; fullgen token-sum **15185/15185** n=17; call_fn still product ([`P8_SMALL_OP.md`](P8_SMALL_OP.md)) |
+| Engine product wire / default ON | **FORBIDDEN until measured** gen A/B win (≥2%) |
 | Gen t/s A/B 0.8B | **RUN** — ~115–117 t/s; no clear win ([`GEN_AB_20260808.md`](GEN_AB_20260808.md)) |
 | Gen t/s A/B **35B LemonMLXE** | **RUN** — ~27–29 t/s; session≈base; sidecar≈base/slightly slower ([`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md)) |
 
 ## Fire log
+
+### 2026-08-08 — P8 engine-owned small op PASS (product graph_decode VRAM)
+
+- **Primary:** Real engine-owned L=1 small op consuming live `graph_decode_input` VRAM (`MLX_REDLINE_SMALL_OP=1`); retained PM4; **call_fn still product**.  
+- Clear Thought: sequentialthinking, decisionframework (B small-op vs A/C/D/E), metacognitivemonitoring, scientificmethod (H-p8-small-op supported), mentalmodel first_principles.  
+- **Code:** arm under SMALL_OP; `maybe_redline_small_op_l1`; mode-aware fullgen verify; `generate.cpp` L=1 wire.  
+- **Smoke:** off 0×; **small_op L1 fullgen PASS n=17 side_obs=15185 side_exp=15185**; xor fail-closed.  
+- **Logs:** `logs/p8-{off,on-smallop,xor}-20260808-114957.err`.  
+- **Doc:** [`P8_SMALL_OP.md`](P8_SMALL_OP.md) + [`QUALITY_REVIEW_P8.md`](QUALITY_REVIEW_P8.md) **PASS** (quintuple+supervisor).  
+- **Not claimed:** gen t/s A/B win; default ON; call_fn/qmm replace.  
+- **Next:** product-path op replace design+measure before any default ON; gen A/B only after real ownership (prior health-check A/B showed no win as expected).
 
 ### 2026-08-08 — Gen t/s A/B LemonMLXE 35B
 

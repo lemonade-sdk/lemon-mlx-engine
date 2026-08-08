@@ -4,6 +4,8 @@
 //     P6 bakes graph_decode_pos device ptr as accumulator. NOT gen t/s.
 // P7: optional L=1 sidecar (MLX_REDLINE_SIDECAR=1) — retained IB patch+replay
 //     alongside product call_fn; does not replace forward; NOT gen t/s.
+// P8: optional L=1 small-op (MLX_REDLINE_SMALL_OP=1) — engine-owned product
+//     graph_decode_input VRAM consume + retained PM4; call_fn still product.
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
@@ -81,7 +83,7 @@ using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
     size_t len);
 using rl_pm4_ib_free_fn = void (*)(void* ib);
 
-// P7 retained sidecar (process lifetime when MLX_REDLINE_SIDECAR=1 + micro PASS).
+// P7/P8 retained IB (process lifetime when SIDECAR=1 or SMALL_OP=1 + micro PASS).
 void* g_gpu = nullptr;
 void* g_mod = nullptr;
 void* g_ib = nullptr;
@@ -92,9 +94,12 @@ rl_gpu_free_fn g_fn_gpu_free = nullptr;
 rl_module_free_fn g_fn_mod_free = nullptr;
 rl_pm4_ib_free_fn g_fn_ib_free = nullptr;
 bool g_sidecar_ready = false;
+bool g_small_op_mode = false; // true when armed under MLX_REDLINE_SMALL_OP=1
+void* g_small_op_input_ptr0 = nullptr; // product graph_decode_input VRAM at arm
 uint32_t g_sidecar_n = 0;
 uint64_t g_sidecar_expected = 0;
 bool g_sidecar_first_logged = false;
+uint32_t g_small_op_pos_book = 0; // host bookkeeping; does not enable external_pos
 
 constexpr int32_t kRlOk = 0;
 
@@ -351,14 +356,18 @@ void try_micro_op(void* lib, void* gpu) {
     // Restore product pos (micro used it as acc).
     set_graph_decode_pos(0);
 
-    // P7: arm retained sidecar — dedicated hipMalloc acc so product pos stays free.
-    // Default OFF unless MLX_REDLINE_SIDECAR=1 and micro PASS.
+    // P7/P8: arm retained IB — dedicated hipMalloc acc so product pos stays free.
+    // Default OFF unless SIDECAR=1 or SMALL_OP=1 and micro PASS.
+    const bool want_small_op = env_exact_one("MLX_REDLINE_SMALL_OP") && pass;
     const bool want_sidecar = env_exact_one("MLX_REDLINE_SIDECAR") && pass;
-    if (!want_sidecar) {
+    if (!want_sidecar && !want_small_op) {
         ib_free(ib);
         mod_free(mod);
         g_err += " sidecar=skip";
         return;
+    }
+    if (want_small_op) {
+        g_err += " small_op=want";
     }
 
     unsigned int* side_acc = nullptr;
@@ -488,9 +497,15 @@ void try_micro_op(void* lib, void* gpu) {
     g_fn_mod_free = mod_free;
     g_fn_ib_free = ib_free;
     g_sidecar_ready = true;
+    g_small_op_mode = want_small_op;
+    g_small_op_input_ptr0 = input_ptr0;
     g_sidecar_n = 0;
     g_sidecar_expected = 0;
+    g_small_op_pos_book = 0;
     g_err += " sidecar_armed=1";
+    if (want_small_op) {
+        g_err += " small_op_armed=1";
+    }
 }
 
 // Returns true if caller should gpu_free(gpu) (sidecar did not retain it).
@@ -598,7 +613,7 @@ void maybe_log_redline_session_status() {
             break;
         case RedlineSessionState::Ready:
             std::cerr
-                << "[redline] session READY (P2/P5/P6/P7; forward still product; "
+                << "[redline] session READY (P2/P5/P6/P7/P8; forward still product; "
                 << redline_session_last_error() << ")\n";
             break;
         case RedlineSessionState::Failed:
@@ -686,9 +701,13 @@ void maybe_redline_sidecar_l1() {
     return;
 #else
     // P7: L=1 retained patch+replay sidecar. Default OFF (MLX_REDLINE_SIDECAR=1).
+    // When SMALL_OP=1, product-buffer ticks own the IB — skip synthetic n.
     // Does not replace call_fn. NOT gen t/s.
     if (!env_exact_one("MLX_REDLINE_DECODE") || !env_exact_one("MLX_REDLINE_SIDECAR")) {
         return;
+    }
+    if (env_exact_one("MLX_REDLINE_SMALL_OP")) {
+        return; // P8 owns L=1 retained ticks
     }
     if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
         return;
@@ -733,14 +752,136 @@ void maybe_redline_sidecar_l1() {
 #endif
 }
 
+void maybe_redline_small_op_l1(mlx::core::array& previous_token) {
+#if !defined(MLX_BUILD_ROCM)
+    (void)previous_token;
+    return;
+#else
+    // P8: engine-owned L=1 small op consuming live graph_decode_* VRAM.
+    // Default OFF (MLX_REDLINE_SMALL_OP=1). Does not replace call_fn. NOT gen t/s.
+    // Does not set graph_external_pos — product RoPE/KV stays host-offset path.
+    if (!env_exact_one("MLX_REDLINE_DECODE") || !env_exact_one("MLX_REDLINE_SMALL_OP")) {
+        return;
+    }
+    if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
+        return;
+    }
+
+    (void)redline_session_ensure_init();
+
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (!g_sidecar_ready || !g_small_op_mode || !g_ib || !g_fn_set_k ||
+        !g_fn_replay) {
+        return;
+    }
+
+    try {
+        // Product stable input buffer: engine writes previous sample token.
+        namespace mx = mlx::core;
+        mx::eval(previous_token);
+        set_graph_decode_input_from(previous_token);
+
+        // Bookkeep pos in the fixed product buffer without enabling external_pos
+        // (models only consume graph_decode_pos when graph_external_pos() is true).
+        set_graph_decode_pos(static_cast<int>(g_small_op_pos_book));
+        g_small_op_pos_book += 1;
+
+        auto& in = graph_decode_input();
+        auto& pos = graph_decode_pos();
+        void* in_ptr = graph_decode_device_data_ptr(in);
+        void* pos_ptr = graph_decode_device_data_ptr(pos);
+        if (!in_ptr || !pos_ptr) {
+            if (!g_sidecar_first_logged) {
+                g_sidecar_first_logged = true;
+                std::cerr
+                    << "[redline] small_op L1 FAIL null_gd_ptr "
+                       "(call_fn still product; NOT gen t/s)\n";
+            }
+            return;
+        }
+        if (g_small_op_input_ptr0 && in_ptr != g_small_op_input_ptr0) {
+            if (!g_sidecar_first_logged) {
+                g_sidecar_first_logged = true;
+                std::cerr
+                    << "[redline] small_op L1 FAIL input_ptr_moved "
+                       "(call_fn still product; NOT gen t/s)\n";
+            }
+            return;
+        }
+
+        // Consume product VRAM: D2H token id from graph_decode_input device ptr.
+        int32_t tok_i32 = 0;
+        if (hipMemcpy(
+                &tok_i32, in_ptr, sizeof(int32_t), hipMemcpyDeviceToHost) !=
+            hipSuccess) {
+            if (!g_sidecar_first_logged) {
+                g_sidecar_first_logged = true;
+                std::cerr
+                    << "[redline] small_op L1 FAIL_hipMemcpy_input "
+                       "(call_fn still product; NOT gen t/s)\n";
+            }
+            return;
+        }
+        const unsigned int val = static_cast<unsigned int>(tok_i32);
+
+        if (g_fn_set_k(
+                g_ib,
+                0,
+                8,
+                reinterpret_cast<const uint8_t*>(&val),
+                sizeof(val)) != kRlOk) {
+            if (!g_sidecar_first_logged) {
+                g_sidecar_first_logged = true;
+                std::cerr
+                    << "[redline] small_op L1 FAIL set_kernargs val=" << val
+                    << " (call_fn still product; NOT gen t/s)\n";
+            }
+            return;
+        }
+        if (g_fn_replay(g_ib) != kRlOk) {
+            if (!g_sidecar_first_logged) {
+                g_sidecar_first_logged = true;
+                std::cerr
+                    << "[redline] small_op L1 FAIL replay val=" << val
+                    << " (call_fn still product; NOT gen t/s)\n";
+            }
+            return;
+        }
+
+        g_sidecar_n += 1;
+        g_sidecar_expected += static_cast<uint64_t>(val);
+
+        if (!g_sidecar_first_logged) {
+            g_sidecar_first_logged = true;
+            std::cerr
+                << "[redline] small_op L1 tick (product graph_decode_input VRAM "
+                   "val="
+                << val
+                << "; retained PM4; call_fn still product; NOT gen t/s)\n";
+        }
+    } catch (const std::exception& e) {
+        if (!g_sidecar_first_logged) {
+            g_sidecar_first_logged = true;
+            std::cerr << "[redline] small_op L1 FAIL exception: " << e.what()
+                      << " (call_fn still product; NOT gen t/s)\n";
+        }
+    }
+#endif
+}
+
 void maybe_redline_sidecar_verify() {
 #if !defined(MLX_BUILD_ROCM)
     return;
 #else
-    // P7b: full-gen L=1 correctness — D2H side_acc vs host sum(1..n).
-    // Default OFF path: no-op unless DECODE+SIDECAR exact "1" and armed ticks.
-    // Does not replace call_fn. NOT gen t/s.
-    if (!env_exact_one("MLX_REDLINE_DECODE") || !env_exact_one("MLX_REDLINE_SIDECAR")) {
+    // P7b/P8: full-gen L=1 correctness — D2H side_acc vs host expected.
+    // SIDECAR-only: sum(1..n). SMALL_OP: sum of product token ids from
+    // graph_decode_input VRAM. Does not replace call_fn. NOT gen t/s.
+    if (!env_exact_one("MLX_REDLINE_DECODE")) {
+        return;
+    }
+    const bool want_side = env_exact_one("MLX_REDLINE_SIDECAR");
+    const bool want_small = env_exact_one("MLX_REDLINE_SMALL_OP");
+    if (!want_side && !want_small) {
         return;
     }
     if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
@@ -760,23 +901,31 @@ void maybe_redline_sidecar_verify() {
             sizeof(unsigned int),
             hipMemcpyDeviceToHost) != hipSuccess) {
         std::cerr
-            << "[redline] sidecar L1 fullgen FAIL_hipMemcpy n=" << g_sidecar_n
+            << "[redline] "
+            << (g_small_op_mode ? "small_op" : "sidecar")
+            << " L1 fullgen FAIL_hipMemcpy n=" << g_sidecar_n
             << " (call_fn still product; NOT gen t/s)\n";
         return;
     }
 
     const uint64_t side_exp = g_sidecar_expected;
-    // Acc kernel is u32; expected fits for small max_tokens research runs.
-    const bool pass =
-        (static_cast<uint64_t>(side_obs) == side_exp) &&
-        (side_exp ==
-         (static_cast<uint64_t>(g_sidecar_n) * (static_cast<uint64_t>(g_sidecar_n) + 1ULL)) /
-             2ULL);
+    bool pass = (static_cast<uint64_t>(side_obs) == side_exp);
+    if (!g_small_op_mode) {
+        // Acc kernel is u32; expected fits for small max_tokens research runs.
+        pass = pass &&
+               (side_exp ==
+                (static_cast<uint64_t>(g_sidecar_n) *
+                 (static_cast<uint64_t>(g_sidecar_n) + 1ULL)) /
+                    2ULL);
+    }
 
-    std::cerr << "[redline] sidecar L1 fullgen "
+    std::cerr << "[redline] "
+              << (g_small_op_mode ? "small_op" : "sidecar") << " L1 fullgen "
               << (pass ? "PASS" : "FAIL") << " n=" << g_sidecar_n
               << " side_obs=" << side_obs << " side_exp=" << side_exp
-              << " (retained PM4 L=1 ticks; call_fn still product; NOT gen t/s)\n";
+              << (g_small_op_mode
+                      ? " (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)\n"
+                      : " (retained PM4 L=1 ticks; call_fn still product; NOT gen t/s)\n");
 #endif
 }
 
