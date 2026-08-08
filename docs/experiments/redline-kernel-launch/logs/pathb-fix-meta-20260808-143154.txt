@@ -1,0 +1,33 @@
+TS=20260808-143154
+2026-08-08T14:31:54-07:00
+redline=9df1dfe fix(capi): WAIT_REG_MEM mem_space bits for gfx9+ (phase2b hang) (local uncommitted: signal-mem fence + WaitValue mask)
+lemon: ordered_join profile + async hostwait env
+=== B0 ===
+rc=0
+Generation: 64 tokens, 116.484 tokens/s, 0.54943s
+=== B1p1 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=5.912us pre_sync=129.22us ordered_join=2793.82us post_sync=3.894us | MEAN/call: set_k=0.19071us pre_sync=4.16839us ordered_join=90.1234us post_sync=0.125613us | ordered_join=PRE_drain+RL_submit+completion_wait (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31
+Generation: 64 tokens, 111.351 tokens/s, 0.57476s
+=== B1async ===
+rc=124
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=5.753us pre_sync=0us ordered_join=473.209us post_sync=0.832us | MEAN/call: set_k=0.185581us pre_sync=0us ordered_join=15.2648us post_sync=0.0268387us | ordered_join=PRE_drain+RL_submit+completion_wait (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31
+=== B1asyncHW ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-hostwait; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=4.739us pre_sync=0us ordered_join=2523.54us post_sync=3.709us | MEAN/call: set_k=0.152871us pre_sync=0us ordered_join=81.4044us post_sync=0.119645us | ordered_join=PRE_drain+RL_submit+completion_wait (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31
+Generation: 64 tokens, 114.349 tokens/s, 0.55969s
+=== B1p2 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=5.331us pre_sync=120.288us ordered_join=3185.4us post_sync=4.838us | MEAN/call: set_k=0.171968us pre_sync=3.88026us ordered_join=102.755us post_sync=0.156065us | ordered_join=PRE_drain+RL_submit+completion_wait (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31
+Generation: 64 tokens, 112.893 tokens/s, 0.566907s
+=== B0b ===
+rc=0
+Generation: 64 tokens, 117.416 tokens/s, 0.54507s

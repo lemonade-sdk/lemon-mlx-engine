@@ -247,8 +247,12 @@ using rl_pm4_dispatch_fn = int32_t (*)(
 using rl_pm4_finalize_fn =
     int32_t (*)(const void* gpu, void* builder, void** out_ib);
 using rl_pm4_replay_fn = int32_t (*)(void* ib);
-// P13 PR-A: wait HIP stream + replay (phase1 host join; phase2 WriteValue+poll).
+// P13 PR-A: wait HIP stream + replay (phase1 host join; phase2 WAIT_REG_MEM).
+// Path B async: submit_after (no wait_signal) + consumer WaitValue on product stream.
 using rl_pm4_replay_after_hip_stream_fn = int32_t (*)(void* ib, void* hip_stream);
+using rl_pm4_submit_after_hip_stream_fn = int32_t (*)(void* ib, void* hip_stream);
+using rl_gpu_consumer_wait_hip_stream_fn = int32_t (*)(void* hip_stream);
+using rl_pm4_wait_fn = int32_t (*)(void* ib);
 using rl_feature_bits_fn = uint32_t (*)();
 using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
     void* ib,
@@ -268,8 +272,14 @@ unsigned int* g_side_acc = nullptr;
 rl_pm4_replay_fn g_fn_replay = nullptr;
 rl_pm4_replay_after_hip_stream_fn g_fn_replay_after_hip = nullptr;
 rl_pm4_replay_after_hip_stream_fn g_fn_replay_after_hip_p2 = nullptr;
+rl_pm4_submit_after_hip_stream_fn g_fn_submit_after_p2 = nullptr;
+rl_gpu_consumer_wait_hip_stream_fn g_fn_consumer_wait = nullptr;
+rl_pm4_wait_fn g_fn_pm4_wait = nullptr;
 bool g_hip_stream_bridge = false;
 bool g_hip_stream_phase2 = false;
+bool g_hip_stream_async = false; // symbols for Path B present
+// IBs that had async submit and still need rl_pm4_wait before set_k reuse.
+std::unordered_map<void*, bool> g_async_ib_needs_wait;
 rl_pm4_ib_set_kernargs_fn g_fn_set_k = nullptr;
 rl_gpu_free_fn g_fn_gpu_free = nullptr;
 rl_module_free_fn g_fn_mod_free = nullptr;
@@ -303,9 +313,12 @@ bool g_rms_profile_logged = false;
 uint64_t g_rms_own_count = 0;
 uint64_t g_rms_fallback_count = 0;
 // P12c optional host-phase accumulators (ns); enabled by MLX_REDLINE_RMS_PROFILE=1.
+// These are SUMS over g_rms_own_count calls — profile print shows total + mean.
+// g_rms_ns_ordered is NOT pure RL doorbell: ordered join (PRE drain / bridge)
+// + retained submit + host completion wait (or async submit+WaitValue enqueue).
 uint64_t g_rms_ns_setk = 0;
 uint64_t g_rms_ns_pre = 0;
-uint64_t g_rms_ns_replay = 0;
+uint64_t g_rms_ns_ordered = 0; // was mislabeled "replay"
 uint64_t g_rms_ns_post = 0;
 // key = (dtype_code << 24) | n_rows  → retained single-dispatch IB
 std::unordered_map<uint32_t, void*> g_rms_ib_by_key;
@@ -1192,12 +1205,16 @@ void* get_or_build_rms_ib(int dtype_code, uint32_t n_rows) {
     return ib;
 }
 
-// P13: optional PR-A symbols (hip stream wait + ordered replay).
+// P13: optional PR-A symbols (hip stream wait + ordered replay + Path B async).
 void resolve_hip_stream_bridge(void* lib) {
     g_fn_replay_after_hip = nullptr;
     g_fn_replay_after_hip_p2 = nullptr;
+    g_fn_submit_after_p2 = nullptr;
+    g_fn_consumer_wait = nullptr;
+    g_fn_pm4_wait = nullptr;
     g_hip_stream_bridge = false;
     g_hip_stream_phase2 = false;
+    g_hip_stream_async = false;
     if (!lib) {
         return;
     }
@@ -1206,19 +1223,44 @@ void resolve_hip_stream_bridge(void* lib) {
         ::dlsym(lib, "rl_pm4_replay_after_hip_stream"));
     auto* after2 = reinterpret_cast<rl_pm4_replay_after_hip_stream_fn>(
         ::dlsym(lib, "rl_pm4_replay_after_hip_stream_phase2"));
-    const uint32_t bits = feat ? feat() : 0;
+    auto* submit2 = reinterpret_cast<rl_pm4_submit_after_hip_stream_fn>(
+        ::dlsym(lib, "rl_pm4_submit_after_hip_stream_phase2"));
+    auto* cwait = reinterpret_cast<rl_gpu_consumer_wait_hip_stream_fn>(
+        ::dlsym(lib, "rl_gpu_consumer_wait_hip_stream"));
+    auto* pwait = reinterpret_cast<rl_pm4_wait_fn>(::dlsym(lib, "rl_pm4_wait"));
+    (void)feat;
     if (after) {
         g_fn_replay_after_hip = after;
         g_hip_stream_bridge = true;
     }
-    if (after2 && (bits & 0x2u) != 0) {
-        g_fn_replay_after_hip_p2 = after2;
-        g_hip_stream_phase2 = true;
-    } else if (after2) {
+    if (after2) {
         g_fn_replay_after_hip_p2 = after2;
         g_hip_stream_phase2 = true;
     }
+    if (submit2 && cwait && pwait) {
+        g_fn_submit_after_p2 = submit2;
+        g_fn_consumer_wait = cwait;
+        g_fn_pm4_wait = pwait;
+        g_hip_stream_async = true;
+    }
     (void)kRlFeatureHipStreamWait;
+}
+
+// Before set_k on a retained IB, finish any prior async submit on that IB.
+bool ensure_ib_ready_for_setk(void* ib) {
+    if (!ib) {
+        return false;
+    }
+    auto it = g_async_ib_needs_wait.find(ib);
+    if (it == g_async_ib_needs_wait.end() || !it->second) {
+        return true;
+    }
+    if (!g_fn_pm4_wait || g_fn_pm4_wait(ib) != kRlOk) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+    it->second = false;
+    return true;
 }
 
 // P12: arm OWN_RMSNORM retained module + correctness smoke (f32 n_rows=1).
@@ -2108,6 +2150,10 @@ bool redline_try_own_rmsnorm_packed(
         ++g_rms_fallback_count;
         return false;
     }
+    // Path B: prior async submit on this IB must complete before set_k.
+    if (!ensure_ib_ready_for_setk(ib)) {
+        return false;
+    }
 
     const bool profile = env_exact_one("MLX_REDLINE_RMS_PROFILE");
     using clock = std::chrono::steady_clock;
@@ -2142,35 +2188,106 @@ bool redline_try_own_rmsnorm_packed(
         t0 = mark();
     }
 
-    // Drain product HIP producers then replay. Prefer PR-A ordered entry
-    // (rl_pm4_replay_after_hip_stream) when present — phase1 still host-joins.
+    // Path B async (opt-in): MLX_REDLINE_PHASE2=1 and MLX_REDLINE_PHASE2_ASYNC=1
+    // → submit_after (no host wait_signal inside redline).
+    // Default: host rl_pm4_wait after submit (phase2-async-hostwait). Correctness
+    // proven 20260808-143154; does NOT cut PRE tax / not a gen win path.
+    // Experimental GPU consumer fence: MLX_REDLINE_ASYNC_WAITVALUE=1 enqueues
+    // hipStreamWaitValue32. Still hangs on gfx1150 after signal-mem fix
+    // (WRITE_DATA never unblocks product stream) — opt-in only, not default.
+    // Else phase2 sync (PHASE2=1) or phase1 StreamSynchronize ordered path.
     const RedlinePreSync pre_mode = pre_sync_mode();
     bool used_bridge = false;
+    bool used_async = false;
+    bool used_async_hostwait = false;
+    const bool want_phase2 = env_exact_one("MLX_REDLINE_PHASE2");
+    const bool want_async =
+        want_phase2 && env_exact_one("MLX_REDLINE_PHASE2_ASYNC") && g_hip_stream_async &&
+        hip_stream && pre_mode != RedlinePreSync::Off &&
+        pre_mode != RedlinePreSync::Device;
+    // WaitValue is opt-in; hostwait is the safe default for PHASE2_ASYNC.
+    const bool async_waitvalue = want_async && env_exact_one("MLX_REDLINE_ASYNC_WAITVALUE");
+    const bool async_hostwait = want_async && !async_waitvalue;
+
     if (profile) {
         t0 = mark();
     }
-    // Prefer phase1 StreamSynchronize path for gen (phase2 WriteValue+DtoH poll
-    // measured slower ~13ms/31 vs ~2.3ms). Phase2 only if MLX_REDLINE_PHASE2=1.
-    auto* ordered = g_fn_replay_after_hip;
-    if (env_exact_one("MLX_REDLINE_PHASE2") && g_fn_replay_after_hip_p2) {
-        ordered = g_fn_replay_after_hip_p2;
-    }
-    if (ordered && pre_mode != RedlinePreSync::Off &&
-        pre_mode != RedlinePreSync::Device) {
-        if (pre_mode == RedlinePreSync::Stream && hip_stream) {
-            auto* st = static_cast<hipStream_t>(hip_stream);
-            if (hipStreamQuery(st) == hipSuccess) {
-                ++g_pre_query_skip;
-                if (profile) {
-                    g_rms_ns_pre += ns_since(t0);
-                    t0 = mark();
+
+    if (want_async) {
+        ++g_pre_sync_wait;
+        if (g_fn_submit_after_p2(ib, hip_stream) != kRlOk) {
+            // Fall back to sync phase2 if available, else phase1.
+            if (g_fn_replay_after_hip_p2 &&
+                g_fn_replay_after_hip_p2(ib, hip_stream) == kRlOk) {
+                used_bridge = true;
+            } else if (g_fn_replay_after_hip &&
+                       g_fn_replay_after_hip(ib, hip_stream) == kRlOk) {
+                used_bridge = true;
+            } else {
+                ++g_rms_fallback_count;
+                return false;
+            }
+        } else if (async_hostwait) {
+            // Diagnostic Path B: prove submit_after without GPU WaitValue.
+            // Host joins Redline completion before product reuses outputs / IB.
+            g_async_ib_needs_wait[ib] = true;
+            if (!g_fn_pm4_wait || g_fn_pm4_wait(ib) != kRlOk) {
+                ++g_rms_fallback_count;
+                return false;
+            }
+            g_async_ib_needs_wait[ib] = false;
+            used_bridge = true;
+            used_async_hostwait = true;
+        } else {
+            g_async_ib_needs_wait[ib] = true;
+            if (g_fn_consumer_wait(hip_stream) != kRlOk) {
+                // Consumer wait failed — host-join Redline before return.
+                if (g_fn_pm4_wait) {
+                    (void)g_fn_pm4_wait(ib);
+                    g_async_ib_needs_wait[ib] = false;
                 }
-                if (g_fn_replay(ib) != kRlOk) {
-                    ++g_rms_fallback_count;
-                    return false;
+                ++g_rms_fallback_count;
+                // Still count as owned if submit succeeded; product HIP is ordered
+                // only after wait — safer to fail open to product? Prefer fail.
+                return false;
+            }
+            used_bridge = true;
+            used_async = true;
+        }
+    } else {
+        // Prefer phase1 StreamSynchronize for gen unless PHASE2=1 (sync phase2).
+        auto* ordered = g_fn_replay_after_hip;
+        if (want_phase2 && g_fn_replay_after_hip_p2) {
+            ordered = g_fn_replay_after_hip_p2;
+        }
+        if (ordered && pre_mode != RedlinePreSync::Off &&
+            pre_mode != RedlinePreSync::Device) {
+            if (pre_mode == RedlinePreSync::Stream && hip_stream) {
+                auto* st = static_cast<hipStream_t>(hip_stream);
+                if (hipStreamQuery(st) == hipSuccess) {
+                    ++g_pre_query_skip;
+                    if (profile) {
+                        g_rms_ns_pre += ns_since(t0);
+                        t0 = mark();
+                    }
+                    if (g_fn_replay(ib) != kRlOk) {
+                        ++g_rms_fallback_count;
+                        return false;
+                    }
+                } else {
+                    (void)hipGetLastError();
+                    ++g_pre_sync_wait;
+                    if (profile) {
+                        g_rms_ns_pre += ns_since(t0);
+                        t0 = mark();
+                    }
+                    if (ordered(ib, hip_stream) != kRlOk) {
+                        ++g_rms_fallback_count;
+                        return false;
+                    }
+                    used_bridge = true;
                 }
             } else {
-                (void)hipGetLastError();
                 ++g_pre_sync_wait;
                 if (profile) {
                     g_rms_ns_pre += ns_since(t0);
@@ -2183,65 +2300,73 @@ bool redline_try_own_rmsnorm_packed(
                 used_bridge = true;
             }
         } else {
-            ++g_pre_sync_wait;
+            redline_pre_sync(hip_stream);
             if (profile) {
                 g_rms_ns_pre += ns_since(t0);
                 t0 = mark();
             }
-            if (ordered(ib, hip_stream) != kRlOk) {
+            if (g_fn_replay(ib) != kRlOk) {
                 ++g_rms_fallback_count;
                 return false;
             }
-            used_bridge = true;
-        }
-    } else {
-        redline_pre_sync(hip_stream);
-        if (profile) {
-            g_rms_ns_pre += ns_since(t0);
-            t0 = mark();
-        }
-        if (g_fn_replay(ib) != kRlOk) {
-            ++g_rms_fallback_count;
-            return false;
         }
     }
     if (profile) {
-        g_rms_ns_replay += ns_since(t0);
+        g_rms_ns_ordered += ns_since(t0);
         t0 = mark();
     }
 
-    // P12d: post fence (default auto = no-op; rl_pm4_replay already waited).
-    redline_post_sync(hip_stream);
+    // P12d: post fence. Async WaitValue path: product stream already ordered —
+    // skip device post (auto is no-op; force device would re-serialize).
+    // Hostwait async already joined Redline; still allow post if forced.
+    if (!used_async) {
+        redline_post_sync(hip_stream);
+    }
     if (profile) {
         g_rms_ns_post += ns_since(t0);
     }
     ++g_rms_own_count;
     if (!g_rms_logged) {
         g_rms_logged = true;
+        const char* mode = "none";
+        if (used_async) {
+            mode = "phase2-async-used";
+        } else if (used_async_hostwait) {
+            mode = "phase2-async-hostwait";
+        } else if (used_bridge && want_phase2 && g_fn_replay_after_hip_p2) {
+            mode = "phase2-used";
+        } else if (used_bridge) {
+            mode = "phase1-used";
+        }
         std::cerr
             << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
                "(product HIP RMSNorm skipped; P12d/P13 bridge="
-            << (g_hip_stream_bridge ? "yes" : "no")
-            << (used_bridge
-                    ? (env_exact_one("MLX_REDLINE_PHASE2") && g_fn_replay_after_hip_p2
-                           ? " phase2-used"
-                           : " phase1-used")
-                    : "")
+            << (g_hip_stream_bridge ? "yes" : "no") << " " << mode
             << "; set_k-before-pre; PRE_SYNC=" << pre_sync_label()
             << " POST_SYNC=" << post_sync_label() << "; NOT gen t/s)\n";
     }
     // One-shot host-phase profile after ~1 token of packed RMSNorms (~31).
+    // Prints TOTAL and MEAN so "2022us" is not misread as 2ms per call.
     if (profile && !g_rms_profile_logged && g_rms_own_count >= 31) {
         g_rms_profile_logged = true;
-        auto us = [](uint64_t n) { return static_cast<double>(n) / 1000.0; };
+        const double n = static_cast<double>(g_rms_own_count);
+        auto us_total = [](uint64_t ns) { return static_cast<double>(ns) / 1000.0; };
+        auto us_mean = [n](uint64_t ns) {
+            return (n > 0.0) ? (static_cast<double>(ns) / 1000.0) / n : 0.0;
+        };
         std::cerr << "[redline] OWN_RMSNORM host profile (n=" << g_rms_own_count
-                  << "): set_k=" << us(g_rms_ns_setk)
-                  << "us pre_sync=" << us(g_rms_ns_pre)
-                  << "us replay=" << us(g_rms_ns_replay)
-                  << "us post_sync=" << us(g_rms_ns_post)
-                  << "us pre_query_skip=" << g_pre_query_skip
-                  << " pre_wait=" << g_pre_sync_wait
-                  << " (host wall; NOT gen t/s)\n";
+                  << " TOTAL): set_k=" << us_total(g_rms_ns_setk)
+                  << "us pre_sync=" << us_total(g_rms_ns_pre)
+                  << "us ordered_join=" << us_total(g_rms_ns_ordered)
+                  << "us post_sync=" << us_total(g_rms_ns_post)
+                  << "us | MEAN/call: set_k=" << us_mean(g_rms_ns_setk)
+                  << "us pre_sync=" << us_mean(g_rms_ns_pre)
+                  << "us ordered_join=" << us_mean(g_rms_ns_ordered)
+                  << "us post_sync=" << us_mean(g_rms_ns_post)
+                  << "us | ordered_join=PRE_drain+RL_submit+completion_wait"
+                     " (NOT pure doorbell; host wall; NOT gen t/s)"
+                  << " pre_query_skip=" << g_pre_query_skip
+                  << " pre_wait=" << g_pre_sync_wait << "\n";
     }
     return true;
 #endif

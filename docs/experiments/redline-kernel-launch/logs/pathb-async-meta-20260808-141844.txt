@@ -1,0 +1,25 @@
+TS=20260808-141844
+2026-08-08T14:18:44-07:00
+redline=9df1dfe fix(capi): WAIT_REG_MEM mem_space bits for gfx9+ (phase2b hang)
+=== B0 ===
+rc=0
+Generation: 64 tokens, 112.874 tokens/s, 0.567005s
+=== B1p1 ===
+rc=0
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31): set_k=3.097us pre_sync=123.514us replay=2022.94us post_sync=2.607us pre_query_skip=0 pre_wait=31 (host wall; NOT gen t/s)
+Generation: 64 tokens, 111.987 tokens/s, 0.571494s
+=== B1p2 ===
+rc=0
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31): set_k=5.41us pre_sync=133.138us replay=2904.26us post_sync=3.577us pre_query_skip=0 pre_wait=31 (host wall; NOT gen t/s)
+Generation: 64 tokens, 111.063 tokens/s, 0.576252s
+=== B1async ===
+rc=124
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+=== B1async-r2 ===
+rc=124
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+=== B0b ===
+rc=0
+Generation: 64 tokens, 117.361 tokens/s, 0.545326s
