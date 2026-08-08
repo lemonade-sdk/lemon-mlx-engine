@@ -1,17 +1,27 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // P2: dlopen Redline C-API init smoke (no forward replacement).
+// P5: optional in-process PM4 micro-op (load CO + patch kernarg + replay)
+//     when MLX_REDLINE_HSACO is set. Correctness only; NOT gen t/s.
 
 #include <mlx-lm/common/redline_decode_session.h>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #if defined(MLX_BUILD_ROCM)
 #include <dlfcn.h>
+// HIP host headers require an explicit platform macro (see server CMake).
+#ifndef __HIP_PLATFORM_AMD__
+#define __HIP_PLATFORM_AMD__ 1
+#endif
+#include <hip/hip_runtime.h>
 #endif
 
 namespace mlx_lm {
@@ -36,6 +46,36 @@ void* g_lib = nullptr;
 using rl_abi_version_fn = uint32_t (*)();
 using rl_gpu_new_fn = void* (*)(int32_t);
 using rl_gpu_free_fn = void (*)(void*);
+using rl_gpu_load_module_fn =
+    int32_t (*)(const void* gpu, const uint8_t* code, size_t len, void** out);
+using rl_module_free_fn = void (*)(void* module);
+using rl_pm4_builder_new_fn = void* (*)(const void* gpu);
+using rl_pm4_builder_free_fn = void (*)(void* builder);
+using rl_pm4_dispatch_fn = int32_t (*)(
+    void* builder,
+    const void* module,
+    const char* symbol,
+    uint32_t grid_x,
+    uint32_t grid_y,
+    uint32_t grid_z,
+    uint32_t block_x,
+    uint32_t block_y,
+    uint32_t block_z,
+    uint32_t dynamic_group_bytes,
+    const uint8_t* kernarg,
+    size_t kernarg_len);
+using rl_pm4_finalize_fn =
+    int32_t (*)(const void* gpu, void* builder, void** out_ib);
+using rl_pm4_replay_fn = int32_t (*)(void* ib);
+using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
+    void* ib,
+    size_t dispatch_index,
+    size_t byte_offset,
+    const uint8_t* kernarg,
+    size_t len);
+using rl_pm4_ib_free_fn = void (*)(void* ib);
+
+constexpr int32_t kRlOk = 0;
 
 const char* default_lib_candidates[] = {
     "libredline_dispatch.so",
@@ -83,6 +123,190 @@ void* try_dlopen() {
     return nullptr;
 }
 
+// Optional P5: engine-side C-API micro-op (decode_kernargs pattern).
+// Gated by MLX_REDLINE_HSACO path; never product forward; NOT gen t/s.
+// Appends " micro=..." to g_err.
+void try_micro_op(void* lib, void* gpu) {
+    const char* hsaco = std::getenv("MLX_REDLINE_HSACO");
+    if (!hsaco || hsaco[0] == '\0') {
+        g_err += " micro=skip";
+        return;
+    }
+    if (!gpu) {
+        g_err += " micro=skip_gpu_null";
+        return;
+    }
+
+    auto* load_mod =
+        reinterpret_cast<rl_gpu_load_module_fn>(::dlsym(lib, "rl_gpu_load_module"));
+    auto* mod_free =
+        reinterpret_cast<rl_module_free_fn>(::dlsym(lib, "rl_module_free"));
+    auto* b_new =
+        reinterpret_cast<rl_pm4_builder_new_fn>(::dlsym(lib, "rl_pm4_builder_new"));
+    auto* b_free = reinterpret_cast<rl_pm4_builder_free_fn>(
+        ::dlsym(lib, "rl_pm4_builder_free"));
+    auto* dispatch =
+        reinterpret_cast<rl_pm4_dispatch_fn>(::dlsym(lib, "rl_pm4_dispatch"));
+    auto* finalize =
+        reinterpret_cast<rl_pm4_finalize_fn>(::dlsym(lib, "rl_pm4_finalize"));
+    auto* set_k = reinterpret_cast<rl_pm4_ib_set_kernargs_fn>(
+        ::dlsym(lib, "rl_pm4_ib_set_kernargs"));
+    auto* replay =
+        reinterpret_cast<rl_pm4_replay_fn>(::dlsym(lib, "rl_pm4_replay"));
+    auto* ib_free =
+        reinterpret_cast<rl_pm4_ib_free_fn>(::dlsym(lib, "rl_pm4_ib_free"));
+
+    if (!load_mod || !mod_free || !b_new || !dispatch || !finalize || !set_k ||
+        !replay || !ib_free) {
+        g_err += " micro=FAIL_syms";
+        return;
+    }
+
+    std::ifstream ifs(hsaco, std::ios::binary | std::ios::ate);
+    if (!ifs) {
+        g_err += " micro=FAIL_open_hsaco";
+        return;
+    }
+    const auto sz = static_cast<std::streamoff>(ifs.tellg());
+    if (sz <= 0) {
+        g_err += " micro=FAIL_empty_hsaco";
+        return;
+    }
+    ifs.seekg(0, std::ios::beg);
+    std::vector<uint8_t> code(static_cast<size_t>(sz));
+    if (!ifs.read(reinterpret_cast<char*>(code.data()), sz)) {
+        g_err += " micro=FAIL_read_hsaco";
+        return;
+    }
+
+    const char* symbol_env = std::getenv("MLX_REDLINE_SYMBOL");
+    const char* symbol =
+        (symbol_env && symbol_env[0] != '\0') ? symbol_env : "acc_k.kd";
+
+    int tokens = 64;
+    if (const char* t = std::getenv("MLX_REDLINE_MICRO_TOKENS")) {
+        char* end = nullptr;
+        long v = std::strtol(t, &end, 10);
+        if (end != t && v >= 1 && v <= 4096) {
+            tokens = static_cast<int>(v);
+        }
+    }
+
+    unsigned int* d_acc = nullptr;
+    if (hipMalloc(&d_acc, sizeof(unsigned int)) != hipSuccess || !d_acc) {
+        g_err += " micro=FAIL_hipMalloc";
+        return;
+    }
+    if (hipMemset(d_acc, 0, sizeof(unsigned int)) != hipSuccess) {
+        (void)hipFree(d_acc);
+        g_err += " micro=FAIL_hipMemset";
+        return;
+    }
+
+    void* mod = nullptr;
+    if (load_mod(gpu, code.data(), code.size(), &mod) != kRlOk || !mod) {
+        (void)hipFree(d_acc);
+        g_err += " micro=FAIL_load_module";
+        return;
+    }
+
+    // kernarg: [acc:u64 @0][val:u32 @8] — pad to 512 like decode_kernargs.c
+    uint8_t karg[512];
+    std::memset(karg, 0, sizeof(karg));
+    const uint64_t acc_ptr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(d_acc));
+    std::memcpy(karg, &acc_ptr, sizeof(acc_ptr));
+
+    void* builder = b_new(gpu);
+    if (!builder) {
+        mod_free(mod);
+        (void)hipFree(d_acc);
+        g_err += " micro=FAIL_builder";
+        return;
+    }
+    if (dispatch(
+            builder,
+            mod,
+            symbol,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            karg,
+            sizeof(karg)) != kRlOk) {
+        if (b_free) {
+            b_free(builder);
+        }
+        mod_free(mod);
+        (void)hipFree(d_acc);
+        g_err += " micro=FAIL_dispatch";
+        return;
+    }
+
+    void* ib = nullptr;
+    if (finalize(gpu, builder, &ib) != kRlOk || !ib) {
+        // finalize consumes builder on success; on fail builder may still be live.
+        if (!ib && b_free) {
+            // best-effort; some APIs free on fail — ignore double-free risk by
+            // not calling if finalize claimed ownership (unknown). Skip free.
+        }
+        mod_free(mod);
+        (void)hipFree(d_acc);
+        g_err += " micro=FAIL_finalize";
+        return;
+    }
+
+    uint64_t expected = 0;
+    const auto t0 = std::chrono::steady_clock::now();
+    for (unsigned int t = 1; t <= static_cast<unsigned int>(tokens); ++t) {
+        if (set_k(ib, 0, 8, reinterpret_cast<const uint8_t*>(&t), sizeof(t)) !=
+            kRlOk) {
+            ib_free(ib);
+            mod_free(mod);
+            (void)hipFree(d_acc);
+            g_err += " micro=FAIL_set_kernargs";
+            return;
+        }
+        if (replay(ib) != kRlOk) {
+            ib_free(ib);
+            mod_free(mod);
+            (void)hipFree(d_acc);
+            g_err += " micro=FAIL_replay";
+            return;
+        }
+        expected += t;
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const double host_total_us =
+        std::chrono::duration<double, std::micro>(t1 - t0).count();
+
+    unsigned int observed = 0;
+    if (hipMemcpy(
+            &observed, d_acc, sizeof(unsigned int), hipMemcpyDeviceToHost) !=
+        hipSuccess) {
+        ib_free(ib);
+        mod_free(mod);
+        (void)hipFree(d_acc);
+        g_err += " micro=FAIL_hipMemcpy";
+        return;
+    }
+
+    ib_free(ib);
+    mod_free(mod);
+    (void)hipFree(d_acc);
+
+    const bool pass = (observed == static_cast<unsigned int>(expected));
+    g_err += " micro=";
+    g_err += pass ? "PASS" : "FAIL";
+    g_err += " observed=" + std::to_string(observed);
+    g_err += " expected=" + std::to_string(expected);
+    g_err += " tokens=" + std::to_string(tokens);
+    g_err += " host_total_us=" + std::to_string(host_total_us);
+    g_err += " (NOT gen t/s)";
+}
+
 bool init_smoke(void* lib) {
     auto* abi = reinterpret_cast<rl_abi_version_fn>(::dlsym(lib, "rl_abi_version"));
     if (!abi) {
@@ -108,8 +332,10 @@ bool init_smoke(void* lib) {
                 "needs HSA with counted_queue_acquire)";
         return true;
     }
-    gpu_free(gpu);
     g_err = "abi=" + std::to_string(ver) + " gpu_new=ok";
+    // P5: optional product-adjacent micro-op (default skip unless HSACO set).
+    try_micro_op(lib, gpu);
+    gpu_free(gpu);
     return true;
 }
 #endif // MLX_BUILD_ROCM
@@ -175,7 +401,8 @@ void maybe_log_redline_session_status() {
             break;
         case RedlineSessionState::Ready:
             std::cerr
-                << "[redline] session READY (P2 init-only; forward still product; "
+                << "[redline] session READY (P2 init + optional P5 micro; "
+                   "forward still product; "
                 << redline_session_last_error() << ")\n";
             break;
         case RedlineSessionState::Failed:

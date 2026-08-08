@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **STOPPED (rule A measured)** — P0+P1 green + P3 design PASS + **P3 micro-op PASS** + P2b `gpu_new=ok` · scheduler_delete `019fdfc642e5` |
+| **Loop status** | **ACTIVE (post–Stop A implementation)** — P5 in-proc micro PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
 
 ## Board
 
@@ -24,11 +24,25 @@
 | **P2 N-sweep multi-run** | **GREEN** — N=2..64 × BS/Sys × 3 runs; N=64 BS **81.98 µs** vs Sys **147.7 µs** (~**1.80×**) ([`P2_NSWEEP.md`](P2_NSWEEP.md)) |
 | **P2b engine session init** | **GREEN** — dlopen + abi + **`gpu_new=ok`** after RUNPATH/core-first RPATH fix ([`P2_INIT.md`](P2_INIT.md)) |
 | **P3 graph_decode / kernarg doc** | **PASS (design)** — [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md) + [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) |
-| **P3 measured micro-op** | **PASS** — patch+replay acc_k; correctness 4160; host_median **8.796 µs** ([`P3_MICRO_OP.md`](P3_MICRO_OP.md)); **not** gen t/s |
+| **P3 measured micro-op** | **PASS** — out-of-process AQL patch+replay; correctness 4160; host_median **8.796 µs** ([`P3_MICRO_OP.md`](P3_MICRO_OP.md)); **not** gen t/s |
 | **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
-| Engine product wire / default ON | **FORBIDDEN until measured** |
+| **P5 in-process C-API micro** | **PASS** — chat session `micro=PASS` 2080/2080; host_total_us labeled NOT gen t/s ([`P5_INPROC_MICRO.md`](P5_INPROC_MICRO.md)) |
+| Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
+| Gen t/s A/B (same-build eager) | **NOT RUN** |
 
 ## Fire log
+
+### 2026-08-08 — P5 in-process micro-op PASS (post–Stop A)
+
+- **Primary:** Product-adjacent engine session micro — retained PM4 load + kernarg patch + replay correctness behind `MLX_REDLINE_DECODE=1` + opt-in `MLX_REDLINE_HSACO`.  
+- Clear Thought: sequentialthinking, decisionframework (A vs B/E), metacognitivemonitoring, scientificmethod (H-p5-inproc-micro).  
+- **Code:** `src/common/redline_decode_session.cpp` + header; `try_micro_op` (dlsym C-API; HIP owns accumulator).  
+- **Precondition:** standalone `decode_kernargs` gfx1150 **PASS** 2080/2080.  
+- **Engine smoke:** off 0×; on `micro=skip`; on+HSACO **`micro=PASS observed=2080 expected=2080`**; xor fail-closed.  
+- **Logs:** `logs/p5-{off,on-skip,on-micro,xor}-20260808-112653.err`.  
+- **Doc:** [`P5_INPROC_MICRO.md`](P5_INPROC_MICRO.md) + [`QUALITY_REVIEW_P5.md`](QUALITY_REVIEW_P5.md) **PASS**.  
+- **Not claimed:** gen t/s; product default ON; `call_fn` / qmm replace; TokenIterator partial wire.  
+- **Next:** graph_decode_* bind or real small engine-owned op; gen A/B only after product-path change.
 
 ### 2026-08-07 — P3 micro-op PASS + STOP A (measured clause)
 

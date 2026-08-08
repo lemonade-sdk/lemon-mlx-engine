@@ -1,0 +1,2 @@
+[redline] session READY (P2 init + optional P5 micro; forward still product; abi=1 gpu_new=ok micro=skip)
+Error: HTTP error 401 for https://huggingface.co/api/models/--model/revision/main

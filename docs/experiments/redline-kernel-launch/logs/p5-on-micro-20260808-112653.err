@@ -1,0 +1,2 @@
+[redline] session READY (P2 init + optional P5 micro; forward still product; abi=1 gpu_new=ok micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=769.283000 (NOT gen t/s))
+Error: HTTP error 401 for https://huggingface.co/api/models/--model/revision/main
