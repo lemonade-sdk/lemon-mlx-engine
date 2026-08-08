@@ -1,0 +1,13 @@
+[p3] hsaco=/home/antmi/lemon-mlx-engine/docs/experiments/redline-kernel-launch/logs/acc_kernel-gfx1150.co
+[p3] symbol=acc_k.kd
+[p3] n=2 tokens=64 policy=BoundarySerialized warmup=5 iters=20
+[p3] metric=host_us patch+replay (NOT gen t/s)
+[p3] device=gfx1150
+[p3] Executable::load OK (8136 bytes)
+[p3] stable_acc_addr=0x798306049000 (baked once; not realloc per token)
+[p3] SingleQueueBatchGraph create OK (n=2)
+[p3] correctness observed=4160 expected=4160 (n*sum(1..T))
+[p3] correctness PASS
+[p3] warmup OK (5)
+[p3] host_median_us_patch_plus_replay=8.796 (NOT gen t/s)
+P3_OK patch+replay symbol=acc_k.kd n=2 tokens=64 host_median_us=8.796 correctness=PASS

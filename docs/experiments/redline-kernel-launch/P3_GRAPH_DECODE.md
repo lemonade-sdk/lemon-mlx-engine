@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-07  
 **Branch:** `exp/redline-kernel-launch`  
-**Status:** **DESIGN DOC COMPLETE** (loop P3; enables stop A with quality PASS)  
+**Status:** **DESIGN DOC COMPLETE** + measured micro-op **PASS** ([`P3_MICRO_OP.md`](P3_MICRO_OP.md))  
 **Depends on:** P0 GREEN · P1 GREEN · P2 N-sweep GREEN · E3/E4  
 **Not shipped:** product forward replacement, gen t/s win, product default ON, decode HIP-graph re-enable.
 
@@ -141,5 +141,6 @@ Optional future env (default OFF, **not implemented**): `MLX_REDLINE_SIDECAR=1` 
 | gfx1150 logs | E0–E2, P0–P2 under [`logs/`](logs/) |
 | **P3 doc** | **This file** |
 | Quality PASS | [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) |
+| **P3 measured micro-op** | [`P3_MICRO_OP.md`](P3_MICRO_OP.md) + [`QUALITY_REVIEW_P3_MICRO.md`](QUALITY_REVIEW_P3_MICRO.md) — host µs + correctness PASS |
 
-Implementation of a real micro-op remains **post–stop A** research; P4 MoE multipath is separate and never product-default-on.
+Out-of-process micro-op **landed** (acc_k patch+replay). Product TokenIterator wire remains research-only and never product-default-on; P4 MoE multipath is separate.

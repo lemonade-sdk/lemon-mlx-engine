@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **STOPPED (rule A)** — P0+P1 green + P3 doc + quality PASS · scheduler_delete `019fdfb3d185` |
+| **Loop status** | **STOPPED (rule A measured)** — P0+P1 green + P3 design PASS + **P3 micro-op PASS** + P2b `gpu_new=ok` · scheduler_delete `019fdfc642e5` |
 
 ## Board
 
@@ -24,10 +24,22 @@
 | **P2 N-sweep multi-run** | **GREEN** — N=2..64 × BS/Sys × 3 runs; N=64 BS **81.98 µs** vs Sys **147.7 µs** (~**1.80×**) ([`P2_NSWEEP.md`](P2_NSWEEP.md)) |
 | **P2b engine session init** | **GREEN** — dlopen + abi + **`gpu_new=ok`** after RUNPATH/core-first RPATH fix ([`P2_INIT.md`](P2_INIT.md)) |
 | **P3 graph_decode / kernarg doc** | **PASS (design)** — [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md) + [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) |
+| **P3 measured micro-op** | **PASS** — patch+replay acc_k; correctness 4160; host_median **8.796 µs** ([`P3_MICRO_OP.md`](P3_MICRO_OP.md)); **not** gen t/s |
 | **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
 | Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
+
+### 2026-08-07 — P3 micro-op PASS + STOP A (measured clause)
+
+- **Primary P-step:** P3 fixed micro-op — retained AQL + `patch_kernarg_u32` + correctness.  
+- Clear Thought: sequentialthinking, decisionframework (P3 measure vs empty/P4), metacognitivemonitoring.  
+- **Code/harness:** [`harness/p3_kernarg_patch.rs`](harness/p3_kernarg_patch.rs); CO [`logs/acc_kernel-gfx1150.co`](logs/acc_kernel-gfx1150.co).  
+- **Measure:** n=2, T=64, observed=expected=4160; host_median_us **8.796** (NOT gen t/s).  
+- **Log:** [`logs/p3-kernarg-patch-20260807-221119.log`](logs/p3-kernarg-patch-20260807-221119.log).  
+- **Doc:** [`P3_MICRO_OP.md`](P3_MICRO_OP.md) + [`QUALITY_REVIEW_P3_MICRO.md`](QUALITY_REVIEW_P3_MICRO.md) **PASS**.  
+- **Stop A (measured):** P0+P1 green + P3 design PASS + P3 micro-op PASS + P2b `gpu_new=ok` → **met** → **scheduler_delete** `019fdfc642e5`.  
+- **Not claimed:** gen t/s; product default ON; TokenIterator product wire.
 
 ### 2026-08-07 — P3 doc hardened + stop A (continuous loop)
 
