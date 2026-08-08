@@ -24,10 +24,15 @@
 | **P2 N-sweep multi-run** | **GREEN** — N=2..64 × BS/Sys × 3 runs; N=64 BS **81.98 µs** vs Sys **147.7 µs** (~**1.80×**) ([`P2_NSWEEP.md`](P2_NSWEEP.md)) |
 | **P2b engine session init** | **GREEN** — dlopen + `rl_abi_version`; `session READY`; residual `gpu_new=null` in MLX process ([`P2_INIT.md`](P2_INIT.md)) |
 | **P3 graph_decode / kernarg doc** | **PASS (design)** — [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md) + [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) |
-| **P4 MoE multipath design** | **OPTIONAL NEXT** |
+| **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
 | Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
+
+### 2026-08-08 — P4 MoE multipath sketch
+
+- Optional post-stop-A design: multipath vs re-record vs HIP-only MoE.  
+- Evidence: [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md). No code; no gen t/s.
 
 ### 2026-08-08 — P2b session init GREEN + P3 design PASS
 
