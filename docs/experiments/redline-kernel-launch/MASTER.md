@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline — **working fork** [`antmikinka/redline`](https://github.com/antmikinka/redline) (from [`pwilkin/redline`](https://github.com/pwilkin/redline)); upstream reference [`warpfront/redline`](https://github.com/warpfront/redline) (~8 commits ahead on hipgraph/CI) |
-| **Loop status** | **P13 bridge next** — OWN_GLUE+OWN_RMSNORM code **DONE** (default OFF); gen no ≥2% win (PRE dual-queue); PR work: [`P13_STREAM_BRIDGE_PR.md`](P13_STREAM_BRIDGE_PR.md) |
+| **Loop status** | **Path A status frozen in** [`STATUS_RESEARCH_COMPLETE_A.md`](STATUS_RESEARCH_COMPLETE_A.md) — ownership DONE, gen **~−3.5%**, default OFF; optional Path B async PRE; bridge: [`P13_STREAM_BRIDGE_PR.md`](P13_STREAM_BRIDGE_PR.md) |
 
 ## Board
 

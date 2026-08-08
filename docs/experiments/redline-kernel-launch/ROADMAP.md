@@ -62,6 +62,7 @@
 | **P12d** | Ordering: post=auto (replay wait); pre=query-then-sync | **CODE** — [`P12D_ORDERING.md`](P12D_ORDERING.md); same-queue still blocked | Residual pre_wait = dual-queue host bubble |
 | **P13** | **HIP stream/event bridge** (drop host PRE) — Redline C-API + lemon wire | Spec: [`P13_STREAM_BRIDGE_PR.md`](P13_STREAM_BRIDGE_PR.md); **PR-A phase1** on redline `exp/hip-stream-bridge` (`rl_pm4_replay_after_hip_stream` host wait) — gen win needs phase2 | Phase2 blocked / no device wait |
 | — | **Gen freeze** on this branch without bridge | [`BRANCH_FREEZE_GEN.md`](BRANCH_FREEZE_GEN.md) | — |
+| **A** | **Research-complete / product freeze status** | [`STATUS_RESEARCH_COMPLETE_A.md`](STATUS_RESEARCH_COMPLETE_A.md) | — |
 | **P13b** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
