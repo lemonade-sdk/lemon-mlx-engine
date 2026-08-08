@@ -2,7 +2,7 @@
 
 **Branch:** `exp/redline-kernel-launch`  
 **Host target:** gfx1150 (890M) · lemon-mlx-engine ROCm  
-**Revised:** 2026-08-08 (P11 launch inv PASS — 395 disp/L1 on 0.8B; Clear Thought + inventory)
+**Revised:** 2026-08-08 (P12 OWN_RMSNORM PASS — packed multi-instance non-qmm; 37→6 RMSNorm HIP)
 
 ---
 
@@ -39,6 +39,7 @@
 | **P8** SMALL_OP | DONE | Uses product VRAM; still **extra** PM4 |
 | **P9–P10** OWN_GLUE retained | DONE | **Replaces** product pos/token glue HIP |
 | **P11** launch inventory | DONE | 0.8B L=1 ≈ **395** dispatches; table in [`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md) |
+| **P12** OWN_RMSNORM packed | DONE | Replaces **~31/37** RMSNorm product HIP (strided residual 6); [`P12_OWN_RMSNORM.md`](P12_OWN_RMSNORM.md) |
 | Gen A/B 0.8B / 35B / all-flags | RUN | No win when additive flags on |
 | Gen A/B OWN_GLUE only (M1) | RUN | ≈ baseline (glue too small vs 395) |
 
@@ -51,7 +52,7 @@
 | ID | Work | Success | Kill if |
 |----|------|---------|---------|
 | **P11** | **Launch inventory** per L=1 token | **DONE** — 395/token 0.8B; QMM 187, CustomKernel 90, RMSNorm 37, … | — |
-| **P12** | Own **next real multi-launch chain** used every token (prefer **non-qmm**: RMSNorm/elementwise/RoPE/CustomKernel cluster; or fused JIT), **replace** product path when `MLX_REDLINE_OWN_*=1` | Correctness vs eager; optional gen A/B (M2) | No multi-launch chain found |
+| **P12** | Own **packed RMSNorm** multi-instance product launches (`OWN_RMSNORM=1`) | **DONE** — arm smoke PASS; inv 37→6; gen text OK; M2 pending | Strided residual; mid-eval sync tax |
 | **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
@@ -79,6 +80,7 @@
 |--------|-----|
 | **Product default** | *(all unset)* |
 | **Own glue only** | `DECODE=1` `OWN_GLUE=1` `GLUE_HSACO=…` `LIB=…` |
+| **Own packed RMSNorm** | `DECODE=1` `OWN_RMSNORM=1` `RMS_HSACO=…` `LIB=…` |
 | **Correctness lab** | + `HSACO` + `SMALL_OP=1` (expect gen **slower**) |
 | **Forbidden combo** | `DECODE=1` + `MLX_DECODE_GRAPH_PURE=1` (XOR) |
 
@@ -113,7 +115,8 @@ Each fire must:
 
 1. ~~**M1** OWN_GLUE-only gen A/B~~ — DONE (≈ baseline).  
 2. ~~**P11** launch inventory~~ — DONE (395/L1 on 0.8B).  
-3. **P12** own first multi-dispatch **non-qmm** product/JIT chain (RMSNorm / elementwise / RoPE / CustomKernel cluster) — default OFF + correctness.  
-4. **M2** gen A/B after that ownership.  
+3. ~~**P12** OWN_RMSNORM packed~~ — DONE (31/37 owned; strided 6 residual; mid-eval sync tax).  
+4. **M2** gen A/B after P12 ownership: B0 baseline · B1 OWN_RMSNORM only · B2 all-flags (0.8B; 35B if claiming 35B).  
+5. Optional P12b: cut stream-sync tax or own strided/CustomKernel residual.
 
 “Redline everywhere” = **grow the set of product ops that fall through to Redline**, op by op — not enable every research env at once.

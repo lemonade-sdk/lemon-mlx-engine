@@ -9,9 +9,13 @@
 // P8 small-op (MLX_REDLINE_SMALL_OP=1): engine-owned L=1 op that writes/reads
 // live graph_decode_input VRAM and drives retained PM4 from product token ids.
 // Does not replace call_fn. NOT gen t/s.
+// P12 OWN_RMSNORM (MLX_REDLINE_OWN_RMSNORM=1): replace packed product RMSNorm
+// HIP launches with Redline retained PM4 (multi-instance non-qmm family).
+// Default OFF. Mid-eval uses HIP stream sync for ordering (documented tax).
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace mlx {
@@ -19,6 +23,20 @@ namespace core {
 class array;
 } // namespace core
 } // namespace mlx
+
+// C ABI for MLX weak-hook (libmlx.a → chat resolves strong symbol).
+// dtype: 0=f32, 1=f16, 2=bf16. hip_stream may be null (device sync).
+// Returns true if Redline handled the launch (caller must not HIP-launch).
+extern "C" bool mlx_redline_try_own_rmsnorm(
+    const void* x,
+    const void* w,
+    void* out,
+    float eps,
+    uint32_t axis_size,
+    int64_t w_stride,
+    uint32_t n_rows,
+    int dtype_code,
+    void* hip_stream);
 
 namespace mlx_lm {
 
@@ -70,6 +88,19 @@ void maybe_redline_small_op_l1(mlx::core::array& previous_token);
 bool redline_try_own_pos_set(mlx::core::array& pos, int v);
 bool redline_try_own_pos_inc(mlx::core::array& pos, int delta);
 bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& src);
+
+// P12: own packed product RMSNorm (see mlx_redline_try_own_rmsnorm C ABI).
+// Product route is via weak hook in MLX rms_norm.hip.
+bool redline_try_own_rmsnorm_packed(
+    const void* x,
+    const void* w,
+    void* out,
+    float eps,
+    uint32_t axis_size,
+    int64_t w_stride,
+    uint32_t n_rows,
+    int dtype_code,
+    void* hip_stream);
 
 // Human-readable last error / status detail (empty if none / disabled).
 const std::string& redline_session_last_error();

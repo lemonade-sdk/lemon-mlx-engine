@@ -10,11 +10,14 @@
 //     (pos_set/pos_inc/scalar_copy) instead of mlx hipLaunchKernelGGL.
 // P10: retained PM4 IBs for OWN_GLUE (set_kernargs+replay; not one-shot
 //     builder/finalize per product glue call). Default still OFF.
+// P12: MLX_REDLINE_OWN_RMSNORM=1 — Redline PM4 owns packed product RMSNorm
+//     launches (multi-instance non-qmm family; mid-eval stream sync). Default OFF.
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -23,6 +26,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <mlx/mlx.h>
@@ -116,6 +120,18 @@ rl_pm4_builder_new_fn g_fn_b_new = nullptr;
 rl_pm4_builder_free_fn g_fn_b_free = nullptr;
 rl_pm4_dispatch_fn g_fn_dispatch = nullptr;
 rl_pm4_finalize_fn g_fn_finalize = nullptr;
+
+// P12 OWN_RMSNORM (process lifetime when OWN_RMSNORM=1).
+void* g_rms_mod = nullptr;
+void* g_rms_gpu = nullptr; // keep session gpu for lazy IB build
+bool g_rms_armed = false;
+bool g_rms_logged = false;
+uint64_t g_rms_own_count = 0;
+uint64_t g_rms_fallback_count = 0;
+// key = (dtype_code << 24) | n_rows  → retained single-dispatch IB
+std::unordered_map<uint32_t, void*> g_rms_ib_by_key;
+constexpr int kRmsBlock = 256;
+constexpr size_t kRmsKargLive = 40; // 3×u64 + f32 + u32 + i64
 
 constexpr int32_t kRlOk = 0;
 
@@ -901,12 +917,359 @@ bool try_arm_glue(void* lib, void* gpu) {
     return true;
 }
 
+// Pack packed-RMSNorm kernarg (matches harness/rms_norm_kernels.hip).
+void pack_rms_karg(
+    uint8_t* karg,
+    size_t karg_cap,
+    const void* x,
+    const void* w,
+    void* out,
+    float eps,
+    uint32_t axis_size,
+    int64_t w_stride) {
+    std::memset(karg, 0, karg_cap);
+    const uint64_t xu = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(x));
+    const uint64_t wu = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(w));
+    const uint64_t ou = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(out));
+    std::memcpy(karg + 0, &xu, 8);
+    std::memcpy(karg + 8, &wu, 8);
+    std::memcpy(karg + 16, &ou, 8);
+    std::memcpy(karg + 24, &eps, 4);
+    std::memcpy(karg + 28, &axis_size, 4);
+    std::memcpy(karg + 32, &w_stride, 8);
+}
+
+const char* rms_symbol_for_dtype(int dtype_code) {
+    switch (dtype_code) {
+        case 0:
+            return "rms_norm_f32.kd";
+        case 1:
+            return "rms_norm_f16.kd";
+        case 2:
+            return "rms_norm_bf16.kd";
+        default:
+            return nullptr;
+    }
+}
+
+// Build or reuse retained IB for (dtype, n_rows). Caller holds g_mu.
+// Redline rl_pm4_dispatch grid is **total workitems** (HIP gridDim×blockDim),
+// not HIP gridDim; block is workgroup size. See redline-capi rl_pm4_dispatch.
+void* get_or_build_rms_ib(int dtype_code, uint32_t n_rows) {
+    if (!g_rms_armed || !g_rms_mod || !g_rms_gpu || !g_fn_b_new || !g_fn_dispatch ||
+        !g_fn_finalize || n_rows == 0) {
+        return nullptr;
+    }
+    const char* sym = rms_symbol_for_dtype(dtype_code);
+    if (!sym) {
+        return nullptr;
+    }
+    const uint32_t key =
+        (static_cast<uint32_t>(dtype_code) << 24) | (n_rows & 0x00FFFFFFu);
+    auto it = g_rms_ib_by_key.find(key);
+    if (it != g_rms_ib_by_key.end()) {
+        return it->second;
+    }
+    // Cap cache — avoid unbounded growth on wild shapes.
+    if (g_rms_ib_by_key.size() >= 64) {
+        return nullptr;
+    }
+    const uint32_t block = static_cast<uint32_t>(kRmsBlock);
+    // Total workitems = n_rows * block (one HIP block per row).
+    const uint64_t work_u = static_cast<uint64_t>(n_rows) * static_cast<uint64_t>(block);
+    if (work_u > 0xFFFFFFFFull) {
+        return nullptr;
+    }
+    const uint32_t work_x = static_cast<uint32_t>(work_u);
+    uint8_t karg[512];
+    pack_rms_karg(karg, sizeof(karg), nullptr, nullptr, nullptr, 1e-6f, 1, 1);
+    void* builder = g_fn_b_new(g_rms_gpu);
+    if (!builder) {
+        return nullptr;
+    }
+    if (g_fn_dispatch(
+            builder,
+            g_rms_mod,
+            sym,
+            work_x,
+            1,
+            1,
+            block,
+            1,
+            1,
+            0,
+            karg,
+            sizeof(karg)) != kRlOk) {
+        if (g_fn_b_free) {
+            g_fn_b_free(builder);
+        }
+        return nullptr;
+    }
+    void* ib = nullptr;
+    if (g_fn_finalize(g_rms_gpu, builder, &ib) != kRlOk || !ib) {
+        return nullptr;
+    }
+    g_rms_ib_by_key[key] = ib;
+    return ib;
+}
+
+// P12: arm OWN_RMSNORM retained module + correctness smoke (f32 n_rows=1).
+// Keeps gpu on success. Product path uses set_kernargs+replay.
+bool try_arm_rmsnorm(void* lib, void* gpu) {
+    if (!env_exact_one("MLX_REDLINE_OWN_RMSNORM")) {
+        g_err += " rms=skip";
+        return false;
+    }
+    auto* load_mod =
+        reinterpret_cast<rl_gpu_load_module_fn>(::dlsym(lib, "rl_gpu_load_module"));
+    auto* mod_free =
+        reinterpret_cast<rl_module_free_fn>(::dlsym(lib, "rl_module_free"));
+    auto* b_new =
+        reinterpret_cast<rl_pm4_builder_new_fn>(::dlsym(lib, "rl_pm4_builder_new"));
+    auto* b_free = reinterpret_cast<rl_pm4_builder_free_fn>(
+        ::dlsym(lib, "rl_pm4_builder_free"));
+    auto* dispatch =
+        reinterpret_cast<rl_pm4_dispatch_fn>(::dlsym(lib, "rl_pm4_dispatch"));
+    auto* finalize =
+        reinterpret_cast<rl_pm4_finalize_fn>(::dlsym(lib, "rl_pm4_finalize"));
+    auto* set_k = reinterpret_cast<rl_pm4_ib_set_kernargs_fn>(
+        ::dlsym(lib, "rl_pm4_ib_set_kernargs"));
+    auto* replay =
+        reinterpret_cast<rl_pm4_replay_fn>(::dlsym(lib, "rl_pm4_replay"));
+    auto* ib_free =
+        reinterpret_cast<rl_pm4_ib_free_fn>(::dlsym(lib, "rl_pm4_ib_free"));
+    if (!load_mod || !mod_free || !b_new || !dispatch || !finalize || !set_k ||
+        !replay || !ib_free) {
+        g_err += " rms=FAIL_syms";
+        return false;
+    }
+
+    const char* path = std::getenv("MLX_REDLINE_RMS_HSACO");
+    const char* candidates[] = {
+        path && path[0] ? path : nullptr,
+        "docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co",
+        "/home/antmi/lemon-mlx-engine/docs/experiments/redline-kernel-launch/logs/"
+        "rms_norm_kernels-gfx1150.co",
+        nullptr,
+    };
+    std::vector<uint8_t> code;
+    const char* used = nullptr;
+    for (const char** c = candidates; *c; ++c) {
+        if (!*c) {
+            continue;
+        }
+        std::ifstream ifs(*c, std::ios::binary | std::ios::ate);
+        if (!ifs) {
+            continue;
+        }
+        auto sz = static_cast<std::streamoff>(ifs.tellg());
+        if (sz <= 0) {
+            continue;
+        }
+        ifs.seekg(0);
+        code.resize(static_cast<size_t>(sz));
+        if (!ifs.read(reinterpret_cast<char*>(code.data()), sz)) {
+            continue;
+        }
+        used = *c;
+        break;
+    }
+    if (!used || code.empty()) {
+        g_err += " rms=FAIL_open_hsaco";
+        return false;
+    }
+
+    void* mod = nullptr;
+    if (load_mod(gpu, code.data(), code.size(), &mod) != kRlOk || !mod) {
+        g_err += " rms=FAIL_load_module";
+        return false;
+    }
+
+    // Correctness smoke: axis=4, n_rows=1, f32, w=1, x=[1,2,3,4]
+    constexpr uint32_t kAxis = 4;
+    constexpr float kEps = 1e-6f;
+    float h_x[4] = {1.f, 2.f, 3.f, 4.f};
+    float h_w[4] = {1.f, 1.f, 1.f, 1.f};
+    float h_out[4] = {0, 0, 0, 0};
+    float sumsq = 0.f;
+    for (int i = 0; i < 4; ++i) {
+        sumsq += h_x[i] * h_x[i];
+    }
+    const float inv = 1.f / std::sqrt(sumsq / 4.f + kEps);
+    float expect[4];
+    for (int i = 0; i < 4; ++i) {
+        expect[i] = h_w[i] * (h_x[i] * inv);
+    }
+
+    float *d_x = nullptr, *d_w = nullptr, *d_out = nullptr;
+    if (hipMalloc(&d_x, sizeof(h_x)) != hipSuccess ||
+        hipMalloc(&d_w, sizeof(h_w)) != hipSuccess ||
+        hipMalloc(&d_out, sizeof(h_out)) != hipSuccess) {
+        if (d_x) {
+            (void)hipFree(d_x);
+        }
+        if (d_w) {
+            (void)hipFree(d_w);
+        }
+        if (d_out) {
+            (void)hipFree(d_out);
+        }
+        mod_free(mod);
+        g_err += " rms=FAIL_malloc";
+        return false;
+    }
+    (void)hipMemcpy(d_x, h_x, sizeof(h_x), hipMemcpyHostToDevice);
+    (void)hipMemcpy(d_w, h_w, sizeof(h_w), hipMemcpyHostToDevice);
+    (void)hipMemset(d_out, 0, sizeof(h_out));
+
+    // Install globals needed by get_or_build_rms_ib.
+    g_rms_mod = mod;
+    g_rms_gpu = gpu;
+    g_fn_b_new = b_new;
+    g_fn_b_free = b_free;
+    g_fn_dispatch = dispatch;
+    g_fn_finalize = finalize;
+    g_fn_set_k = set_k;
+    g_fn_replay = replay;
+    g_fn_ib_free = ib_free;
+    g_rms_armed = true; // temporarily so get_or_build works
+
+    void* ib = get_or_build_rms_ib(/*f32*/ 0, /*n_rows*/ 1);
+    if (!ib) {
+        g_rms_armed = false;
+        g_rms_mod = nullptr;
+        g_rms_gpu = nullptr;
+        mod_free(mod);
+        (void)hipFree(d_x);
+        (void)hipFree(d_w);
+        (void)hipFree(d_out);
+        g_err += " rms=FAIL_build_ib";
+        return false;
+    }
+
+    uint8_t karg[512];
+    pack_rms_karg(karg, sizeof(karg), d_x, d_w, d_out, kEps, kAxis, /*w_stride*/ 1);
+    // Patch live kernarg in chunks (avoid RL_ERR_RECORD on oversize).
+    auto set_prefix = [&](void* ibv) -> int32_t {
+        int32_t rc = set_k(ibv, 0, 0, karg, 24); // 3 pointers
+        if (rc != kRlOk) {
+            return rc;
+        }
+        rc = set_k(ibv, 0, 24, karg + 24, 8); // eps + axis_size
+        if (rc != kRlOk) {
+            return rc;
+        }
+        return set_k(ibv, 0, 32, karg + 32, 8); // w_stride
+    };
+    if (set_prefix(ib) != kRlOk || replay(ib) != kRlOk) {
+        g_rms_armed = false;
+        for (auto& kv : g_rms_ib_by_key) {
+            if (kv.second) {
+                ib_free(kv.second);
+            }
+        }
+        g_rms_ib_by_key.clear();
+        g_rms_mod = nullptr;
+        g_rms_gpu = nullptr;
+        mod_free(mod);
+        (void)hipFree(d_x);
+        (void)hipFree(d_w);
+        (void)hipFree(d_out);
+        g_err += " rms=FAIL_smoke_replay";
+        return false;
+    }
+    (void)hipDeviceSynchronize();
+    (void)hipMemcpy(h_out, d_out, sizeof(h_out), hipMemcpyDeviceToHost);
+
+    bool ok = true;
+    for (int i = 0; i < 4; ++i) {
+        const float d = std::fabs(h_out[i] - expect[i]);
+        if (!(d < 1e-4f)) {
+            ok = false;
+        }
+    }
+    (void)hipFree(d_x);
+    (void)hipFree(d_w);
+    (void)hipFree(d_out);
+
+    if (!ok) {
+        g_rms_armed = false;
+        for (auto& kv : g_rms_ib_by_key) {
+            if (kv.second) {
+                ib_free(kv.second);
+            }
+        }
+        g_rms_ib_by_key.clear();
+        g_rms_mod = nullptr;
+        g_rms_gpu = nullptr;
+        mod_free(mod);
+        std::ostringstream oss;
+        oss << " rms=FAIL_smoke_val out=[" << h_out[0] << "," << h_out[1] << ","
+            << h_out[2] << "," << h_out[3] << "] exp=[" << expect[0] << ","
+            << expect[1] << "," << expect[2] << "," << expect[3] << "]";
+        g_err += oss.str();
+        return false;
+    }
+
+    // Multi-dispatch chain smoke: N=4 dispatches in one retained IB (structural
+    // multi-launch path for future fused chains; product RMSNorm uses 1-dispatch).
+    {
+        void* builder = b_new(gpu);
+        if (builder) {
+            uint8_t mk[512];
+            pack_rms_karg(mk, sizeof(mk), nullptr, nullptr, nullptr, kEps, kAxis, 1);
+            const uint32_t block = static_cast<uint32_t>(kRmsBlock);
+            const uint32_t work = block; // n_rows=1 → workitems=block
+            bool multi_ok = true;
+            for (int i = 0; i < 4; ++i) {
+                if (dispatch(
+                        builder,
+                        mod,
+                        "rms_norm_f32.kd",
+                        work,
+                        1,
+                        1,
+                        block,
+                        1,
+                        1,
+                        0,
+                        mk,
+                        sizeof(mk)) != kRlOk) {
+                    multi_ok = false;
+                    break;
+                }
+            }
+            void* mib = nullptr;
+            if (multi_ok && finalize(gpu, builder, &mib) == kRlOk && mib) {
+                ib_free(mib); // structural PASS; product uses per-call single IB
+                g_err += " rms_multi=PASS_n4";
+            } else {
+                g_err += " rms_multi=FAIL";
+                // Non-fatal for arm if single smoke passed.
+            }
+        }
+    }
+
+    (void)used;
+    g_rms_armed = true;
+    {
+        std::ostringstream oss;
+        oss << " rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1"
+            << " (OWN_RMSNORM packed product path; NOT gen t/s)";
+        g_err += oss.str();
+    }
+    return true;
+}
+
 // Returns true if caller should gpu_free(gpu) (nothing retained it).
 bool try_micro_op_and_maybe_arm(void* lib, void* gpu, rl_gpu_free_fn gpu_free) {
     g_fn_gpu_free = gpu_free;
     try_micro_op(lib, gpu);
     bool keep = g_sidecar_ready;
     if (try_arm_glue(lib, gpu)) {
+        keep = true;
+    }
+    if (try_arm_rmsnorm(lib, gpu)) {
         keep = true;
     }
     if (keep) {
@@ -1010,7 +1373,7 @@ void maybe_log_redline_session_status() {
             break;
         case RedlineSessionState::Ready:
             std::cerr
-                << "[redline] session READY (P2–P10; forward still product; "
+                << "[redline] session READY (P2–P12; forward still product; "
                 << redline_session_last_error() << ")\n";
             break;
         case RedlineSessionState::Failed:
@@ -1478,4 +1841,112 @@ bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& sr
 #endif
 }
 
+// P12: product packed RMSNorm ownership (called from C ABI + MLX weak hook).
+bool redline_try_own_rmsnorm_packed(
+    const void* x,
+    const void* w,
+    void* out,
+    float eps,
+    uint32_t axis_size,
+    int64_t w_stride,
+    uint32_t n_rows,
+    int dtype_code,
+    void* hip_stream) {
+#if !defined(MLX_BUILD_ROCM)
+    (void)x;
+    (void)w;
+    (void)out;
+    (void)eps;
+    (void)axis_size;
+    (void)w_stride;
+    (void)n_rows;
+    (void)dtype_code;
+    (void)hip_stream;
+    return false;
+#else
+    if (!env_exact_one("MLX_REDLINE_DECODE") ||
+        !env_exact_one("MLX_REDLINE_OWN_RMSNORM")) {
+        return false;
+    }
+    if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
+        return false;
+    }
+    if (!x || !w || !out || n_rows == 0 || axis_size == 0) {
+        return false;
+    }
+    if (dtype_code < 0 || dtype_code > 2) {
+        return false;
+    }
+
+    // Do NOT call redline_session_ensure_init under eval (deadlock risk).
+    std::unique_lock<std::mutex> lock(g_mu, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+    if (!g_rms_armed || !g_fn_set_k || !g_fn_replay) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+
+    void* ib = get_or_build_rms_ib(dtype_code, n_rows);
+    if (!ib) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+
+    // Drain prior HIP work on the product stream so VRAM deps are complete.
+    if (hip_stream) {
+        (void)hipStreamSynchronize(static_cast<hipStream_t>(hip_stream));
+    } else {
+        (void)hipDeviceSynchronize();
+    }
+
+    uint8_t karg[512];
+    pack_rms_karg(karg, sizeof(karg), x, w, out, eps, axis_size, w_stride);
+    if (g_fn_set_k(ib, 0, 0, karg, 24) != kRlOk) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+    if (g_fn_set_k(ib, 0, 24, karg + 24, 8) != kRlOk) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+    if (g_fn_set_k(ib, 0, 32, karg + 32, 8) != kRlOk) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+    if (g_fn_replay(ib) != kRlOk) {
+        ++g_rms_fallback_count;
+        return false;
+    }
+    (void)hipDeviceSynchronize();
+    ++g_rms_own_count;
+    if (!g_rms_logged) {
+        g_rms_logged = true;
+        std::cerr
+            << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
+               "(product HIP RMSNorm skipped; mid-eval stream sync; NOT gen t/s)\n";
+    }
+    return true;
+#endif
+}
+
 } // namespace mlx_lm
+
+// ---------------------------------------------------------------------------
+// P12 C ABI — strong symbol for MLX weak hook (libmlx.a links into chat).
+// ---------------------------------------------------------------------------
+extern "C" bool mlx_redline_try_own_rmsnorm(
+    const void* x,
+    const void* w,
+    void* out,
+    float eps,
+    uint32_t axis_size,
+    int64_t w_stride,
+    uint32_t n_rows,
+    int dtype_code,
+    void* hip_stream) {
+    return mlx_lm::redline_try_own_rmsnorm_packed(
+        x, w, out, eps, axis_size, w_stride, n_rows, dtype_code, hip_stream);
+}

@@ -1,0 +1,90 @@
+diff --git a/mlx/backend/rocm/rms_norm.hip b/mlx/backend/rocm/rms_norm.hip
+index 16361d32..a9ba76c6 100644
+--- a/mlx/backend/rocm/rms_norm.hip
++++ b/mlx/backend/rocm/rms_norm.hip
+@@ -10,6 +10,20 @@
+ 
+ #include <hip/hip_runtime.h>
+ 
++// P12: optional Redline ownership of packed product RMSNorm launches.
++// Strong symbol provided by lemon-mlx-engine chat when linked; weak no-op when
++// MLX is used standalone. Default product path remains HIP.
++extern "C" __attribute__((weak)) bool mlx_redline_try_own_rmsnorm(
++    const void* x,
++    const void* w,
++    void* out,
++    float eps,
++    uint32_t axis_size,
++    int64_t w_stride,
++    uint32_t n_rows,
++    int dtype_code,
++    void* hip_stream);
++
+ namespace mlx::core {
+ 
+ namespace rocm {
+@@ -288,6 +302,64 @@ void RMSNorm::eval_gpu(
+   constexpr int BLOCK_DIM = 256;
+   constexpr int N_READS = 4;
+ 
++  // P12: packed path may be owned by Redline retained PM4 when
++  // MLX_REDLINE_DECODE=1 + MLX_REDLINE_OWN_RMSNORM=1 and engine armed.
++  // Strided stays product HIP (variable kernarg layout). Default OFF.
++  if (!strided && mlx_redline_try_own_rmsnorm) {
++    int dtype_code = -1;
++    switch (out.dtype()) {
++      case float32:
++        dtype_code = 0;
++        break;
++      case float16:
++        dtype_code = 1;
++        break;
++      case bfloat16:
++        dtype_code = 2;
++        break;
++      default:
++        break;
++    }
++    if (dtype_code >= 0) {
++      void* hs = static_cast<hipStream_t>(encoder.stream());
++      const void* xp = nullptr;
++      const void* wp = nullptr;
++      void* op = nullptr;
++      switch (out.dtype()) {
++        case float32:
++          xp = gpu_ptr<float>(xk);
++          wp = gpu_ptr<float>(w);
++          op = gpu_ptr<float>(out);
++          break;
++        case float16:
++          xp = gpu_ptr<__half>(xk);
++          wp = gpu_ptr<__half>(w);
++          op = gpu_ptr<__half>(out);
++          break;
++        case bfloat16:
++          xp = gpu_ptr<hip_bfloat16>(xk);
++          wp = gpu_ptr<hip_bfloat16>(w);
++          op = gpu_ptr<hip_bfloat16>(out);
++          break;
++        default:
++          break;
++      }
++      if (xp && wp && op &&
++          mlx_redline_try_own_rmsnorm(
++              xp,
++              wp,
++              op,
++              eps_,
++              static_cast<uint32_t>(axis_size),
++              w_stride,
++              static_cast<uint32_t>(n_rows),
++              dtype_code,
++              hs)) {
++        return;
++      }
++    }
++  }
++
+   auto launch = [&](auto tag) {
+     using DT = decltype(tag);
+     if (strided) {

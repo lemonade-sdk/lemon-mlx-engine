@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); P11 inventory **PASS** (395 disp/L1 0.8B); P10 OWN_GLUE retained; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); P12 OWN_RMSNORM **PASS**; P11 inv 395/L1; product default ON **forbidden** |
 
 ## Board
 
@@ -38,9 +38,22 @@
 | Gen t/s A/B **35B LemonMLXE** | **RUN** — ~27–29 t/s; session≈base; sidecar≈base/slightly slower ([`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md)) |
 | Gen t/s A/B **OWN_GLUE only** | **RUN** — 0.8B ~116–117; 35B ~29.0–29.2 ≈ baseline ([`GEN_AB_OWN_GLUE_20260808.md`](GEN_AB_OWN_GLUE_20260808.md)) |
 | **P11 launch inventory** | **PASS** — env-gated; 0.8B L=1 **395** dispatches (QMM 187, CustomKernel 90, RMSNorm 37, …); NOT gen t/s ([`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md)) |
-| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — P12 own next multi-launch non-qmm chain |
+| **P12 OWN_RMSNORM packed** | **PASS** — packed product RMSNorm → Redline retained PM4; inv RMSNorm **37→6**; multi IB n=4; mid-eval stream sync tax ([`P12_OWN_RMSNORM.md`](P12_OWN_RMSNORM.md)) |
+| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — M2 gen A/B after P12 |
 
 ## Fire log
+
+### 2026-08-08 — P12 OWN_RMSNORM packed product path PASS
+
+- **Primary:** Replace packed product RMSNorm HIP launches with Redline retained PM4 (`MLX_REDLINE_OWN_RMSNORM=1`, default OFF).  
+- Clear Thought: sequentialthinking, decisionframework (B P12), metacognitivemonitoring, scientificmethod (H-p12-own-chain **supported**), mentalmodel first_principles.  
+- **Code:** `harness/rms_norm_kernels.hip` + CO; `try_arm_rmsnorm`; C ABI `mlx_redline_try_own_rmsnorm`; MLX weak hook (patch); workitem geometry (`work=n_rows*256`).  
+- **Smoke:** off 0×; **`rms=PASS rms_armed=1 rms_multi=PASS_n4`** + live OWN_RMSNORM log; xor fail-closed; gen text OK.  
+- **Inv:** total **395→364**; RMSNorm **37→6** (strided residual).  
+- **Logs:** `logs/p12-{off,on,xor,inv-on}-20260808-122950.*`.  
+- **Doc:** [`P12_OWN_RMSNORM.md`](P12_OWN_RMSNORM.md) + [`QUALITY_REVIEW_P12.md`](QUALITY_REVIEW_P12.md) **PASS**.  
+- **Not claimed:** gen t/s ≥2% win; default ON; qmm ownership.  
+- **Next:** M2 B0/B1/B2 gen A/B (OWN_RMSNORM only isolates ownership).
 
 ### 2026-08-08 — P11 product HIP launch inventory PASS
 
