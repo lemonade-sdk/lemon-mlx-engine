@@ -1,57 +1,52 @@
-# P6 — Stable `graph_decode_*` device-pointer bind probe
+# P6 — `graph_decode_*` stable device-ptr bind (product buffer bake)
 
 **Date:** 2026-08-08  
 **Branch:** `exp/redline-kernel-launch`  
-**Status:** **PASS** (pointer identity after in-place mutation)  
-**Depends on:** P2b session · P3 design · P5 in-proc micro (optional)  
-**Not shipped:** product forward replacement · gen t/s · default ON · HIP-graph re-enable
+**Status:** **PASS** (in-process; correctness + pointer stability)  
+**Depends on:** P5 in-proc micro · P3 design · P2b `gpu_new=ok`  
+**Not shipped:** gen t/s · product default ON · `call_fn` replace · HIP graphs
 
 ---
 
 ## 1. Goal
 
-Prove the **E4 / P3 hinge**: product fixed-address buffers
+Prove the E4/P3 hinge in the **engine binary**:
 
-- `graph_decode_input()` — `[1,1] int32`
-- `graph_decode_pos()` — `[1] int32`
-
-keep **stable** `buffer().raw_ptr()` values across in-place updates (`set_graph_decode_pos`, `set_graph_decode_input_from`). That is the precondition for future Redline kernarg patching of a product-owned micro-sequence without reallocating.
+1. `graph_decode_pos` / `graph_decode_input` expose **stable GPU device addresses** after in-place mutation.  
+2. A retained PM4 IB can **bake** `graph_decode_pos`’s device pointer as the `acc_k` accumulator.  
+3. Per-token kernarg patch + replay still matches `sum(1..T)` with **no buffer realloc**.
 
 ---
 
-## 2. Behavior
+## 2. API
 
-| Env | Result |
-|-----|--------|
-| `MLX_REDLINE_DECODE` unset | 0× `[redline]` (incl. no gd_bind) |
-| `=1` | Session READY (as P2b/P5) + one-shot **`gd_bind PASS|FAIL`** |
-| XOR pure | fail-closed; **no** gd_bind |
+| Symbol | File | Role |
+|--------|------|------|
+| `graph_decode_device_data_ptr(array&)` | `graph_decode.{h,cpp}` | VRAM ptr = `RocmBuffer::data + offset` (not host shadow) |
+| `try_micro_op` (P5/P6) | `redline_decode_session.cpp` | Stability check → bake pos → patch/replay |
+| `maybe_probe_redline_graph_decode_bind` | same | L=1 one-shot `gd_bind` log (no HSACO required) |
 
-Probe (once per process):
-
-1. Ensure resident buffers via `graph_decode_device_data_ptr` (VRAM `RocmBuffer::data+offset`, not host shadow)  
-2. Snapshot input & pos pointers  
-3. In-place `set_graph_decode_pos(0)` + `set_graph_decode_input_from(token=1)`  
-4. Snapshot again → require non-null and equal  
-
-**API:** `maybe_probe_redline_graph_decode_bind()` + `graph_decode_device_data_ptr()`  
-**Sites:** `TokenIterator::step` L=1 / `next()`, and `chat` after model load.
+Env (unchanged master): `MLX_REDLINE_DECODE=1` + optional `MLX_REDLINE_HSACO` for full bake+correctness.
 
 ---
 
 ## 3. Smoke (gfx1150)
 
-| Case | Evidence |
-|------|----------|
-| off | 0× `[redline]` — `logs/p6-off-20260808-113247.err` |
-| on | READY `gpu_new=ok micro=skip` + **`gd_bind PASS … stable=1`** — `logs/p6-on-20260808-113247.err` (+ vram re-smoke `p6-on-vram-*`) |
-| xor | XOR banner only — `logs/p6-xor-20260808-113247.err` |
+| Case | Result | Log |
+|------|--------|-----|
+| off | 0× `[redline]` | `logs/p6-off-20260808-113412.err` |
+| on-skip | READY `micro=skip` | `logs/p6-on-skip-20260808-113412.err` |
+| on-micro | **`gd_bind=PASS` … `gd_post=stable micro=PASS observed=2080 expected=2080`** | `logs/p6-on-micro-20260808-113412.err` |
+| xor | fail-closed | `logs/p6-xor-20260808-113412.err` |
 
-Example:
+Banner (on-micro excerpt):
 
 ```text
-[redline] gd_bind PASS input=0x… pos=0x… stable=1 (P6; not gen t/s; forward still product)
+[redline] session READY (... gd_bind=PASS pos=0x... input=0x... gd_post=stable
+  micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=324.82 (NOT gen t/s))
 ```
+
+Expected: `sum(1..64)=2080` (single PM4 dispatch). Host µs labeled **not** gen t/s.
 
 ---
 
@@ -59,13 +54,14 @@ Example:
 
 | Claim | Status |
 |-------|--------|
-| Stable buffer addresses under in-place update | **YES** (this host) |
-| Model gen t/s | **NO** |
-| Product default ON / call_fn replace | **NO** |
-| Kernargs already patched from these ptrs into product kernels | **NO** (next) |
+| Stable product buffer identity under in-place mutate | **YES** |
+| Retained PM4 bake of product pos ptr + correctness | **YES** |
+| Model gen t/s A/B | **NO** |
+| Product default ON / forward replace | **NO** |
 
 ---
 
 ## 5. Next
 
-Wire a real engine-owned small launch that **consumes** these stable addresses (or log launch-count A/B). Gen t/s A/B only after product path actually changes.
+- Optional L=1 sidecar replay without replacing `call_fn` (still not gen t/s).  
+- Gen t/s A/B **only** after a real product-path op is owned by Redline.

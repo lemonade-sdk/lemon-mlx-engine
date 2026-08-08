@@ -27,21 +27,29 @@
 | **P3 measured micro-op** | **PASS** — out-of-process AQL patch+replay; correctness 4160; host_median **8.796 µs** ([`P3_MICRO_OP.md`](P3_MICRO_OP.md)); **not** gen t/s |
 | **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
 | **P5 in-process C-API micro** | **PASS** — chat session `micro=PASS` 2080/2080; host_total_us labeled NOT gen t/s ([`P5_INPROC_MICRO.md`](P5_INPROC_MICRO.md)) |
-| **P6 graph_decode bind** | **PASS** — stable input/pos `raw_ptr` after in-place update ([`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md)) |
+| **P6 graph_decode bind** | **PASS** — VRAM ptrs stable + **bake pos as PM4 acc** micro 2080/2080 ([`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
 | Gen t/s A/B (same-build eager) | **NOT RUN** |
 
 ## Fire log
 
-### 2026-08-08 — P6 graph_decode bind PASS
+### 2026-08-08 — P6 measured product-buffer bake PASS
+
+- **Primary:** Measure P6 bake: `graph_decode_pos` VRAM ptr as retained-PM4 `acc_k` accumulator (product buffer, not hipMalloc).  
+- Clear Thought: sequentialthinking, decisionframework (A1 bake vs A2/B/E), metacognitivemonitoring, scientificmethod (H-p6-gd-bind).  
+- **Code (on tip):** `graph_decode_device_data_ptr`; `try_micro_op` gd_bind+bake; `maybe_probe_redline_graph_decode_bind`.  
+- **Smoke:** off 0×; skip; **`gd_bind=PASS gd_post=stable micro=PASS observed=2080 expected=2080`**; xor fail-closed.  
+- **Logs:** `logs/p6-{off,on-skip,on-micro,xor}-20260808-113412.err`.  
+- **Doc:** [`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md) + [`QUALITY_REVIEW_P6.md`](QUALITY_REVIEW_P6.md) **PASS**.  
+- **Not claimed:** gen t/s; default ON; call_fn replace.  
+- **Next:** L=1 sidecar without call_fn replace; gen A/B only after product-path ownership.
+
+### 2026-08-08 — P6 graph_decode bind PASS (probe land)
 
 - **Primary:** Stable `graph_decode_input` / `graph_decode_pos` device buffer pointers after in-place mutate.  
-- Clear Thought: sequentialthinking, decisionframework (bind+log vs gen A/B).  
 - **Code:** `maybe_probe_redline_graph_decode_bind()`; wired from `generate.cpp` L=1/`next` + `chat` post-load.  
 - **Smoke:** off silent; on **`gd_bind PASS stable=1`**; xor no gd_bind — `logs/p6-*-20260808-113247.err`.  
-- **Doc:** [`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md) + [`QUALITY_REVIEW_P6.md`](QUALITY_REVIEW_P6.md) quintuple PASS.  
-- **Not claimed:** gen t/s; call_fn replace; product default ON.  
-- **Next:** consume these ptrs in a real engine-owned small launch; gen A/B only after product path change.
+- **Follow-up same window:** product-buffer bake measure (fire entry above).
 
 ### 2026-08-08 — P5 in-process micro-op PASS (post–Stop A)
 
