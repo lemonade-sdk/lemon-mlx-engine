@@ -1,0 +1,48 @@
+TS=20260808-145207 multi-kernel + Path B composition
+2026-08-08T14:52:07-07:00
+-rwxrwxr-x 1 antmi antmi 1075704 Aug  8 14:49 /tmp/redline-warpfront-target/release/libredline_dispatch.so
+=== B0 ===
+rc=0
+Generation: 64 tokens, 114.583 tokens/s, 0.558549s
+=== G1glue ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1659.39 retained_us_per=4.7342 speedup=350.511x N=64 (NOT gen t/s) rms=skip)
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+Generation: 64 tokens, 115.628 tokens/s, 0.5535s
+=== R1p1 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=7.09us pre_sync=125.079us ordered_join=2141.6us post_sync=4.233us ib_host_wait=0us | MEAN/call: set_k=0.22871us pre_sync=4.03481us ordered_join=69.0839us post_sync=0.136548us ib_host_wait=0us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31 ib_wait_n=0 dbl_skip_wait=0
+Generation: 64 tokens, 111.387 tokens/s, 0.574574s
+=== R1async ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=5.179us pre_sync=0us ordered_join=2618.82us post_sync=0.591us ib_host_wait=16.421us | MEAN/call: set_k=0.167065us pre_sync=0us ordered_join=84.478us post_sync=0.0190645us ib_host_wait=0.52971us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31 ib_wait_n=27 dbl_skip_wait=4
+Generation: 64 tokens, 110.376 tokens/s, 0.579838s
+=== GRasync ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1628.46 retained_us_per=4.8383 speedup=336.577x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 100.49 tokens/s, 0.636878s
+=== ALLasync ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x7c1baf400008 input=0x7c1baf400010 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=287.349000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=79.069000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1418.85 retained_us_per=4.61805 speedup=307.24x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 tick (product graph_decode_input VRAM val=5834; retained PM4; call_fn still product; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=65 side_obs=19961 side_exp=19961 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+Generation: 64 tokens, 92.3267 tokens/s, 0.69319s
+=== ALLp1 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x70e7e1e00008 input=0x70e7e1e00010 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=294.763000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=72.636000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1525.66 retained_us_per=4.71777 speedup=323.387x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 tick (product graph_decode_input VRAM val=5834; retained PM4; call_fn still product; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=65 side_obs=19961 side_exp=19961 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+Generation: 64 tokens, 104.689 tokens/s, 0.611335s
+=== B0b ===
+rc=0
+Generation: 64 tokens, 116.984 tokens/s, 0.547083s
