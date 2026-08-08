@@ -1,0 +1,13 @@
+TS=20260808-140907
+2026-08-08T14:09:07-07:00
+redline=9df1dfe fix(capi): WAIT_REG_MEM mem_space bits for gfx9+ (phase2b hang)
+so=/tmp/redline-warpfront-target/release/libredline_dispatch.so
+goal=B1 phase2 smoke after WAIT_REG_MEM mem_space fix
+=== B1-phase2 ===
+rc=0
+[redline] session READY ... rms=PASS rms_armed=1 ...
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31): set_k=3.979us pre_sync=108.073us replay=2577.62us post_sync=2.814us pre_query_skip=0 pre_wait=31 (host wall; NOT gen t/s)
+Prompt:     1 tokens, 3.68061 tokens/s, 0.271694s
+Generation: 64 tokens, 113.088 tokens/s, 0.565932s
+verdict=phase2-used PROVEN; no gen win claim; default stays phase1
