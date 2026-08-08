@@ -31,7 +31,7 @@
 | **P7 L1 retained sidecar** | **PASS** — `sidecar=PASS` 136/136 + armed; L=1 hook; call_fn still product ([`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md)) |
 | **P7b full-gen L=1 verify** | **PASS** — model load + L=1 ticks; `fullgen PASS n=17 side_obs=153 side_exp=153`; call_fn still product ([`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
-| Gen t/s A/B (same-build eager) | **NOT RUN** |
+| Gen t/s A/B (same-build eager) | **RUN** — ~115–117 t/s all modes (no clear win); see [`GEN_AB_20260808.md`](GEN_AB_20260808.md) |
 
 ## Fire log
 
