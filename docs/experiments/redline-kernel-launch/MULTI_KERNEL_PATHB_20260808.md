@@ -49,4 +49,18 @@ All arms **rc=0**; correctness logs PASS (glue, rms, small_op fullgen, sidecar).
 | OWN_RMS + Path B | Correct; **no gen ship** |
 | All-flags / GR stack | Research only; slower |
 
+## OWN_GLUE Path B wired (20260808-145655)
+
+Shared `launch_owned_ib` + product stream from `rocm::get_command_encoder(default_stream)`.  
+`resolve_hip_stream_bridge` also from `try_arm_glue` (was RMS-only before).
+
+| Arm | Mode | gen t/s |
+|-----|------|--------:|
+| B0 / B0b | product | 115.1 / 116.5 |
+| **G1async** glue only | **phase2-async-used** | **115.0** |
+| G1p2 / G1p1 | bridge yes, often idle→replay | 115.4 / 115.3 |
+| GRasync glue+rms | both async | 100.1 (still stacked tax) |
+
+**Verdict:** Path B on **OWN_GLUE alone works and stays ≈ baseline**. Stacking with RMS still loses. SMALL_OP/SIDECAR still not Path B.
+
 Logs: `logs/multi-*-20260808-145207.err` · meta `logs/multi-kernel-meta-20260808-145207.txt`

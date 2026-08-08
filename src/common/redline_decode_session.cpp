@@ -43,6 +43,8 @@
 #define __HIP_PLATFORM_AMD__ 1
 #endif
 #include <hip/hip_runtime.h>
+// Product HIP stream for OWN_GLUE Path B (same queue as gpu_kv_pos_*).
+#include <mlx/backend/rocm/device.h>
 #endif
 
 namespace mlx_lm {
@@ -321,10 +323,26 @@ uint64_t g_rms_fallback_count = 0;
 uint64_t g_rms_ns_setk = 0;
 uint64_t g_rms_ns_pre = 0;
 uint64_t g_rms_ns_ordered = 0; // was mislabeled "replay"
+// Path B split of ordered_join (async only; sum ≈ ordered when both recorded).
+uint64_t g_rms_ns_submit = 0; // idle Query + submit_after / rl_pm4_submit
+uint64_t g_rms_ns_cwait = 0;  // hipStreamWaitValue32 enqueue (consumer)
 uint64_t g_rms_ns_post = 0;
 uint64_t g_rms_ns_ib_wait = 0; // host rl_pm4_wait for IB reuse (Path B)
 uint64_t g_rms_ib_wait_count = 0;
 uint64_t g_rms_ib_dbl_skip_wait = 0; // dual-buffer avoided host wait
+// Hot-path flag cache (filled under g_mu on first OWN_RMSNORM). Env is stable
+// for a bench process; avoids repeated getenv on ~31 owns/token.
+struct RmsHotFlags {
+    bool inited = false;
+    bool decode = false;
+    bool own_rms = false;
+    bool graph_pure = false;
+    bool phase2 = false;
+    bool phase2_async = false;
+    bool async_hostwait = false;
+    bool profile = false;
+};
+RmsHotFlags g_rms_hot{};
 // key = (dtype_code << 24) | n_rows → dual retained IBs for Path B overlap
 struct RmsIbPair {
     void* slot[2] = {nullptr, nullptr};
@@ -743,11 +761,16 @@ void try_micro_op(void* lib, void* gpu) {
 
 // P9/P10: load glue CO + arm retained IBs (product-equivalent pos/token).
 // Keeps gpu on success. Product path uses set_kernargs+replay (not one-shot).
+// Forward: defined with HIP stream bridge helpers.
+void resolve_hip_stream_bridge(void* lib);
+
 bool try_arm_glue(void* lib, void* gpu) {
     if (!env_exact_one("MLX_REDLINE_OWN_GLUE")) {
         g_err += " glue=skip";
         return false;
     }
+    // Path B symbols (same .so as RMS) — required even when OWN_RMSNORM is off.
+    resolve_hip_stream_bridge(lib);
     auto* load_mod =
         reinterpret_cast<rl_gpu_load_module_fn>(::dlsym(lib, "rl_gpu_load_module"));
     auto* mod_free =
@@ -1335,6 +1358,157 @@ void resolve_hip_stream_bridge(void* lib) {
         g_hip_stream_async = true;
     }
     (void)kRlFeatureHipStreamWait;
+}
+
+#if defined(MLX_BUILD_ROCM)
+// Product default-stream HIP handle (encoder for default_stream). Used by OWN_GLUE
+// Path B so WaitValue / WriteValue order with gpu_kv_pos_* / matmul on that stream.
+void* product_default_hip_stream() {
+    try {
+        namespace mx = mlx::core;
+        auto& enc =
+            mx::rocm::get_command_encoder(mx::default_stream(mx::default_device()));
+        return static_cast<void*>(static_cast<hipStream_t>(enc.stream()));
+    } catch (...) {
+        return nullptr;
+    }
+}
+#else
+void* product_default_hip_stream() {
+    return nullptr;
+}
+#endif
+
+// Shared Path B launch for any retained owned IB (RMS, glue, …).
+// Returns false on hard failure. Sets *mode_out to phase tag string.
+// When used_async_out non-null, sets whether consumer WaitValue path was used.
+bool launch_owned_ib(
+    void* ib,
+    void* hip_stream,
+    const char** mode_out,
+    bool* used_async_out) {
+    if (mode_out) {
+        *mode_out = "replay";
+    }
+    if (used_async_out) {
+        *used_async_out = false;
+    }
+    if (!ib || !g_fn_replay) {
+        return false;
+    }
+    const RedlinePreSync pre_mode = pre_sync_mode();
+    const bool want_phase2 = env_exact_one("MLX_REDLINE_PHASE2");
+    const bool want_async =
+        want_phase2 && env_exact_one("MLX_REDLINE_PHASE2_ASYNC") && g_hip_stream_async &&
+        hip_stream && pre_mode != RedlinePreSync::Off &&
+        pre_mode != RedlinePreSync::Device;
+    const bool async_hostwait = want_async && env_exact_one("MLX_REDLINE_ASYNC_HOSTWAIT");
+    bool used_bridge = false;
+    bool used_async = false;
+    bool used_async_hostwait = false;
+
+    if (want_async) {
+        ++g_pre_sync_wait;
+        bool submitted = false;
+        if (g_fn_pm4_submit && hip_stream) {
+            auto* st = static_cast<hipStream_t>(hip_stream);
+            if (hipStreamQuery(st) == hipSuccess) {
+                ++g_pre_query_skip;
+                submitted = (g_fn_pm4_submit(ib) == kRlOk);
+            } else {
+                (void)hipGetLastError();
+            }
+        }
+        if (!submitted && g_fn_submit_after_p2) {
+            submitted = (g_fn_submit_after_p2(ib, hip_stream) == kRlOk);
+        }
+        if (!submitted) {
+            if (g_fn_replay_after_hip_p2 &&
+                g_fn_replay_after_hip_p2(ib, hip_stream) == kRlOk) {
+                used_bridge = true;
+            } else if (g_fn_replay_after_hip &&
+                       g_fn_replay_after_hip(ib, hip_stream) == kRlOk) {
+                used_bridge = true;
+            } else {
+                return false;
+            }
+        } else if (async_hostwait) {
+            g_async_ib_needs_wait[ib] = true;
+            if (!g_fn_pm4_wait || g_fn_pm4_wait(ib) != kRlOk) {
+                return false;
+            }
+            g_async_ib_needs_wait[ib] = false;
+            used_bridge = true;
+            used_async_hostwait = true;
+        } else {
+            g_async_ib_needs_wait[ib] = true;
+            if (!g_fn_consumer_wait || g_fn_consumer_wait(hip_stream) != kRlOk) {
+                if (g_fn_pm4_wait) {
+                    (void)g_fn_pm4_wait(ib);
+                    g_async_ib_needs_wait[ib] = false;
+                }
+                return false;
+            }
+            used_bridge = true;
+            used_async = true;
+        }
+    } else {
+        auto* ordered = g_fn_replay_after_hip;
+        if (want_phase2 && g_fn_replay_after_hip_p2) {
+            ordered = g_fn_replay_after_hip_p2;
+        }
+        if (ordered && hip_stream && pre_mode != RedlinePreSync::Off &&
+            pre_mode != RedlinePreSync::Device) {
+            if (pre_mode == RedlinePreSync::Stream) {
+                auto* st = static_cast<hipStream_t>(hip_stream);
+                if (hipStreamQuery(st) == hipSuccess) {
+                    ++g_pre_query_skip;
+                    if (g_fn_replay(ib) != kRlOk) {
+                        return false;
+                    }
+                } else {
+                    (void)hipGetLastError();
+                    ++g_pre_sync_wait;
+                    if (ordered(ib, hip_stream) != kRlOk) {
+                        return false;
+                    }
+                    used_bridge = true;
+                }
+            } else {
+                ++g_pre_sync_wait;
+                if (ordered(ib, hip_stream) != kRlOk) {
+                    return false;
+                }
+                used_bridge = true;
+            }
+        } else {
+            redline_pre_sync(hip_stream);
+            if (g_fn_replay(ib) != kRlOk) {
+                return false;
+            }
+        }
+    }
+
+    if (!used_async) {
+        redline_post_sync(hip_stream);
+    }
+    if (used_async_out) {
+        *used_async_out = used_async;
+    }
+    if (mode_out) {
+        if (used_async) {
+            *mode_out = "phase2-async-used";
+        } else if (used_async_hostwait) {
+            *mode_out = "phase2-async-hostwait";
+        } else if (used_bridge && want_phase2 && g_fn_replay_after_hip_p2) {
+            *mode_out = "phase2-used";
+        } else if (used_bridge) {
+            *mode_out = "phase1-used";
+        } else {
+            *mode_out = "replay";
+        }
+    }
+    return true;
 }
 
 // Before set_k on a retained IB, finish any prior async submit on that IB.
@@ -2046,12 +2220,16 @@ bool redline_try_own_pos_set(mlx::core::array& pos, int v) {
     if (!lock.owns_lock()) {
         return false; // init or another glue launch holds g_mu → HIP fallback
     }
-    // P10: retained IB path (set_kernargs + replay).
+    // P10: retained IB path (set_kernargs + Path B launch when stream bridge ok).
     if (!g_glue_armed || !g_glue_ib_set || !g_fn_set_k || !g_fn_replay) {
         return false;
     }
     void* p = graph_decode_device_data_ptr(pos);
     if (!p) {
+        return false;
+    }
+    void* ib = g_glue_ib_set;
+    if (!ensure_ib_ready_for_setk(ib)) {
         return false;
     }
     uint8_t karg[512];
@@ -2061,26 +2239,22 @@ bool redline_try_own_pos_set(mlx::core::array& pos, int v) {
     const int32_t vv = static_cast<int32_t>(v);
     std::memcpy(karg + 8, &vv, sizeof(vv));
 
-    if (g_fn_set_k(g_glue_ib_set, 0, 0, karg, 8) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 0, karg, 8) != kRlOk) {
         return false;
     }
-    if (g_fn_set_k(g_glue_ib_set, 0, 8, karg + 8, 4) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 8, karg + 8, 4) != kRlOk) {
         return false;
     }
-    const bool ok = (g_fn_replay(g_glue_ib_set) == kRlOk);
-    if (ok) {
-        redline_post_sync(nullptr); // P12b: device default; dual-queue
-        if (!g_glue_logged) {
-            g_glue_logged = true;
-            std::cerr
-                << "[redline] OWN_GLUE pos_set handled by Redline retained PM4 "
-                   "(product HIP glue skipped; POST_SYNC="
-                << (post_sync_mode() == RedlinePostSync::Off
-                        ? "off"
-                        : (post_sync_mode() == RedlinePostSync::Stream ? "stream"
-                                                                      : "device"))
-                << "; NOT gen t/s)\n";
-        }
+    void* hip_stream = product_default_hip_stream();
+    const char* mode = "replay";
+    const bool ok = launch_owned_ib(ib, hip_stream, &mode, nullptr);
+    if (ok && !g_glue_logged) {
+        g_glue_logged = true;
+        std::cerr
+            << "[redline] OWN_GLUE pos_set handled by Redline retained PM4 "
+               "(product HIP glue skipped; P13 bridge="
+            << (g_hip_stream_bridge ? "yes" : "no") << " " << mode
+            << "; POST_SYNC=" << post_sync_label() << "; NOT gen t/s)\n";
     }
     return ok;
 #endif
@@ -2109,6 +2283,10 @@ bool redline_try_own_pos_inc(mlx::core::array& pos, int delta) {
     if (!p) {
         return false;
     }
+    void* ib = g_glue_ib_inc;
+    if (!ensure_ib_ready_for_setk(ib)) {
+        return false;
+    }
     uint8_t karg[512];
     std::memset(karg, 0, sizeof(karg));
     const uint64_t pp = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(p));
@@ -2116,17 +2294,15 @@ bool redline_try_own_pos_inc(mlx::core::array& pos, int delta) {
     const int32_t dd = static_cast<int32_t>(delta);
     std::memcpy(karg + 8, &dd, sizeof(dd));
 
-    if (g_fn_set_k(g_glue_ib_inc, 0, 0, karg, 8) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 0, karg, 8) != kRlOk) {
         return false;
     }
-    if (g_fn_set_k(g_glue_ib_inc, 0, 8, karg + 8, 4) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 8, karg + 8, 4) != kRlOk) {
         return false;
     }
-    const bool ok = (g_fn_replay(g_glue_ib_inc) == kRlOk);
-    if (ok) {
-        redline_post_sync(nullptr); // P12b
-    }
-    return ok;
+    void* hip_stream = product_default_hip_stream();
+    const char* mode = "replay";
+    return launch_owned_ib(ib, hip_stream, &mode, nullptr);
 #endif
 }
 
@@ -2157,6 +2333,10 @@ bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& sr
     if (!d || !s) {
         return false;
     }
+    void* ib = g_glue_ib_copy;
+    if (!ensure_ib_ready_for_setk(ib)) {
+        return false;
+    }
     uint8_t karg[512];
     std::memset(karg, 0, sizeof(karg));
     const uint64_t dd = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(d));
@@ -2164,21 +2344,22 @@ bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& sr
     std::memcpy(karg, &dd, sizeof(dd));
     std::memcpy(karg + 8, &ss, sizeof(ss));
 
-    if (g_fn_set_k(g_glue_ib_copy, 0, 0, karg, 8) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 0, karg, 8) != kRlOk) {
         return false;
     }
-    if (g_fn_set_k(g_glue_ib_copy, 0, 8, karg + 8, 8) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 8, karg + 8, 8) != kRlOk) {
         return false;
     }
-    const bool ok = (g_fn_replay(g_glue_ib_copy) == kRlOk);
-    if (ok) {
-        redline_post_sync(nullptr); // P12b
-        if (!g_glue_logged) {
-            g_glue_logged = true;
-            std::cerr
-                << "[redline] OWN_GLUE scalar_copy/pos handled by Redline retained PM4 "
-                   "(product HIP glue skipped; NOT gen t/s)\n";
-        }
+    void* hip_stream = product_default_hip_stream();
+    const char* mode = "replay";
+    const bool ok = launch_owned_ib(ib, hip_stream, &mode, nullptr);
+    if (ok && !g_glue_logged) {
+        g_glue_logged = true;
+        std::cerr
+            << "[redline] OWN_GLUE scalar_copy/pos handled by Redline retained PM4 "
+               "(product HIP glue skipped; P13 bridge="
+            << (g_hip_stream_bridge ? "yes" : "no") << " " << mode
+            << "; NOT gen t/s)\n";
     }
     return ok;
 #endif
@@ -2232,15 +2413,26 @@ bool redline_try_own_rmsnorm_packed(
         return false;
     }
 
+    // Process-stable hot flags (bench env does not flip mid-gen).
+    if (!g_rms_hot.inited) {
+        g_rms_hot.decode = env_exact_one("MLX_REDLINE_DECODE");
+        g_rms_hot.own_rms = env_exact_one("MLX_REDLINE_OWN_RMSNORM");
+        g_rms_hot.graph_pure = env_exact_one("MLX_DECODE_GRAPH_PURE");
+        g_rms_hot.phase2 = env_exact_one("MLX_REDLINE_PHASE2");
+        g_rms_hot.phase2_async = env_exact_one("MLX_REDLINE_PHASE2_ASYNC");
+        g_rms_hot.async_hostwait = env_exact_one("MLX_REDLINE_ASYNC_HOSTWAIT");
+        g_rms_hot.profile = env_exact_one("MLX_REDLINE_RMS_PROFILE");
+        g_rms_hot.inited = true;
+    }
+
     // Path B flags early: dual IB acquire needs to know if async is intended.
     const RedlinePreSync pre_mode = pre_sync_mode();
-    const bool want_phase2 = env_exact_one("MLX_REDLINE_PHASE2");
+    const bool want_phase2 = g_rms_hot.phase2;
     const bool want_async =
-        want_phase2 && env_exact_one("MLX_REDLINE_PHASE2_ASYNC") && g_hip_stream_async &&
-        hip_stream && pre_mode != RedlinePreSync::Off &&
-        pre_mode != RedlinePreSync::Device;
+        want_phase2 && g_rms_hot.phase2_async && g_hip_stream_async && hip_stream &&
+        pre_mode != RedlinePreSync::Off && pre_mode != RedlinePreSync::Device;
     // Hostwait is explicit only — do not silently rewrite ASYNC into host join.
-    const bool async_hostwait = want_async && env_exact_one("MLX_REDLINE_ASYNC_HOSTWAIT");
+    const bool async_hostwait = want_async && g_rms_hot.async_hostwait;
 
     // Dual retained IBs when true Path B WaitValue (not hostwait): overlap set_k
     // on free slot while prior IB is still in flight on the RL queue.
@@ -2250,7 +2442,7 @@ bool redline_try_own_rmsnorm_packed(
         return false;
     }
 
-    const bool profile = env_exact_one("MLX_REDLINE_RMS_PROFILE");
+    const bool profile = g_rms_hot.profile;
     using clock = std::chrono::steady_clock;
     auto mark = []() { return clock::now(); };
     auto ns_since = [](clock::time_point t0) {
@@ -2263,18 +2455,11 @@ bool redline_try_own_rmsnorm_packed(
     // device pointers / scalars — it does not read producer VRAM — so this
     // host work can overlap in-flight product HIP producers. Pre-sync must
     // still complete immediately before replay (dual-queue producer drain).
+    // Single contiguous set_k (was 3×24/8/8) — one memcpy into kernarg buffer.
     uint8_t karg[512];
     pack_rms_karg(karg, sizeof(karg), x, w, out, eps, axis_size, w_stride);
     auto t0 = profile ? mark() : clock::time_point{};
-    if (g_fn_set_k(ib, 0, 0, karg, 24) != kRlOk) {
-        ++g_rms_fallback_count;
-        return false;
-    }
-    if (g_fn_set_k(ib, 0, 24, karg + 24, 8) != kRlOk) {
-        ++g_rms_fallback_count;
-        return false;
-    }
-    if (g_fn_set_k(ib, 0, 32, karg + 32, 8) != kRlOk) {
+    if (g_fn_set_k(ib, 0, 0, karg, kRmsKargLive) != kRlOk) {
         ++g_rms_fallback_count;
         return false;
     }
@@ -2297,10 +2482,13 @@ bool redline_try_own_rmsnorm_packed(
     }
 
     if (want_async) {
-        ++g_pre_sync_wait;
         // Idle product stream: skip WriteValue+WAIT_REG_MEM (no outstanding
         // producers). Still publish completion WaitValue for consumers.
+        // Note: mid-layer decode almost never Query-idle (WaitValue + product
+        // work keep stream dirty) — pre_query_skip stays 0 for first token.
         bool submitted = false;
+        uint64_t call_submit_ns = 0;
+        uint64_t call_cwait_ns = 0;
         if (g_fn_pm4_submit && hip_stream) {
             auto* st = static_cast<hipStream_t>(hip_stream);
             if (hipStreamQuery(st) == hipSuccess) {
@@ -2308,10 +2496,18 @@ bool redline_try_own_rmsnorm_packed(
                 submitted = (g_fn_pm4_submit(ib) == kRlOk);
             } else {
                 (void)hipGetLastError();
+                ++g_pre_sync_wait; // Query not-ready → submit_after path
             }
+        } else {
+            ++g_pre_sync_wait;
         }
         if (!submitted) {
             submitted = (g_fn_submit_after_p2(ib, hip_stream) == kRlOk);
+        }
+        if (profile) {
+            call_submit_ns = ns_since(t0);
+            g_rms_ns_submit += call_submit_ns;
+            t0 = mark();
         }
         if (!submitted) {
             // Fall back to sync phase2 if available, else phase1.
@@ -2325,6 +2521,11 @@ bool redline_try_own_rmsnorm_packed(
                 ++g_rms_fallback_count;
                 return false;
             }
+            if (profile) {
+                // Fallback path still counts full ordered wall in g_rms_ns_ordered.
+                g_rms_ns_ordered += call_submit_ns + ns_since(t0);
+                t0 = mark();
+            }
         } else if (async_hostwait) {
             g_async_ib_needs_wait[ib] = true;
             if (!g_fn_pm4_wait || g_fn_pm4_wait(ib) != kRlOk) {
@@ -2334,6 +2535,10 @@ bool redline_try_own_rmsnorm_packed(
             g_async_ib_needs_wait[ib] = false;
             used_bridge = true;
             used_async_hostwait = true;
+            if (profile) {
+                g_rms_ns_ordered += call_submit_ns + ns_since(t0);
+                t0 = mark();
+            }
         } else {
             g_async_ib_needs_wait[ib] = true;
             if (g_fn_consumer_wait(hip_stream) != kRlOk) {
@@ -2343,6 +2548,12 @@ bool redline_try_own_rmsnorm_packed(
                 }
                 ++g_rms_fallback_count;
                 return false;
+            }
+            if (profile) {
+                call_cwait_ns = ns_since(t0);
+                g_rms_ns_cwait += call_cwait_ns;
+                g_rms_ns_ordered += call_submit_ns + call_cwait_ns;
+                t0 = mark();
             }
             used_bridge = true;
             used_async = true;
@@ -2404,8 +2615,12 @@ bool redline_try_own_rmsnorm_packed(
             }
         }
     }
-    if (profile) {
+    // Non-async: ordered_join is remaining wall after pre (submit+host wait).
+    // Async paths already folded submit+cwait into g_rms_ns_ordered above.
+    if (profile && !want_async) {
         g_rms_ns_ordered += ns_since(t0);
+        t0 = mark();
+    } else if (profile) {
         t0 = mark();
     }
 
@@ -2451,15 +2666,20 @@ bool redline_try_own_rmsnorm_packed(
                   << " TOTAL): set_k=" << us_total(g_rms_ns_setk)
                   << "us pre_sync=" << us_total(g_rms_ns_pre)
                   << "us ordered_join=" << us_total(g_rms_ns_ordered)
+                  << "us submit=" << us_total(g_rms_ns_submit)
+                  << "us cwait=" << us_total(g_rms_ns_cwait)
                   << "us post_sync=" << us_total(g_rms_ns_post)
                   << "us ib_host_wait=" << us_total(g_rms_ns_ib_wait)
                   << "us | MEAN/call: set_k=" << us_mean(g_rms_ns_setk)
                   << "us pre_sync=" << us_mean(g_rms_ns_pre)
                   << "us ordered_join=" << us_mean(g_rms_ns_ordered)
+                  << "us submit=" << us_mean(g_rms_ns_submit)
+                  << "us cwait=" << us_mean(g_rms_ns_cwait)
                   << "us post_sync=" << us_mean(g_rms_ns_post)
                   << "us ib_host_wait=" << us_mean(g_rms_ns_ib_wait)
                   << "us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue"
-                     " (NOT pure doorbell; host wall; NOT gen t/s)"
+                     " (async split submit|cwait; NOT pure doorbell; host wall; NOT gen t/s)"
+                     " host_cut=setk1+flag_cache"
                   << " pre_query_skip=" << g_pre_query_skip
                   << " pre_wait=" << g_pre_sync_wait
                   << " ib_wait_n=" << g_rms_ib_wait_count

@@ -1,0 +1,25 @@
+TS=20260808-145655 glue Path B fix resolve
+=== B0 ===
+rc=0
+Generation: 64 tokens, 115.103 tokens/s, 0.556022s
+=== G1async ===
+rc=0
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; P13 bridge=yes phase2-async-used; POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 115.03 tokens/s, 0.556377s
+=== G1p2 ===
+rc=0
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; P13 bridge=yes replay; POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 115.393 tokens/s, 0.554625s
+=== G1p1 ===
+rc=0
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; P13 bridge=yes replay; POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 115.258 tokens/s, 0.555275s
+=== GRasync ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1409.97 retained_us_per=4.54133 speedup=310.475x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; P13 bridge=yes phase2-async-used; POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 100.125 tokens/s, 0.639201s
+=== B0b ===
+rc=0
+Generation: 64 tokens, 116.488 tokens/s, 0.549414s
