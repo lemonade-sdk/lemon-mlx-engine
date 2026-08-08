@@ -66,5 +66,5 @@ Logs: `logs/p9-own-glue-20260808-115532.err`, `logs/p9-own-glue-smallop-20260808
 
 - **Does** replace product **glue** launches when opt-in.  
 - **Does not** replace qmm / full forward (E3).  
-- Gen t/s: may be **same or slower** (one-shot PM4 per glue call today); measure separately if claiming speed.  
+- Gen t/s: may be **same or slower** if one-shot; **P10** moves product glue to retained set_k+replay (host wall win; still not a gen t/s claim).  
 - Default remains **eager product** when envs unset.

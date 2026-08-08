@@ -10,4 +10,4 @@
 | 4 quality | Smoke glue_armed + OWN_GLUE log; small_op still PASS |
 | 5 supervisor | Bans OK: default OFF; no gen t/s win claim; no qmm lie |
 
-**Residual:** one-shot PM4 per glue call (not retained multi-dispatch) — speed optional later.
+**Residual:** one-shot PM4 per glue call (not retained multi-dispatch) — **closed by P10**.

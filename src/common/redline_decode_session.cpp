@@ -8,6 +8,8 @@
 //     graph_decode_input VRAM consume + retained PM4; call_fn still product.
 // P9: MLX_REDLINE_OWN_GLUE=1 — Redline PM4 owns product glue launches
 //     (pos_set/pos_inc/scalar_copy) instead of mlx hipLaunchKernelGGL.
+// P10: retained PM4 IBs for OWN_GLUE (set_kernargs+replay; not one-shot
+//     builder/finalize per product glue call). Default still OFF.
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
@@ -103,8 +105,11 @@ uint64_t g_sidecar_expected = 0;
 bool g_sidecar_first_logged = false;
 uint32_t g_small_op_pos_book = 0; // host bookkeeping; does not enable external_pos
 
-// P9 glue ownership (process lifetime when OWN_GLUE=1).
+// P9/P10 glue ownership (process lifetime when OWN_GLUE=1).
 void* g_glue_mod = nullptr;
+void* g_glue_ib_set = nullptr;  // retained glue_pos_set.kd
+void* g_glue_ib_inc = nullptr;  // retained glue_pos_inc.kd
+void* g_glue_ib_copy = nullptr; // retained glue_scalar_copy_i32.kd
 bool g_glue_armed = false;
 bool g_glue_logged = false;
 rl_pm4_builder_new_fn g_fn_b_new = nullptr;
@@ -519,7 +524,8 @@ void try_micro_op(void* lib, void* gpu) {
     }
 }
 
-// P9: load glue CO (product-equivalent pos/token kernels). Keeps gpu on success.
+// P9/P10: load glue CO + arm retained IBs (product-equivalent pos/token).
+// Keeps gpu on success. Product path uses set_kernargs+replay (not one-shot).
 bool try_arm_glue(void* lib, void* gpu) {
     if (!env_exact_one("MLX_REDLINE_OWN_GLUE")) {
         g_err += " glue=skip";
@@ -545,8 +551,9 @@ bool try_arm_glue(void* lib, void* gpu) {
         reinterpret_cast<rl_pm4_ib_free_fn>(::dlsym(lib, "rl_pm4_ib_free"));
     auto* gpu_free_fn =
         reinterpret_cast<rl_gpu_free_fn>(::dlsym(lib, "rl_gpu_free"));
-    if (!load_mod || !mod_free || !b_new || !dispatch || !finalize || !replay ||
-        !ib_free || !gpu_free_fn) {
+    // P10: set_k required for retained path.
+    if (!load_mod || !mod_free || !b_new || !dispatch || !finalize || !set_k ||
+        !replay || !ib_free || !gpu_free_fn) {
         g_err += " glue=FAIL_syms";
         return false;
     }
@@ -599,14 +606,17 @@ bool try_arm_glue(void* lib, void* gpu) {
         g_err += " glue=FAIL_null_pos";
         return false;
     }
-    uint8_t karg[512];
-    std::memset(karg, 0, sizeof(karg));
-    const uint64_t pp = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(p));
-    std::memcpy(karg, &pp, sizeof(pp));
-    const int32_t v7 = 7;
-    std::memcpy(karg + 8, &v7, sizeof(v7));
 
-    auto one_shot = [&](const char* symbol) -> bool {
+    uint8_t karg[512];
+    auto pack_pos_val = [&](int32_t v) {
+        std::memset(karg, 0, sizeof(karg));
+        const uint64_t pp = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(p));
+        std::memcpy(karg, &pp, sizeof(pp));
+        std::memcpy(karg + 8, &v, sizeof(v));
+    };
+
+    // Build a retained single-dispatch IB for a glue kernel (P10).
+    auto build_retained = [&](const char* symbol, void** out_ib) -> bool {
         void* builder = b_new(gpu);
         if (!builder) {
             return false;
@@ -623,88 +633,236 @@ bool try_arm_glue(void* lib, void* gpu) {
         if (finalize(gpu, builder, &ib) != kRlOk || !ib) {
             return false;
         }
-        const bool ok = (replay(ib) == kRlOk);
-        ib_free(ib);
-        return ok;
+        *out_ib = ib;
+        return true;
     };
 
-    if (!one_shot("glue_pos_set.kd")) {
+    auto fail_cleanup = [&](void*& ib_a, void*& ib_b, void*& ib_c, int32_t* tmp) {
+        if (ib_a) {
+            ib_free(ib_a);
+            ib_a = nullptr;
+        }
+        if (ib_b) {
+            ib_free(ib_b);
+            ib_b = nullptr;
+        }
+        if (ib_c) {
+            ib_free(ib_c);
+            ib_c = nullptr;
+        }
+        if (tmp) {
+            (void)hipFree(tmp);
+        }
         mod_free(mod);
-        g_err += " glue=FAIL_pos_set_smoke";
+    };
+
+    // Placeholder kernargs for IB bake (patched before every product replay).
+    pack_pos_val(0);
+    void* ib_set = nullptr;
+    void* ib_inc = nullptr;
+    void* ib_copy = nullptr;
+    if (!build_retained("glue_pos_set.kd", &ib_set)) {
+        fail_cleanup(ib_set, ib_inc, ib_copy, nullptr);
+        g_err += " glue=FAIL_build_pos_set";
         return false;
     }
-    (void)hipDeviceSynchronize();
-    int32_t host_v = 0;
-    if (hipMemcpy(&host_v, p, sizeof(host_v), hipMemcpyDeviceToHost) != hipSuccess ||
-        host_v != 7) {
-        mod_free(mod);
-        g_err += " glue=FAIL_pos_set_verify obs=" + std::to_string(host_v);
+    if (!build_retained("glue_pos_inc.kd", &ib_inc)) {
+        fail_cleanup(ib_set, ib_inc, ib_copy, nullptr);
+        g_err += " glue=FAIL_build_pos_inc";
         return false;
     }
 
-    // pos_inc: 7 + 3 → 10
-    const int32_t d3 = 3;
-    std::memset(karg, 0, sizeof(karg));
-    std::memcpy(karg, &pp, sizeof(pp));
-    std::memcpy(karg + 8, &d3, sizeof(d3));
-    if (!one_shot("glue_pos_inc.kd")) {
-        mod_free(mod);
-        g_err += " glue=FAIL_pos_inc_smoke";
-        return false;
-    }
-    (void)hipDeviceSynchronize();
-    if (hipMemcpy(&host_v, p, sizeof(host_v), hipMemcpyDeviceToHost) != hipSuccess ||
-        host_v != 10) {
-        mod_free(mod);
-        g_err += " glue=FAIL_pos_inc_verify obs=" + std::to_string(host_v);
-        return false;
-    }
-
-    // scalar_copy: write 42 into a temp, copy into product input buffer.
     auto& in = graph_decode_input();
     void* in_ptr = graph_decode_device_data_ptr(in);
     if (!in_ptr) {
-        mod_free(mod);
+        fail_cleanup(ib_set, ib_inc, ib_copy, nullptr);
         g_err += " glue=FAIL_null_input";
         return false;
     }
     int32_t* tmp = nullptr;
     if (hipMalloc(&tmp, sizeof(int32_t)) != hipSuccess || !tmp) {
-        mod_free(mod);
+        fail_cleanup(ib_set, ib_inc, ib_copy, nullptr);
         g_err += " glue=FAIL_tmp_malloc";
         return false;
     }
+    {
+        std::memset(karg, 0, sizeof(karg));
+        const uint64_t dst_u =
+            static_cast<uint64_t>(reinterpret_cast<uintptr_t>(in_ptr));
+        const uint64_t src_u =
+            static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tmp));
+        std::memcpy(karg, &dst_u, sizeof(dst_u));
+        std::memcpy(karg + 8, &src_u, sizeof(src_u));
+    }
+    if (!build_retained("glue_scalar_copy_i32.kd", &ib_copy)) {
+        fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
+        g_err += " glue=FAIL_build_copy";
+        return false;
+    }
+
+    // Only patch the live kernarg prefix (kernel segment is << 512; full-buffer
+    // set_k returns RL_ERR_RECORD when len exceeds allocated segment).
+    // Prefer two small patches (u64@0 + i32/u64@8) matching micro-op style.
+    auto replay_karg = [&](void* ib) -> int32_t {
+        int32_t rc = set_k(ib, 0, 0, karg, 8);
+        if (rc != kRlOk) {
+            return rc;
+        }
+        rc = set_k(ib, 0, 8, karg + 8, 8);
+        if (rc != kRlOk) {
+            // i32-only kernels may have segment size 12 (u64+i32); try 4B @8.
+            rc = set_k(ib, 0, 8, karg + 8, 4);
+            if (rc != kRlOk) {
+                return rc;
+            }
+        }
+        return replay(ib);
+    };
+
+    // Correctness smoke via retained path: set → 7, inc +3 → 10, copy → 42.
+    pack_pos_val(7);
+    {
+        const int32_t rc = replay_karg(ib_set);
+        if (rc != kRlOk) {
+            fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
+            g_err += " glue=FAIL_pos_set_smoke rc=" + std::to_string(rc);
+            return false;
+        }
+    }
+    (void)hipDeviceSynchronize();
+    int32_t host_v = 0;
+    if (hipMemcpy(&host_v, p, sizeof(host_v), hipMemcpyDeviceToHost) != hipSuccess ||
+        host_v != 7) {
+        fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
+        g_err += " glue=FAIL_pos_set_verify obs=" + std::to_string(host_v);
+        return false;
+    }
+
+    pack_pos_val(3);
+    {
+        const int32_t rc = replay_karg(ib_inc);
+        if (rc != kRlOk) {
+            fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
+            g_err += " glue=FAIL_pos_inc_smoke rc=" + std::to_string(rc);
+            return false;
+        }
+    }
+    (void)hipDeviceSynchronize();
+    if (hipMemcpy(&host_v, p, sizeof(host_v), hipMemcpyDeviceToHost) != hipSuccess ||
+        host_v != 10) {
+        fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
+        g_err += " glue=FAIL_pos_inc_verify obs=" + std::to_string(host_v);
+        return false;
+    }
+
     const int32_t v42 = 42;
     if (hipMemcpy(tmp, &v42, sizeof(v42), hipMemcpyHostToDevice) != hipSuccess) {
-        (void)hipFree(tmp);
-        mod_free(mod);
+        fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
         g_err += " glue=FAIL_tmp_h2d";
         return false;
     }
-    std::memset(karg, 0, sizeof(karg));
-    const uint64_t dst_u =
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(in_ptr));
-    const uint64_t src_u =
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tmp));
-    std::memcpy(karg, &dst_u, sizeof(dst_u));
-    std::memcpy(karg + 8, &src_u, sizeof(src_u));
-    if (!one_shot("glue_scalar_copy_i32.kd")) {
-        (void)hipFree(tmp);
-        mod_free(mod);
-        g_err += " glue=FAIL_copy_smoke";
-        return false;
+    {
+        std::memset(karg, 0, sizeof(karg));
+        const uint64_t dst_u =
+            static_cast<uint64_t>(reinterpret_cast<uintptr_t>(in_ptr));
+        const uint64_t src_u =
+            static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tmp));
+        std::memcpy(karg, &dst_u, sizeof(dst_u));
+        std::memcpy(karg + 8, &src_u, sizeof(src_u));
+    }
+    {
+        const int32_t rc = replay_karg(ib_copy);
+        if (rc != kRlOk) {
+            fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
+            g_err += " glue=FAIL_copy_smoke rc=" + std::to_string(rc);
+            return false;
+        }
     }
     (void)hipDeviceSynchronize();
     int32_t host_in = 0;
     if (hipMemcpy(&host_in, in_ptr, sizeof(host_in), hipMemcpyDeviceToHost) !=
             hipSuccess ||
         host_in != 42) {
-        (void)hipFree(tmp);
-        mod_free(mod);
+        fail_cleanup(ib_set, ib_inc, ib_copy, tmp);
         g_err += " glue=FAIL_copy_verify obs=" + std::to_string(host_in);
         return false;
     }
     (void)hipFree(tmp);
+    tmp = nullptr;
+
+    // Host-wall microbench: N× one-shot builder vs N× retained set_k+replay
+    // on glue_pos_set only. NOT gen t/s.
+    constexpr int kGlueBenchN = 64;
+    auto one_shot_pos_set = [&]() -> bool {
+        void* builder = b_new(gpu);
+        if (!builder) {
+            return false;
+        }
+        if (dispatch(
+                builder,
+                mod,
+                "glue_pos_set.kd",
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                0,
+                karg,
+                sizeof(karg)) != kRlOk) {
+            if (b_free) {
+                b_free(builder);
+            }
+            return false;
+        }
+        void* ib = nullptr;
+        if (finalize(gpu, builder, &ib) != kRlOk || !ib) {
+            return false;
+        }
+        const bool ok = (replay(ib) == kRlOk);
+        ib_free(ib);
+        return ok;
+    };
+
+    pack_pos_val(1);
+    // Warmup
+    for (int i = 0; i < 4; ++i) {
+        pack_pos_val(i);
+        (void)one_shot_pos_set();
+        (void)replay_karg(ib_set);
+    }
+    (void)hipDeviceSynchronize();
+
+    const auto t_os0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < kGlueBenchN; ++i) {
+        pack_pos_val(i);
+        if (!one_shot_pos_set()) {
+            fail_cleanup(ib_set, ib_inc, ib_copy, nullptr);
+            g_err += " glue=FAIL_bench_oneshot";
+            return false;
+        }
+    }
+    const auto t_os1 = std::chrono::steady_clock::now();
+    const double oneshot_us =
+        std::chrono::duration<double, std::micro>(t_os1 - t_os0).count();
+
+    const auto t_rt0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < kGlueBenchN; ++i) {
+        pack_pos_val(i);
+        if (replay_karg(ib_set) != kRlOk) {
+            fail_cleanup(ib_set, ib_inc, ib_copy, nullptr);
+            g_err += " glue=FAIL_bench_retained";
+            return false;
+        }
+    }
+    const auto t_rt1 = std::chrono::steady_clock::now();
+    const double retained_us =
+        std::chrono::duration<double, std::micro>(t_rt1 - t_rt0).count();
+    const double oneshot_med = oneshot_us / static_cast<double>(kGlueBenchN);
+    const double retained_med = retained_us / static_cast<double>(kGlueBenchN);
+    const double speedup =
+        (retained_med > 0.0) ? (oneshot_med / retained_med) : 0.0;
 
     // Restore product buffers via raw H2D (do not re-enter OWN_GLUE).
     host_v = 0;
@@ -720,21 +878,26 @@ bool try_arm_glue(void* lib, void* gpu) {
         g_fn_mod_free = mod_free;
     }
     g_glue_mod = mod;
+    g_glue_ib_set = ib_set;
+    g_glue_ib_inc = ib_inc;
+    g_glue_ib_copy = ib_copy;
     g_fn_b_new = b_new;
     g_fn_b_free = b_free;
     g_fn_dispatch = dispatch;
     g_fn_finalize = finalize;
-    if (set_k) {
-        g_fn_set_k = set_k;
-    }
-    if (replay) {
-        g_fn_replay = replay;
-    }
-    if (ib_free) {
-        g_fn_ib_free = ib_free;
-    }
+    g_fn_set_k = set_k;
+    g_fn_replay = replay;
+    g_fn_ib_free = ib_free;
     g_glue_armed = true;
-    g_err += " glue=PASS glue_armed=1 set=7 inc=10 copy=42";
+    {
+        std::ostringstream oss;
+        oss << " glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42"
+            << " oneshot_us_per=" << oneshot_med
+            << " retained_us_per=" << retained_med
+            << " speedup=" << speedup << "x N=" << kGlueBenchN
+            << " (NOT gen t/s)";
+        g_err += oss.str();
+    }
     return true;
 }
 
@@ -847,7 +1010,7 @@ void maybe_log_redline_session_status() {
             break;
         case RedlineSessionState::Ready:
             std::cerr
-                << "[redline] session READY (P2–P9; forward still product; "
+                << "[redline] session READY (P2–P10; forward still product; "
                 << redline_session_last_error() << ")\n";
             break;
         case RedlineSessionState::Failed:
@@ -1182,8 +1345,8 @@ bool redline_try_own_pos_set(mlx::core::array& pos, int v) {
     if (!lock.owns_lock()) {
         return false; // init or another glue launch holds g_mu → HIP fallback
     }
-    if (!g_glue_armed || !g_gpu || !g_glue_mod || !g_fn_b_new || !g_fn_dispatch ||
-        !g_fn_finalize || !g_fn_replay || !g_fn_ib_free) {
+    // P10: retained IB path (set_kernargs + replay).
+    if (!g_glue_armed || !g_glue_ib_set || !g_fn_set_k || !g_fn_replay) {
         return false;
     }
     void* p = graph_decode_device_data_ptr(pos);
@@ -1197,40 +1360,19 @@ bool redline_try_own_pos_set(mlx::core::array& pos, int v) {
     const int32_t vv = static_cast<int32_t>(v);
     std::memcpy(karg + 8, &vv, sizeof(vv));
 
-    void* builder = g_fn_b_new(g_gpu);
-    if (!builder) {
+    if (g_fn_set_k(g_glue_ib_set, 0, 0, karg, 8) != kRlOk) {
         return false;
     }
-    if (g_fn_dispatch(
-            builder,
-            g_glue_mod,
-            "glue_pos_set.kd",
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            0,
-            karg,
-            sizeof(karg)) != kRlOk) {
-        if (g_fn_b_free) {
-            g_fn_b_free(builder);
-        }
+    if (g_fn_set_k(g_glue_ib_set, 0, 8, karg + 8, 4) != kRlOk) {
         return false;
     }
-    void* ib = nullptr;
-    if (g_fn_finalize(g_gpu, builder, &ib) != kRlOk || !ib) {
-        return false;
-    }
-    const bool ok = (g_fn_replay(ib) == kRlOk);
-    g_fn_ib_free(ib);
+    const bool ok = (g_fn_replay(g_glue_ib_set) == kRlOk);
     if (ok) {
         (void)hipDeviceSynchronize();
         if (!g_glue_logged) {
             g_glue_logged = true;
             std::cerr
-                << "[redline] OWN_GLUE pos_set handled by Redline PM4 "
+                << "[redline] OWN_GLUE pos_set handled by Redline retained PM4 "
                    "(product HIP glue skipped; NOT gen t/s)\n";
         }
     }
@@ -1254,8 +1396,7 @@ bool redline_try_own_pos_inc(mlx::core::array& pos, int delta) {
     if (!lock.owns_lock()) {
         return false;
     }
-    if (!g_glue_armed || !g_gpu || !g_glue_mod || !g_fn_b_new || !g_fn_dispatch ||
-        !g_fn_finalize || !g_fn_replay || !g_fn_ib_free) {
+    if (!g_glue_armed || !g_glue_ib_inc || !g_fn_set_k || !g_fn_replay) {
         return false;
     }
     void* p = graph_decode_device_data_ptr(pos);
@@ -1269,34 +1410,13 @@ bool redline_try_own_pos_inc(mlx::core::array& pos, int delta) {
     const int32_t dd = static_cast<int32_t>(delta);
     std::memcpy(karg + 8, &dd, sizeof(dd));
 
-    void* builder = g_fn_b_new(g_gpu);
-    if (!builder) {
+    if (g_fn_set_k(g_glue_ib_inc, 0, 0, karg, 8) != kRlOk) {
         return false;
     }
-    if (g_fn_dispatch(
-            builder,
-            g_glue_mod,
-            "glue_pos_inc.kd",
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            0,
-            karg,
-            sizeof(karg)) != kRlOk) {
-        if (g_fn_b_free) {
-            g_fn_b_free(builder);
-        }
+    if (g_fn_set_k(g_glue_ib_inc, 0, 8, karg + 8, 4) != kRlOk) {
         return false;
     }
-    void* ib = nullptr;
-    if (g_fn_finalize(g_gpu, builder, &ib) != kRlOk || !ib) {
-        return false;
-    }
-    const bool ok = (g_fn_replay(ib) == kRlOk);
-    g_fn_ib_free(ib);
+    const bool ok = (g_fn_replay(g_glue_ib_inc) == kRlOk);
     if (ok) {
         (void)hipDeviceSynchronize();
     }
@@ -1320,8 +1440,7 @@ bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& sr
     if (!lock.owns_lock()) {
         return false;
     }
-    if (!g_glue_armed || !g_gpu || !g_glue_mod || !g_fn_b_new || !g_fn_dispatch ||
-        !g_fn_finalize || !g_fn_replay || !g_fn_ib_free) {
+    if (!g_glue_armed || !g_glue_ib_copy || !g_fn_set_k || !g_fn_replay) {
         return false;
     }
     namespace mx = mlx::core;
@@ -1339,40 +1458,19 @@ bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& sr
     std::memcpy(karg, &dd, sizeof(dd));
     std::memcpy(karg + 8, &ss, sizeof(ss));
 
-    void* builder = g_fn_b_new(g_gpu);
-    if (!builder) {
+    if (g_fn_set_k(g_glue_ib_copy, 0, 0, karg, 8) != kRlOk) {
         return false;
     }
-    if (g_fn_dispatch(
-            builder,
-            g_glue_mod,
-            "glue_scalar_copy_i32.kd",
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            0,
-            karg,
-            sizeof(karg)) != kRlOk) {
-        if (g_fn_b_free) {
-            g_fn_b_free(builder);
-        }
+    if (g_fn_set_k(g_glue_ib_copy, 0, 8, karg + 8, 8) != kRlOk) {
         return false;
     }
-    void* ib = nullptr;
-    if (g_fn_finalize(g_gpu, builder, &ib) != kRlOk || !ib) {
-        return false;
-    }
-    const bool ok = (g_fn_replay(ib) == kRlOk);
-    g_fn_ib_free(ib);
+    const bool ok = (g_fn_replay(g_glue_ib_copy) == kRlOk);
     if (ok) {
         (void)hipDeviceSynchronize();
         if (!g_glue_logged) {
             g_glue_logged = true;
             std::cerr
-                << "[redline] OWN_GLUE scalar_copy/pos handled by Redline PM4 "
+                << "[redline] OWN_GLUE scalar_copy/pos handled by Redline retained PM4 "
                    "(product HIP glue skipped; NOT gen t/s)\n";
         }
     }
