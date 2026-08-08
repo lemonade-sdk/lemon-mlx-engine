@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **IMPLEMENTING P0–P4** — scheduler `019fdfb3d185` every 2m (continuous) · **P0 GREEN** |
+| **Loop status** | **IMPLEMENTING P0–P4** — scheduler `019fdfb3d185` · **P0 GREEN · P1 GREEN** (P3 doc still open for stop A) |
 
 ## Board
 
@@ -20,13 +20,21 @@
 | E3 MLX HSACO inventory | **DONE** — qmm AOT **not** drop-in; JIT `.hsaco` on disk; see [`E3_HSACO.md`](E3_HSACO.md) |
 | E4 design hook | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) (`MLX_REDLINE_DECODE` default OFF) |
 | **P0 env stub** | **GREEN** — [`P0_STUB.md`](P0_STUB.md); code + CMake OFF + gfx1150 chat smoke logs |
-| **P1 AQL HSACO load** | **IN PROGRESS** — load OK; batch needs ≥2 dispatches ([`logs/p1-load-hsaco-20260807-215230.log`](logs/p1-load-hsaco-20260807-215230.log)) |
+| **P1 AQL HSACO load** | **GREEN** — n=2 floor CO load+replay; host_median **8.455 µs** ([`P1_LOAD.md`](P1_LOAD.md)); **not** gen t/s |
 | **P2 session init** | **NOT STARTED** |
-| **P3 micro-op / graph_decode doc** | **NOT STARTED** |
+| **P3 micro-op / graph_decode doc** | **NOT STARTED** (needed for stop A with quality PASS) |
 | **P4 MoE multipath design** | **NOT STARTED** |
 | Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
+
+### 2026-08-07 — P1 load+replay GREEN (same fire window)
+
+- **Secondary:** land P1 measure after dual-dispatch fix (`REDLINE_P1_N` default 2).  
+- **Log:** [`logs/p1-load-hsaco-20260807-215318.log`](logs/p1-load-hsaco-20260807-215318.log) — `P1_OK` n=2 host_median_us=8.455.  
+- **Doc:** [`P1_LOAD.md`](P1_LOAD.md).  
+- **Not claimed:** model gen t/s; MLX JIT HSACO; product wire.  
+- **Next:** P3 `graph_decode` kernarg-patch integration doc (and/or P2 session) toward stop A.
 
 ### 2026-08-07 — P0 smoke GREEN (continuous loop)
 

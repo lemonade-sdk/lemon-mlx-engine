@@ -1,0 +1,9 @@
+[p1] hsaco=/home/antmi/lemon-mlx-engine/docs/experiments/redline-kernel-launch/logs/floor_kernel-gfx1150.co
+[p1] symbol=floor_k.kd
+[p1] n=2 policy=BoundarySerialized warmup=5 iters=20
+[p1] device=gfx1150
+[p1] Executable::load OK (8144 bytes)
+[p1] SingleQueueBatchGraph create OK (n=2)
+[p1] warmup OK (5)
+[p1] host_median_us_per_replay=8.455 (NOT gen t/s)
+P1_OK load+replay symbol=floor_k.kd n=2 host_median_us=8.455

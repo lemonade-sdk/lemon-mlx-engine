@@ -126,7 +126,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | **E3** | Inventory whether MLX can export HSACO for one QMM | **DONE** — drop-in **not** feasible; JIT CO yes; see [`E3_HSACO.md`](E3_HSACO.md) |
 | **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) |
 | **P0** | Env stub + banner + CMake optional link OFF | **GREEN** — [`P0_STUB.md`](P0_STUB.md) (gfx1150 smoke) |
-| **P1** | Toy/JIT HSACO load + retained AQL replay | **IN PROGRESS** — load OK; ≥2 dispatches required |
+| **P1** | Toy CO load + retained AQL replay (n≥2) | **GREEN** — [`P1_LOAD.md`](P1_LOAD.md) host_median 8.455 µs (not gen t/s) |
 
 **HARD BAN:** No fake TPS; no claiming Redline wins without logs on **this** GPU; no re-opening killed HIP-graph product decode.
 
