@@ -261,6 +261,10 @@ int main(int argc, char* argv[]) {
                   << ", peak=" << format_bytes(mx::get_peak_memory())
                   << ", cache=" << format_bytes(mx::get_cache_memory()) << std::endl;
 
+        // P6: after device/model live, probe stable graph_decode_* buffer ptrs
+        // (no-op unless MLX_REDLINE_DECODE=1). Not gen t/s; forward still product.
+        mlx_lm::maybe_probe_redline_graph_decode_bind();
+
         bool has_chat_template = static_cast<bool>(ctx.apply_chat_template_fn);
 
         mlx_lm::GenerateParameters params;

@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (post–Stop A implementation)** — P5 in-proc micro PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (post–Stop A)** — P5+P6 PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
 
 ## Board
 
@@ -27,10 +27,21 @@
 | **P3 measured micro-op** | **PASS** — out-of-process AQL patch+replay; correctness 4160; host_median **8.796 µs** ([`P3_MICRO_OP.md`](P3_MICRO_OP.md)); **not** gen t/s |
 | **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
 | **P5 in-process C-API micro** | **PASS** — chat session `micro=PASS` 2080/2080; host_total_us labeled NOT gen t/s ([`P5_INPROC_MICRO.md`](P5_INPROC_MICRO.md)) |
+| **P6 graph_decode bind** | **PASS** — stable input/pos `raw_ptr` after in-place update ([`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
 | Gen t/s A/B (same-build eager) | **NOT RUN** |
 
 ## Fire log
+
+### 2026-08-08 — P6 graph_decode bind PASS
+
+- **Primary:** Stable `graph_decode_input` / `graph_decode_pos` device buffer pointers after in-place mutate.  
+- Clear Thought: sequentialthinking, decisionframework (bind+log vs gen A/B).  
+- **Code:** `maybe_probe_redline_graph_decode_bind()`; wired from `generate.cpp` L=1/`next` + `chat` post-load.  
+- **Smoke:** off silent; on **`gd_bind PASS stable=1`**; xor no gd_bind — `logs/p6-*-20260808-113247.err`.  
+- **Doc:** [`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md) + [`QUALITY_REVIEW_P6.md`](QUALITY_REVIEW_P6.md) quintuple PASS.  
+- **Not claimed:** gen t/s; call_fn replace; product default ON.  
+- **Next:** consume these ptrs in a real engine-owned small launch; gen A/B only after product path change.
 
 ### 2026-08-08 — P5 in-process micro-op PASS (post–Stop A)
 

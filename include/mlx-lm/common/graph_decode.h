@@ -35,4 +35,10 @@ bool graph_decode_enabled();
 bool graph_capturing();
 void set_graph_capturing(bool on);
 
+// Research (exp/redline-kernel-launch P6): GPU device address of a resident
+// array for retained-launch kernarg bake. Ensures eval; returns VRAM pointer
+// (RocmBuffer::data + offset), not host shadow. nullptr if unavailable / non-ROCm.
+// Does not enable HIP graphs or product Redline path.
+void* graph_decode_device_data_ptr(mlx::core::array& a);
+
 } // namespace mlx_lm

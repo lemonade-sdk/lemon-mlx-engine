@@ -1,8 +1,9 @@
 // Copyright © 2024-2025 Apple Inc. — Ported to C++
 // P2: dlopen Redline C-API init smoke (no forward replacement).
-// P5: optional in-process PM4 micro-op (load CO + patch kernarg + replay)
-//     when MLX_REDLINE_HSACO is set. Correctness only; NOT gen t/s.
+// P5/P6: optional in-process PM4 micro-op when MLX_REDLINE_HSACO is set;
+//     P6 bakes graph_decode_pos device ptr as accumulator. NOT gen t/s.
 
+#include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
 
 #include <chrono>
@@ -12,8 +13,11 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include <mlx/mlx.h>
 
 #if defined(MLX_BUILD_ROCM)
 #include <dlfcn.h>
@@ -123,9 +127,10 @@ void* try_dlopen() {
     return nullptr;
 }
 
-// Optional P5: engine-side C-API micro-op (decode_kernargs pattern).
+// Optional P5/P6: engine-side C-API micro-op (decode_kernargs pattern).
 // Gated by MLX_REDLINE_HSACO path; never product forward; NOT gen t/s.
-// Appends " micro=..." to g_err.
+// P6: accumulator = graph_decode_pos device buffer (stable product ptr bake).
+// Appends " gd_bind=... micro=..." to g_err.
 void try_micro_op(void* lib, void* gpu) {
     const char* hsaco = std::getenv("MLX_REDLINE_HSACO");
     if (!hsaco || hsaco[0] == '\0') {
@@ -192,25 +197,52 @@ void try_micro_op(void* lib, void* gpu) {
         }
     }
 
-    unsigned int* d_acc = nullptr;
-    if (hipMalloc(&d_acc, sizeof(unsigned int)) != hipSuccess || !d_acc) {
-        g_err += " micro=FAIL_hipMalloc";
+    // --- P6: product stable buffers (graph_decode_*) ---
+    auto& pos_arr = graph_decode_pos();
+    auto& input_arr = graph_decode_input();
+    void* pos_ptr0 = graph_decode_device_data_ptr(pos_arr);
+    void* input_ptr0 = graph_decode_device_data_ptr(input_arr);
+    if (!pos_ptr0 || !input_ptr0) {
+        g_err += " gd_bind=FAIL_null_ptr micro=skip";
         return;
     }
-    if (hipMemset(d_acc, 0, sizeof(unsigned int)) != hipSuccess) {
-        (void)hipFree(d_acc);
-        g_err += " micro=FAIL_hipMemset";
+    // Mutate in place (no realloc) and re-resolve — addresses must stay fixed.
+    set_graph_decode_pos(0);
+    set_graph_decode_pos(7);
+    advance_graph_decode_pos(1);
+    void* pos_ptr1 = graph_decode_device_data_ptr(pos_arr);
+    void* input_ptr1 = graph_decode_device_data_ptr(input_arr);
+    const bool stable = (pos_ptr1 == pos_ptr0) && (input_ptr1 == input_ptr0);
+    {
+        std::ostringstream oss;
+        oss << " gd_bind=" << (stable ? "PASS" : "FAIL")
+            << " pos=0x" << std::hex
+            << reinterpret_cast<uintptr_t>(pos_ptr0) << std::dec
+            << " input=0x" << std::hex
+            << reinterpret_cast<uintptr_t>(input_ptr0) << std::dec;
+        g_err += oss.str();
+    }
+    if (!stable) {
+        g_err += " micro=skip_gd_unstable";
         return;
     }
 
+    // Accumulator = product graph_decode_pos device buffer (int32/u32 slot).
+    auto* d_acc = static_cast<unsigned int*>(pos_ptr0);
+    if (hipMemset(d_acc, 0, sizeof(unsigned int)) != hipSuccess) {
+        g_err += " micro=FAIL_hipMemset";
+        return;
+    }
+    (void)hipDeviceSynchronize();
+
     void* mod = nullptr;
     if (load_mod(gpu, code.data(), code.size(), &mod) != kRlOk || !mod) {
-        (void)hipFree(d_acc);
         g_err += " micro=FAIL_load_module";
         return;
     }
 
     // kernarg: [acc:u64 @0][val:u32 @8] — pad to 512 like decode_kernargs.c
+    // Bake stable product pos ptr once (not hipMalloc).
     uint8_t karg[512];
     std::memset(karg, 0, sizeof(karg));
     const uint64_t acc_ptr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(d_acc));
@@ -219,7 +251,6 @@ void try_micro_op(void* lib, void* gpu) {
     void* builder = b_new(gpu);
     if (!builder) {
         mod_free(mod);
-        (void)hipFree(d_acc);
         g_err += " micro=FAIL_builder";
         return;
     }
@@ -240,20 +271,13 @@ void try_micro_op(void* lib, void* gpu) {
             b_free(builder);
         }
         mod_free(mod);
-        (void)hipFree(d_acc);
         g_err += " micro=FAIL_dispatch";
         return;
     }
 
     void* ib = nullptr;
     if (finalize(gpu, builder, &ib) != kRlOk || !ib) {
-        // finalize consumes builder on success; on fail builder may still be live.
-        if (!ib && b_free) {
-            // best-effort; some APIs free on fail — ignore double-free risk by
-            // not calling if finalize claimed ownership (unknown). Skip free.
-        }
         mod_free(mod);
-        (void)hipFree(d_acc);
         g_err += " micro=FAIL_finalize";
         return;
     }
@@ -265,14 +289,12 @@ void try_micro_op(void* lib, void* gpu) {
             kRlOk) {
             ib_free(ib);
             mod_free(mod);
-            (void)hipFree(d_acc);
             g_err += " micro=FAIL_set_kernargs";
             return;
         }
         if (replay(ib) != kRlOk) {
             ib_free(ib);
             mod_free(mod);
-            (void)hipFree(d_acc);
             g_err += " micro=FAIL_replay";
             return;
         }
@@ -288,14 +310,23 @@ void try_micro_op(void* lib, void* gpu) {
         hipSuccess) {
         ib_free(ib);
         mod_free(mod);
-        (void)hipFree(d_acc);
         g_err += " micro=FAIL_hipMemcpy";
         return;
     }
 
+    // Post-check: device ptr still stable after retained replays.
+    void* pos_ptr2 = graph_decode_device_data_ptr(pos_arr);
+    if (pos_ptr2 != pos_ptr0) {
+        g_err += " gd_post=FAIL_moved";
+    } else {
+        g_err += " gd_post=stable";
+    }
+
     ib_free(ib);
     mod_free(mod);
-    (void)hipFree(d_acc);
+
+    // Restore product pos scalar for any later eager/path use.
+    set_graph_decode_pos(0);
 
     const bool pass = (observed == static_cast<unsigned int>(expected));
     g_err += " micro=";
@@ -401,7 +432,7 @@ void maybe_log_redline_session_status() {
             break;
         case RedlineSessionState::Ready:
             std::cerr
-                << "[redline] session READY (P2 init + optional P5 micro; "
+                << "[redline] session READY (P2 init + optional P5/P6 micro; "
                    "forward still product; "
                 << redline_session_last_error() << ")\n";
             break;
@@ -423,6 +454,66 @@ void maybe_log_redline_session_status() {
 
 const std::string& redline_session_last_error() {
     return g_err;
+}
+
+void maybe_probe_redline_graph_decode_bind() {
+#if !defined(MLX_BUILD_ROCM)
+    return;
+#else
+    // P6: stable graph_decode_* buffer addresses (E4 kernarg-patch hinge).
+    // Only when master env is exact "1". Does not enable HIP graphs / pure-graph.
+    // Does not replace call_fn. NOT gen t/s.
+    if (!env_exact_one("MLX_REDLINE_DECODE")) {
+        return;
+    }
+    if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
+        return; // XOR path: stay silent (session fail-closed already logged)
+    }
+    static bool logged = false;
+    if (logged) {
+        return;
+    }
+    logged = true;
+
+    namespace mx = mlx::core;
+    try {
+        auto& in = graph_decode_input();
+        auto& pos = graph_decode_pos();
+        // Prefer VRAM addresses (RocmBuffer::data) for future HSA kernarg bake;
+        // raw_ptr alone may be host shadow on discrete GPUs.
+        void* in0 = graph_decode_device_data_ptr(in);
+        void* pos0 = graph_decode_device_data_ptr(pos);
+
+        // In-place mutations that must NOT reallocate (same as pure-graph loop).
+        set_graph_decode_pos(0);
+        mx::array tok = mx::array(static_cast<int32_t>(1), mx::int32);
+        mx::eval(tok);
+        set_graph_decode_input_from(tok);
+        mx::synchronize();
+
+        void* in1 = graph_decode_device_data_ptr(in);
+        void* pos1 = graph_decode_device_data_ptr(pos);
+
+        const bool nonnull = (in0 != nullptr && pos0 != nullptr);
+        const bool stable = nonnull && (in0 == in1) && (pos0 == pos1);
+
+        std::ostringstream oss;
+        oss << "[redline] gd_bind " << (stable ? "PASS" : "FAIL")
+            << " input=" << in0 << " pos=" << pos0
+            << " stable=" << (stable ? 1 : 0)
+            << " (P6 VRAM ptr; not gen t/s; forward still product)\n";
+        std::cerr << oss.str();
+        if (!stable) {
+            g_err += " gd_bind=FAIL";
+        } else {
+            g_err += " gd_bind=PASS";
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[redline] gd_bind FAIL exception: " << e.what()
+                  << " (P6; not gen t/s)\n";
+        g_err += " gd_bind=FAIL_exc";
+    }
+#endif
 }
 
 } // namespace mlx_lm

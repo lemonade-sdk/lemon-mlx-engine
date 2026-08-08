@@ -598,9 +598,11 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     {
         int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
         mlx::core::gpu_set_graph_decode_mode(Lstep == 1);
-        // P0/P2: opt-in session status on L=1 decode (no forward path change).
+        // P0/P2/P6: opt-in session status + graph_decode ptr bind probe on L=1
+        // (no forward path change; not gen t/s).
         if (Lstep == 1) {
             maybe_log_redline_session_status();
+            maybe_probe_redline_graph_decode_bind();
         }
     }
 #endif
@@ -1963,8 +1965,9 @@ std::optional<int> TokenIterator::next() {
         }
         return pure_graph_env_enabled_();
     }();
-    // P0/P2 status also from next() so XOR / redline-only always one-shot.
+    // P0/P2/P6 status also from next() so XOR / redline-only always one-shot.
     maybe_log_redline_session_status();
+    maybe_probe_redline_graph_decode_bind();
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;

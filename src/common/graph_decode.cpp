@@ -14,6 +14,20 @@ void gpu_scalar_copy_i32(array& dst, array& src);
 
 namespace mlx_lm {
 
+namespace {
+// Must match mlx::core::rocm::RocmBuffer field order (backend/rocm/allocator.h).
+// Used only to read the GPU VRAM pointer for research kernarg bake.
+struct RocmBufferLayout {
+    void* data;
+    size_t size;
+    bool is_managed;
+    int device;
+    void* host_shadow;
+    bool host_dirty;
+    void* alloc_stream;
+};
+} // namespace
+
 static bool g_external = false;
 static bool g_capturing = false;
 
@@ -86,6 +100,24 @@ bool graph_decode_enabled() {
     return on;
 #else
     return false;
+#endif
+}
+
+void* graph_decode_device_data_ptr(mx::array& a) {
+#if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
+    // Ensure buffer is allocated / resident on the default device.
+    mx::eval(a);
+    if (!a.buffer().ptr()) {
+        return nullptr;
+    }
+    auto* rb = static_cast<RocmBufferLayout*>(a.buffer().ptr());
+    if (!rb || !rb->data) {
+        return nullptr;
+    }
+    return static_cast<char*>(rb->data) + a.offset();
+#else
+    (void)a;
+    return nullptr;
 #endif
 }
 
