@@ -1,0 +1,29 @@
+TS=20260808-135237
+2026-08-08T13:52:37-07:00
+redline=f314076 docs: require commit+push to antmikinka/redline when bridge work lands
+GPU[0]		: GPU use (%): 5
+=== B0 2026-08-08T13:52:37-07:00 ===
+rc=0
+Generation: 64 tokens, 116.375 tokens/s, 0.549946s
+=== B1-phase1 2026-08-08T13:52:40-07:00 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31): set_k=5.867us pre_sync=141.447us replay=2440.69us post_sync=3.081us pre_query_skip=0 pre_wait=31 (host wall; NOT gen t/s)
+Generation: 64 tokens, 111.778 tokens/s, 0.572564s
+=== B1-phase2 2026-08-08T13:52:43-07:00 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+Generation: 64 tokens, 113.653 tokens/s, 0.563117s
+=== B1-phase1-r2 2026-08-08T13:52:56-07:00 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase1-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 111.743 tokens/s, 0.572741s
+=== B1-phase2-r2 2026-08-08T13:52:58-07:00 ===
+rc=0
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+Generation: 64 tokens, 112.93 tokens/s, 0.56672s
+=== B0b 2026-08-08T13:53:11-07:00 ===
+rc=0
+Generation: 64 tokens, 115.441 tokens/s, 0.554396s
