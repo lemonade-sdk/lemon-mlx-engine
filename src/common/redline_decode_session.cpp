@@ -247,6 +247,9 @@ using rl_pm4_dispatch_fn = int32_t (*)(
 using rl_pm4_finalize_fn =
     int32_t (*)(const void* gpu, void* builder, void** out_ib);
 using rl_pm4_replay_fn = int32_t (*)(void* ib);
+// P13 PR-A: wait HIP stream (host join phase1) + replay in one call.
+using rl_pm4_replay_after_hip_stream_fn = int32_t (*)(void* ib, void* hip_stream);
+using rl_feature_bits_fn = uint32_t (*)();
 using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
     void* ib,
     size_t dispatch_index,
@@ -255,12 +258,16 @@ using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
     size_t len);
 using rl_pm4_ib_free_fn = void (*)(void* ib);
 
+constexpr uint32_t kRlFeatureHipStreamWait = 1u;
+
 // P7/P8 retained IB (process lifetime when SIDECAR=1 or SMALL_OP=1 + micro PASS).
 void* g_gpu = nullptr;
 void* g_mod = nullptr;
 void* g_ib = nullptr;
 unsigned int* g_side_acc = nullptr;
 rl_pm4_replay_fn g_fn_replay = nullptr;
+rl_pm4_replay_after_hip_stream_fn g_fn_replay_after_hip = nullptr;
+bool g_hip_stream_bridge = false; // rl_feature_bits & HIP_STREAM_WAIT
 rl_pm4_ib_set_kernargs_fn g_fn_set_k = nullptr;
 rl_gpu_free_fn g_fn_gpu_free = nullptr;
 rl_module_free_fn g_fn_mod_free = nullptr;
@@ -1183,6 +1190,26 @@ void* get_or_build_rms_ib(int dtype_code, uint32_t n_rows) {
     return ib;
 }
 
+// P13: optional PR-A symbols (hip stream wait + ordered replay).
+void resolve_hip_stream_bridge(void* lib) {
+    g_fn_replay_after_hip = nullptr;
+    g_hip_stream_bridge = false;
+    if (!lib) {
+        return;
+    }
+    auto* feat = reinterpret_cast<rl_feature_bits_fn>(::dlsym(lib, "rl_feature_bits"));
+    auto* after = reinterpret_cast<rl_pm4_replay_after_hip_stream_fn>(
+        ::dlsym(lib, "rl_pm4_replay_after_hip_stream"));
+    if (after && feat && (feat() & kRlFeatureHipStreamWait) != 0) {
+        g_fn_replay_after_hip = after;
+        g_hip_stream_bridge = true;
+    } else if (after) {
+        // Symbol present without feature bit still usable.
+        g_fn_replay_after_hip = after;
+        g_hip_stream_bridge = true;
+    }
+}
+
 // P12: arm OWN_RMSNORM retained module + correctness smoke (f32 n_rows=1).
 // Keeps gpu on success. Product path uses set_kernargs+replay.
 bool try_arm_rmsnorm(void* lib, void* gpu) {
@@ -1190,6 +1217,7 @@ bool try_arm_rmsnorm(void* lib, void* gpu) {
         g_err += " rms=skip";
         return false;
     }
+    resolve_hip_stream_bridge(lib);
     auto* load_mod =
         reinterpret_cast<rl_gpu_load_module_fn>(::dlsym(lib, "rl_gpu_load_module"));
     auto* mod_free =
@@ -2103,16 +2131,65 @@ bool redline_try_own_rmsnorm_packed(
         t0 = mark();
     }
 
-    // Drain product HIP producers so VRAM deps are complete before Redline reads.
-    redline_pre_sync(hip_stream);
+    // Drain product HIP producers then replay. Prefer PR-A ordered entry
+    // (rl_pm4_replay_after_hip_stream) when present — phase1 still host-joins.
+    const RedlinePreSync pre_mode = pre_sync_mode();
+    bool used_bridge = false;
     if (profile) {
-        g_rms_ns_pre += ns_since(t0);
         t0 = mark();
     }
-
-    if (g_fn_replay(ib) != kRlOk) {
-        ++g_rms_fallback_count;
-        return false;
+    if (g_fn_replay_after_hip && pre_mode != RedlinePreSync::Off &&
+        pre_mode != RedlinePreSync::Device) {
+        // stream/force: let Redline wait on hip_stream then replay.
+        // Query-skip path when stream already idle (P12d).
+        if (pre_mode == RedlinePreSync::Stream && hip_stream) {
+            auto* st = static_cast<hipStream_t>(hip_stream);
+            if (hipStreamQuery(st) == hipSuccess) {
+                ++g_pre_query_skip;
+                if (profile) {
+                    g_rms_ns_pre += ns_since(t0);
+                    t0 = mark();
+                }
+                if (g_fn_replay(ib) != kRlOk) {
+                    ++g_rms_fallback_count;
+                    return false;
+                }
+            } else {
+                (void)hipGetLastError();
+                ++g_pre_sync_wait;
+                if (profile) {
+                    g_rms_ns_pre += ns_since(t0);
+                    t0 = mark();
+                }
+                if (g_fn_replay_after_hip(ib, hip_stream) != kRlOk) {
+                    ++g_rms_fallback_count;
+                    return false;
+                }
+                used_bridge = true;
+            }
+        } else {
+            // force: always ordered wait+replay in Redline
+            ++g_pre_sync_wait;
+            if (profile) {
+                g_rms_ns_pre += ns_since(t0);
+                t0 = mark();
+            }
+            if (g_fn_replay_after_hip(ib, hip_stream) != kRlOk) {
+                ++g_rms_fallback_count;
+                return false;
+            }
+            used_bridge = true;
+        }
+    } else {
+        redline_pre_sync(hip_stream);
+        if (profile) {
+            g_rms_ns_pre += ns_since(t0);
+            t0 = mark();
+        }
+        if (g_fn_replay(ib) != kRlOk) {
+            ++g_rms_fallback_count;
+            return false;
+        }
     }
     if (profile) {
         g_rms_ns_replay += ns_since(t0);
@@ -2129,10 +2206,11 @@ bool redline_try_own_rmsnorm_packed(
         g_rms_logged = true;
         std::cerr
             << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
-               "(product HIP RMSNorm skipped; P12d query-pre + set_k-before-pre; "
-               "PRE_SYNC="
-            << pre_sync_label() << " POST_SYNC=" << post_sync_label()
-            << "; NOT gen t/s)\n";
+               "(product HIP RMSNorm skipped; P12d/P13 bridge="
+            << (g_hip_stream_bridge ? "yes" : "no")
+            << (used_bridge ? " used" : "")
+            << "; set_k-before-pre; PRE_SYNC=" << pre_sync_label()
+            << " POST_SYNC=" << post_sync_label() << "; NOT gen t/s)\n";
     }
     // One-shot host-phase profile after ~1 token of packed RMSNorms (~31).
     if (profile && !g_rms_profile_logged && g_rms_own_count >= 31) {
