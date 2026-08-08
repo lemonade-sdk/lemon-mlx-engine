@@ -2,7 +2,7 @@
 
 **Branch:** `exp/redline-kernel-launch`  
 **Host target:** gfx1150 (890M) · lemon-mlx-engine ROCm  
-**Revised:** 2026-08-08 (P12 OWN_RMSNORM PASS — packed multi-instance non-qmm; 37→6 RMSNorm HIP)
+**Revised:** 2026-08-08 (M2 OWN_RMSNORM gen A/B — B1 no ≥2% win; default OFF)
 
 ---
 
@@ -42,6 +42,7 @@
 | **P12** OWN_RMSNORM packed | DONE | Replaces **~31/37** RMSNorm product HIP (strided residual 6); [`P12_OWN_RMSNORM.md`](P12_OWN_RMSNORM.md) |
 | Gen A/B 0.8B / 35B / all-flags | RUN | No win when additive flags on |
 | Gen A/B OWN_GLUE only (M1) | RUN | ≈ baseline (glue too small vs 395) |
+| Gen A/B OWN_RMSNORM only (M2) | RUN | 0.8B B1 ~−3–5% vs stable B0; B2 slower; [`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md) |
 
 ---
 
@@ -61,7 +62,7 @@
 | ID | Work | Notes |
 |----|------|-------|
 | **M1** | Gen A/B **OWN_GLUE only** (no SMALL_OP/SIDECAR) | Isolates ownership tax/benefit |
-| **M2** | Gen A/B after each **new owned** product op | Same build, 0.8B + 35B LemonMLXE |
+| **M2** | Gen A/B after P12 OWN_RMSNORM | **DONE** 0.8B B0/B1/B2 — B1 no win (sync tax); 35B optional later |
 | **M3** | Never claim microbench µs as gen t/s | Hard ban |
 
 ### Track C — **Hygiene** (secondary)
@@ -116,7 +117,8 @@ Each fire must:
 1. ~~**M1** OWN_GLUE-only gen A/B~~ — DONE (≈ baseline).  
 2. ~~**P11** launch inventory~~ — DONE (395/L1 on 0.8B).  
 3. ~~**P12** OWN_RMSNORM packed~~ — DONE (31/37 owned; strided 6 residual; mid-eval sync tax).  
-4. **M2** gen A/B after P12 ownership: B0 baseline · B1 OWN_RMSNORM only · B2 all-flags (0.8B; 35B if claiming 35B).  
-5. Optional P12b: cut stream-sync tax or own strided/CustomKernel residual.
+4. ~~**M2** gen A/B OWN_RMSNORM~~ — DONE 0.8B: B1 **no ≥2% win** (~−3–5% stable pairs); B2 ~−13%; keep default OFF.  
+5. **P12b** cut mid-eval stream-sync tax on OWN_RMSNORM **or** own next residual (CustomKernel / strided RMSNorm) — still default OFF + smoke.  
+6. Optional 35B B0/B1 when claiming 35B relevance (GPU free).
 
 “Redline everywhere” = **grow the set of product ops that fall through to Redline**, op by op — not enable every research env at once.

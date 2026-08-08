@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); P12 OWN_RMSNORM **PASS**; P11 inv 395/L1; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); M2 OWN_RMSNORM gen A/B **no ≥2% win**; P12 PASS; product default ON **forbidden** |
 
 ## Board
 
@@ -39,9 +39,21 @@
 | Gen t/s A/B **OWN_GLUE only** | **RUN** — 0.8B ~116–117; 35B ~29.0–29.2 ≈ baseline ([`GEN_AB_OWN_GLUE_20260808.md`](GEN_AB_OWN_GLUE_20260808.md)) |
 | **P11 launch inventory** | **PASS** — env-gated; 0.8B L=1 **395** dispatches (QMM 187, CustomKernel 90, RMSNorm 37, …); NOT gen t/s ([`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md)) |
 | **P12 OWN_RMSNORM packed** | **PASS** — packed product RMSNorm → Redline retained PM4; inv RMSNorm **37→6**; multi IB n=4; mid-eval stream sync tax ([`P12_OWN_RMSNORM.md`](P12_OWN_RMSNORM.md)) |
-| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — M2 gen A/B after P12 |
+| Gen t/s A/B **OWN_RMSNORM only (M2)** | **RUN** — 0.8B B1 ~−3–5% vs stable B0; B2 ~−13%; no default ON ([`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md)) |
+| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — P12b sync tax / next residual ownership |
 
 ## Fire log
+
+### 2026-08-08 — M2 gen A/B OWN_RMSNORM (B0/B1/B2) no win
+
+- **Primary:** Measure gen t/s after P12 with **B1 = OWN_RMSNORM only** (isolation).  
+- Clear Thought: sequentialthinking, decisionframework (B M2), metacognitivemonitoring, scientificmethod (H-m2-rmsnorm-gen **supported**).  
+- **Matrix (0.8B, 64 tok):** stable pairs B0 **115.3/115.2** · B1 **111.9/109.5** (~**−3–5%**) · B2r2 **100.0** (~−13%); outliers labeled.  
+- B1 arm: `rms=PASS rms_armed=1` + live OWN_RMSNORM product log.  
+- **Logs:** `logs/m2-ownrms-*-20260808-123445.err`.  
+- **Doc:** [`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md) + [`QUALITY_REVIEW_M2.md`](QUALITY_REVIEW_M2.md) **PASS**.  
+- **Not claimed:** ≥2% win; default ON; 35B B1 this fire.  
+- **Next:** P12b cut mid-eval sync tax **or** own CustomKernel/strided residual (default OFF).
 
 ### 2026-08-08 — P12 OWN_RMSNORM packed product path PASS
 
