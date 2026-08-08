@@ -22,7 +22,7 @@
 | **P0 env stub** | **GREEN** — [`P0_STUB.md`](P0_STUB.md); code + CMake OFF + gfx1150 chat smoke logs |
 | **P1 AQL HSACO load** | **GREEN** — n=2 floor CO load+replay; host_median **8.455 µs** ([`P1_LOAD.md`](P1_LOAD.md)); **not** gen t/s |
 | **P2 N-sweep multi-run** | **GREEN** — N=2..64 × BS/Sys × 3 runs; N=64 BS **81.98 µs** vs Sys **147.7 µs** (~**1.80×**) ([`P2_NSWEEP.md`](P2_NSWEEP.md)) |
-| **P2b engine session init** | **GREEN** — dlopen + `rl_abi_version`; `session READY`; residual `gpu_new=null` in MLX process ([`P2_INIT.md`](P2_INIT.md)) |
+| **P2b engine session init** | **GREEN** — dlopen + abi + **`gpu_new=ok`** after RUNPATH/core-first RPATH fix ([`P2_INIT.md`](P2_INIT.md)) |
 | **P3 graph_decode / kernarg doc** | **PASS (design)** — [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md) + [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) |
 | **P4 MoE multipath design** | **SKETCH** — [`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md) |
 | Engine product wire / default ON | **FORBIDDEN until measured** |
@@ -37,6 +37,13 @@
 - **Stop A:** P0+P1 gfx1150 logs + P3 doc + quality PASS → **met** → **scheduler_delete** `019fdfb3d185`.  
 - **Not claimed:** gen t/s; product default ON; in-process `rl_gpu_new` full bind (residual).  
 - Optional P4 sketch already on branch ([`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md)).
+
+### 2026-08-08 — P2b residual CLOSED (`gpu_new=ok`)
+
+- **Root cause:** chat **DT_RPATH** miniforge-first → Redline bound conda HSA missing `hsa_amd_counted_queue_acquire`.  
+- **Fix:** CMake `--enable-new-dtags` + rpath `/opt/rocm/core/lib` first on chat/server.  
+- **Smoke:** `session READY ... gpu_new=ok` — [`logs/p2b-rpathfix-20260807-220731.err`](logs/p2b-rpathfix-20260807-220731.err).  
+- **Not claimed:** gen t/s; product default ON.
 
 ### 2026-08-08 — P4 MoE multipath sketch
 

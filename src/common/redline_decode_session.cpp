@@ -44,10 +44,23 @@ const char* default_lib_candidates[] = {
     nullptr,
 };
 
+// RTLD_GLOBAL: HSA may already be mapped by MLX/HIP; LOCAL can break
+// redline-rocr's libloading. Optional DEEPBIND via MLX_REDLINE_DEEPBIND=1.
+int dlopen_flags() {
+    int flags = RTLD_NOW | RTLD_GLOBAL;
+#ifdef RTLD_DEEPBIND
+    if (env_exact_one("MLX_REDLINE_DEEPBIND")) {
+        flags |= RTLD_DEEPBIND;
+    }
+#endif
+    return flags;
+}
+
 void* try_dlopen() {
+    const int flags = dlopen_flags();
     if (const char* custom = std::getenv("MLX_REDLINE_LIB")) {
         if (custom[0] != '\0') {
-            void* h = ::dlopen(custom, RTLD_NOW | RTLD_LOCAL);
+            void* h = ::dlopen(custom, flags);
             if (h) {
                 return h;
             }
@@ -59,7 +72,7 @@ void* try_dlopen() {
     for (const char** p = default_lib_candidates; *p; ++p) {
         // Clear stale errors.
         (void)dlerror();
-        void* h = ::dlopen(*p, RTLD_NOW | RTLD_LOCAL);
+        void* h = ::dlopen(*p, flags);
         if (h) {
             return h;
         }
@@ -86,11 +99,13 @@ bool init_smoke(void* lib) {
     }
     void* gpu = gpu_new(0);
     if (!gpu) {
-        // Observed: rl_gpu_new may return null if HIP/MLX already owns the
-        // device (post-load). Standalone C smoke still succeeds pre-MLX.
-        // P2 gate = dlopen + abi; gpu bind is best-effort for later P3.
+        // Typical residual: executable DT_RPATH puts conda/miniforge before
+        // ROCm core → Redline load_symbols binds HSA without ROCm ≥7.14
+        // symbols (hsa_amd_counted_queue_acquire). Fix: RUNPATH + core first
+        // (CMake chat/server link options). See P2_INIT.md.
         g_err = "abi=" + std::to_string(ver) +
-                " gpu_new=null (try early init before MLX load; fallback ok)";
+                " gpu_new=null (check RUNPATH: /opt/rocm/core/lib before conda; "
+                "needs HSA with counted_queue_acquire)";
         return true;
     }
     gpu_free(gpu);

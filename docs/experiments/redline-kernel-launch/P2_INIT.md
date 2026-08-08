@@ -39,25 +39,27 @@ Model: `mlx-community/Qwen3.5-0.8B-4bit` local snapshot.
 | Case | Result | Log |
 |------|--------|-----|
 | off | 0× `[redline]` | `logs/p2-off-20260807-215745.err` |
-| on | **1×** `session READY ... abi=1 gpu_new=null (...)` | `logs/p2-on-20260807-215745.err` |
+| on (pre-RPATH fix) | **1×** READY abi=1 **gpu_new=null** | `logs/p2-on-20260807-215745.err` |
+| on (post-RPATH fix) | **1×** READY abi=1 **gpu_new=ok** | `logs/p2b-rpathfix-20260807-220731.err` |
 | xor | **1×** fail-closed XOR banner | `logs/p2-xor-20260807-215745.err` |
 
-Banner (on):
+Banner (on, after fix):
 
 ```text
-[redline] session READY (P2 init-only; forward still product; abi=1 gpu_new=null (try early init before MLX load; fallback ok))
+[redline] session READY (P2 init-only; forward still product; abi=1 gpu_new=ok)
 ```
 
-### Standalone vs in-process `rl_gpu_new`
+### Root cause of `gpu_new=null` (resolved)
 
-| Context | `rl_gpu_new(0)` |
-|---------|-----------------|
-| Tiny C `dlopen` smoke (no MLX) | **non-null** (PASS) |
-| `chat` binary (linked MLX/HIP), even pre-`load_llm` | **null** |
+| Finding | Detail |
+|---------|--------|
+| Error (instrumented capi) | `load_symbols: libhsa-runtime64 is missing hsa_amd_counted_queue_acquire (requires ROCm >= 7.14)` |
+| Mechanism | `chat` had **DT_RPATH** `/home/.../miniforge3/lib:/opt/rocm/lib` — **RPATH is searched before LD_LIBRARY_PATH** |
+| Effect | Redline `Library::new("libhsa-runtime64.so")` bound **conda HSA 1.14** (no 7.14 surface); first successful open wins even if symbols fail |
+| Standalone OK | No conda RPATH; opens `/opt/rocm/core` HSA with symbol present |
+| **Fix** | CMake: `--enable-new-dtags` (RUNPATH) + `-rpath,/opt/rocm/core/lib` first for `chat`/`server` |
 
-**Interpretation:** P2 gate is **dlopen + C-API symbol smoke** (`rl_abi_version`). Full ROCr GPU bind inside the MLX-linked process is a **known residual** for P3 (may need careful HSA/HIP coexistence or out-of-process worker). Product fallback remains correct.
-
-Early probe hook: `examples/chat.cpp` calls `maybe_log_redline_session_status()` after GPU select, before model load (still null on this host when MLX is linked).
+Verified: `readelf -d build/chat` → `RUNPATH [/opt/rocm/core/lib:/opt/rocm/lib:/home/.../miniforge3/lib:...]` then **gpu_new=ok**.
 
 ---
 

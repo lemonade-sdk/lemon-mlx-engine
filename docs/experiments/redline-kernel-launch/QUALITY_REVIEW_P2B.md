@@ -15,12 +15,13 @@
 | CMake default OFF | **PASS** — dlopen, not hard link |
 | Build green | **PASS** — `chat` exit 0 |
 | No gen t/s claim | **PASS** |
-| Honest residual | **PASS** — documents `gpu_new=null` in MLX-linked process |
+| Honest residual | **PASS** — root-caused RPATH/conda HSA; fixed with RUNPATH + core first |
 | Naming | **PASS** — P2b (session) ≠ P2 N-sweep |
+| Post-fix gpu_new | **PASS** — `logs/p2b-rpathfix-20260807-220731.err` shows `gpu_new=ok` |
 
-## Residual
+## Residual (updated)
 
-- In-process `rl_gpu_new(0)` null after linking MLX/HIP even pre-load; standalone C smoke OK.  
-- P3 must not assume in-process ROCr bind without further isolation work.
+- Upstream Redline `load_symbols` stops at first successful `dlopen` of soname (does not fall through to absolute `/opt/rocm/core` if conda opens first). Prefer capable RPATH/RUNPATH on engine binaries.  
+- P3 still must measure before any gen t/s claim.
 
-**Reviewer notes:** ship P2b as init smoke; do not product-default-on; P3 design doc separate.
+**Reviewer notes:** ship P2b with RPATH fix; do not product-default-on.

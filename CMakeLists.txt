@@ -312,6 +312,24 @@ if(MLX_LM_BUILD_EXAMPLES)
             target_link_libraries(server PRIVATE hip::host)
         endif()
     endif()
+
+    # Redline P2b residual: DT_RPATH is searched BEFORE LD_LIBRARY_PATH.
+    # Linking against miniforge (curl/lapack/etc.) injects
+    # RPATH=/home/.../miniforge3/lib first, so Redline's
+    # load_symbols("libhsa-runtime64.so") can bind conda HSA 1.14 which lacks
+    # hsa_amd_counted_queue_acquire (ROCm ≥7.14 surface) → rl_gpu_new null.
+    # Prefer RUNPATH (--enable-new-dtags) and put core ROCm first so capable HSA
+    # wins; out-of-process harness already OK with LD_LIBRARY_PATH.
+    if(MLX_BUILD_ROCM)
+        foreach(_rl_tgt chat server)
+            if(TARGET ${_rl_tgt})
+                target_link_options(${_rl_tgt} PRIVATE
+                    "LINKER:--enable-new-dtags"
+                    "LINKER:-rpath,/opt/rocm/core/lib"
+                    "LINKER:-rpath,/opt/rocm/lib")
+            endif()
+        endforeach()
+    endif()
 endif()
 
 if(MLX_LM_BUILD_TESTS)
