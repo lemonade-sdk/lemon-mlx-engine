@@ -12,6 +12,8 @@
 // P12 OWN_RMSNORM (MLX_REDLINE_OWN_RMSNORM=1): replace packed product RMSNorm
 // HIP launches with Redline retained PM4 (multi-instance non-qmm family).
 // Default OFF. Mid-eval uses HIP stream sync for ordering (documented tax).
+// P12b: MLX_REDLINE_POST_SYNC=device|stream|off (default device) — post-replay
+// fence policy for dual-queue tax A/B. stream/off may race; research only.
 
 #pragma once
 

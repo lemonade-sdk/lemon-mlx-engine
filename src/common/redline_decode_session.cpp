@@ -12,6 +12,9 @@
 //     builder/finalize per product glue call). Default still OFF.
 // P12: MLX_REDLINE_OWN_RMSNORM=1 — Redline PM4 owns packed product RMSNorm
 //     launches (multi-instance non-qmm family; mid-eval stream sync). Default OFF.
+// P12b: MLX_REDLINE_POST_SYNC=device|stream|off — post-replay fence policy
+//     (default device). Dual-queue: Redline PM4 ≠ product HIP stream; stream/off
+//     are research-only for sync-tax A/B — may race consumers. NOT gen t/s.
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
@@ -48,6 +51,48 @@ bool env_exact_one(const char* name) {
     const char* v = std::getenv(name);
     return v && v[0] == '1' && v[1] == '\0';
 }
+
+// P12b: post-replay host fence after Redline retained PM4 on product path.
+// Dual-queue: Redline completion is not on the product HIP stream, so only
+// "device" is correct-by-default. "stream" and "off" exist to measure the
+// mid-eval sync tax (OWN_RMSNORM B1 ~−2–5%); they may race HIP consumers.
+enum class RedlinePostSync : uint8_t { Device = 0, Stream = 1, Off = 2 };
+
+RedlinePostSync post_sync_mode() {
+    const char* v = std::getenv("MLX_REDLINE_POST_SYNC");
+    if (!v || v[0] == '\0') {
+        return RedlinePostSync::Device;
+    }
+    // Accept device|stream|off (case-sensitive short names).
+    if (v[0] == 'o' && v[1] == 'f' && v[2] == 'f' && v[3] == '\0') {
+        return RedlinePostSync::Off;
+    }
+    if (v[0] == 's' && v[1] == 't' && v[2] == 'r' && v[3] == 'e' &&
+        v[4] == 'a' && v[5] == 'm' && v[6] == '\0') {
+        return RedlinePostSync::Stream;
+    }
+    return RedlinePostSync::Device;
+}
+
+#if defined(MLX_BUILD_ROCM)
+void redline_post_sync(void* hip_stream) {
+    switch (post_sync_mode()) {
+        case RedlinePostSync::Off:
+            return;
+        case RedlinePostSync::Stream:
+            if (hip_stream) {
+                (void)hipStreamSynchronize(static_cast<hipStream_t>(hip_stream));
+            } else {
+                (void)hipDeviceSynchronize();
+            }
+            return;
+        case RedlinePostSync::Device:
+        default:
+            (void)hipDeviceSynchronize();
+            return;
+    }
+}
+#endif
 
 std::mutex g_mu;
 bool g_inited = false;
@@ -1731,12 +1776,17 @@ bool redline_try_own_pos_set(mlx::core::array& pos, int v) {
     }
     const bool ok = (g_fn_replay(g_glue_ib_set) == kRlOk);
     if (ok) {
-        (void)hipDeviceSynchronize();
+        redline_post_sync(nullptr); // P12b: device default; dual-queue
         if (!g_glue_logged) {
             g_glue_logged = true;
             std::cerr
                 << "[redline] OWN_GLUE pos_set handled by Redline retained PM4 "
-                   "(product HIP glue skipped; NOT gen t/s)\n";
+                   "(product HIP glue skipped; POST_SYNC="
+                << (post_sync_mode() == RedlinePostSync::Off
+                        ? "off"
+                        : (post_sync_mode() == RedlinePostSync::Stream ? "stream"
+                                                                      : "device"))
+                << "; NOT gen t/s)\n";
         }
     }
     return ok;
@@ -1781,7 +1831,7 @@ bool redline_try_own_pos_inc(mlx::core::array& pos, int delta) {
     }
     const bool ok = (g_fn_replay(g_glue_ib_inc) == kRlOk);
     if (ok) {
-        (void)hipDeviceSynchronize();
+        redline_post_sync(nullptr); // P12b
     }
     return ok;
 #endif
@@ -1829,7 +1879,7 @@ bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& sr
     }
     const bool ok = (g_fn_replay(g_glue_ib_copy) == kRlOk);
     if (ok) {
-        (void)hipDeviceSynchronize();
+        redline_post_sync(nullptr); // P12b
         if (!g_glue_logged) {
             g_glue_logged = true;
             std::cerr
@@ -1920,13 +1970,20 @@ bool redline_try_own_rmsnorm_packed(
         ++g_rms_fallback_count;
         return false;
     }
-    (void)hipDeviceSynchronize();
+    // P12b: post fence so HIP consumers see Redline writes. Default device
+    // (cross-queue). MLX_REDLINE_POST_SYNC=stream|off for tax A/B only.
+    redline_post_sync(hip_stream);
     ++g_rms_own_count;
     if (!g_rms_logged) {
         g_rms_logged = true;
+        const char* psm =
+            (post_sync_mode() == RedlinePostSync::Off)
+                ? "off"
+                : (post_sync_mode() == RedlinePostSync::Stream ? "stream" : "device");
         std::cerr
             << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
-               "(product HIP RMSNorm skipped; mid-eval stream sync; NOT gen t/s)\n";
+               "(product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC="
+            << psm << "; NOT gen t/s)\n";
     }
     return true;
 #endif

@@ -1,0 +1,40 @@
+TS=20260808-125232
+2026-08-08T12:52:32-07:00
+GPU[0]		: GPU use (%): 4
+GPU[0]		: VRAM Total Memory (B): 8589934592
+GPU[0]		: VRAM Total Used Memory (B): 8300691456
+ 524659  3.5 /var/lib/lemonade/.cache/lemonade/bin/llamacpp/vulkan/llama-server -m /var/lib/lemonade/.cache/huggingface/hub/models--unsloth--Qwen3.5-35B-A3B-GGUF/snapshots/bc014a17be43adabd7066b7a86075ff935c6a4e2/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf --ctx-size 4096 --port 8001 --jinja --mmproj /var/lib/lemonade/.cache/huggingface/hub/models--unsloth--Qwen3.5-35B-A3B-GGUF/snapshots/bc014a17be43adabd7066b7a86075ff935c6a4e2/mmproj-F16.gguf --context-shift --keep 16 --reasoning-format auto --no-webui --no-mmap -ngl 99
+=== B0-r1 2026-08-08T12:52:33-07:00 env:  ===
+rc=0 Generation: 64 tokens, 113.672 tokens/s, 0.563024s
+=== B1dev-r1 2026-08-08T12:52:37-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=device ===
+rc=0 Generation: 64 tokens, 111.112 tokens/s, 0.575998s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=device; NOT gen t/s)
+=== B1off-r1 2026-08-08T12:52:42-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=off ===
+rc=0 Generation: 64 tokens, 110.68 tokens/s, 0.578242s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=off; NOT gen t/s)
+=== B0-r2 2026-08-08T12:52:47-07:00 env:  ===
+rc=0 Generation: 64 tokens, 114.946 tokens/s, 0.556785s
+=== B1dev-r2 2026-08-08T12:52:51-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=device ===
+rc=0 Generation: 64 tokens, 111.607 tokens/s, 0.573442s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=device; NOT gen t/s)
+=== B1off-r2 2026-08-08T12:52:56-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=off ===
+rc=0 Generation: 64 tokens, 112.143 tokens/s, 0.570702s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=off; NOT gen t/s)
+=== B0-r3 2026-08-08T12:53:01-07:00 env:  ===
+rc=0 Generation: 64 tokens, 115.516 tokens/s, 0.554033s
+=== B1dev-r3 2026-08-08T12:53:05-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=device ===
+rc=0 Generation: 64 tokens, 112.504 tokens/s, 0.568867s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=device; NOT gen t/s)
+=== B1off-r3 2026-08-08T12:53:10-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=off ===
+rc=0 Generation: 64 tokens, 111.838 tokens/s, 0.572257s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=off; NOT gen t/s)
+=== B1stream-r1 2026-08-08T12:53:15-07:00 env: MLX_REDLINE_DECODE=1 MLX_REDLINE_LIB=/tmp/redline-warpfront-target/release/libredline_dispatch.so MLX_REDLINE_OWN_RMSNORM=1 MLX_REDLINE_RMS_HSACO=docs/experiments/redline-kernel-launch/logs/rms_norm_kernels-gfx1150.co MLX_REDLINE_POST_SYNC=stream ===
+rc=0 Generation: 64 tokens, 113.117 tokens/s, 0.565788s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC=stream; NOT gen t/s)

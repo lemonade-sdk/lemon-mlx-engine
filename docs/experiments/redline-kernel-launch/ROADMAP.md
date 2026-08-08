@@ -2,7 +2,7 @@
 
 **Branch:** `exp/redline-kernel-launch`  
 **Host target:** gfx1150 (890M) · lemon-mlx-engine ROCm  
-**Revised:** 2026-08-08 (retry2 rebench under lemonade VRAM — same B1/B2 shape; default OFF)
+**Revised:** 2026-08-08 (P12b POST_SYNC fence policy + redline-conscious-loop workflow)
 
 ---
 
@@ -54,7 +54,8 @@
 | ID | Work | Success | Kill if |
 |----|------|---------|---------|
 | **P11** | **Launch inventory** per L=1 token | **DONE** — 395/token 0.8B; QMM 187, CustomKernel 90, RMSNorm 37, … | — |
-| **P12** | Own **packed RMSNorm** multi-instance product launches (`OWN_RMSNORM=1`) | **DONE** — arm smoke PASS; inv 37→6; gen text OK; M2 pending | Strided residual; mid-eval sync tax |
+| **P12** | Own **packed RMSNorm** multi-instance product launches (`OWN_RMSNORM=1`) | **DONE** — arm smoke PASS; inv 37→6; gen text OK; M2 DONE (no gen win) | Strided residual; mid-eval sync tax |
+| **P12b** | Cut mid-eval **POST_SYNC** tax (`MLX_REDLINE_POST_SYNC=device\|stream\|off`) | **CODE** — default device; stream/off research-only; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) | Dual-queue races if off without events |
 | **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
