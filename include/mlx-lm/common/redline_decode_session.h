@@ -14,6 +14,8 @@
 // Default OFF. Mid-eval uses HIP stream sync for ordering (documented tax).
 // P12b: MLX_REDLINE_POST_SYNC=device|stream|off (default device) — post-replay
 // fence policy for dual-queue tax A/B. stream/off may race; research only.
+// P12c: set_k-before-pre-sync overlap; MLX_REDLINE_PRE_SYNC=stream|device|off
+// (default stream); MLX_REDLINE_RMS_PROFILE=1 host-phase timers. Default OFF.
 
 #pragma once
 

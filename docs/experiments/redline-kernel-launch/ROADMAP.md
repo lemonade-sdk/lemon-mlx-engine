@@ -44,6 +44,8 @@
 | Gen A/B OWN_GLUE only (M1) | RUN | ≈ baseline (glue too small vs 395) |
 | Gen A/B OWN_RMSNORM only (M2) | RUN | 0.8B B1 ~−3–5% vs stable B0; B2 slower; [`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md) |
 | Clean + retry2 rebench | RUN | B1 ~−2–3.5% / B2 ~−8–9%; lemonade still holds VRAM; [`GEN_AB_CLEAN_20260808.md`](GEN_AB_CLEAN_20260808.md) [`GEN_AB_RETRY2_20260808.md`](GEN_AB_RETRY2_20260808.md) |
+| **P12b** POST_SYNC fence policy | CODE | `MLX_REDLINE_POST_SYNC=device\|stream\|off` (default **device**); tax A/B: post-sync **not** primary tax; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) |
+| **P12c** PRE_SYNC / set_k-before-pre | CODE | set_k before pre-sync; `MLX_REDLINE_PRE_SYNC` default **stream**; profile env; gen A/B **PENDING_BENCH**; [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) |
 
 ---
 
@@ -55,7 +57,8 @@
 |----|------|---------|---------|
 | **P11** | **Launch inventory** per L=1 token | **DONE** — 395/token 0.8B; QMM 187, CustomKernel 90, RMSNorm 37, … | — |
 | **P12** | Own **packed RMSNorm** multi-instance product launches (`OWN_RMSNORM=1`) | **DONE** — arm smoke PASS; inv 37→6; gen text OK; M2 DONE (no gen win) | Strided residual; mid-eval sync tax |
-| **P12b** | Cut mid-eval **POST_SYNC** tax (`MLX_REDLINE_POST_SYNC=device\|stream\|off`) | **CODE** — default device; stream/off research-only; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) | Dual-queue races if off without events |
+| **P12b** | Cut mid-eval **POST_SYNC** tax (`MLX_REDLINE_POST_SYNC=device\|stream\|off`) | **CODE** — default device; stream/off research-only; B1-off≈B1-device (~−2.6%) → post-sync **not** primary tax; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) | Dual-queue races if off without events |
+| **P12c** | Cut **pre**-stream / host set_k tax on OWN_RMSNORM (set_k-before-pre; `PRE_SYNC` knob) | **CODE** — safe reorder + `MLX_REDLINE_PRE_SYNC` (default stream) + `RMS_PROFILE`; gen A/B **PENDING_BENCH**; [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) | Races if PRE_SYNC=off; no ≥2% win yet |
 | **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
@@ -120,7 +123,9 @@ Each fire must:
 2. ~~**P11** launch inventory~~ — DONE (395/L1 on 0.8B).  
 3. ~~**P12** OWN_RMSNORM packed~~ — DONE (31/37 owned; strided 6 residual; mid-eval sync tax).  
 4. ~~**M2** gen A/B OWN_RMSNORM~~ — DONE 0.8B: B1 **no ≥2% win** (~−3–5% stable pairs); B2 ~−13%; keep default OFF.  
-5. **P12b** cut mid-eval stream-sync tax on OWN_RMSNORM **or** own next residual (CustomKernel / strided RMSNorm) — still default OFF + smoke.  
-6. Optional 35B B0/B1 when claiming 35B relevance (GPU free).
+5. ~~**P12b** POST_SYNC fence policy + tax isolation~~ — **CODE** (default device; off≈device → post not primary tax).  
+6. ~~**P12c** set_k-before-pre + `PRE_SYNC`~~ — **CODE**; multi-rep gen A/B **PENDING_BENCH** (lemonade VRAM).  
+7. Free-GPU B0/B1 A/B for P12c; if pre remains tax → completion events / same-queue **or** own next residual (CustomKernel / strided RMSNorm) — still default OFF.  
+8. Optional 35B B0/B1 when claiming 35B relevance (GPU free).
 
 “Redline everywhere” = **grow the set of product ops that fall through to Redline**, op by op — not enable every research env at once.

@@ -40,9 +40,31 @@
 | **P11 launch inventory** | **PASS** — env-gated; 0.8B L=1 **395** dispatches (QMM 187, CustomKernel 90, RMSNorm 37, …); NOT gen t/s ([`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md)) |
 | **P12 OWN_RMSNORM packed** | **PASS** — packed product RMSNorm → Redline retained PM4; inv RMSNorm **37→6**; multi IB n=4; mid-eval stream sync tax ([`P12_OWN_RMSNORM.md`](P12_OWN_RMSNORM.md)) |
 | Gen t/s A/B **OWN_RMSNORM only (M2)** | **RUN** — 0.8B B1 ~−3–5% vs stable B0; B2 ~−13%; no default ON ([`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md)) |
-| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — P12b sync tax / next residual ownership |
+| **P12b** POST_SYNC fence policy | **CODE** — `MLX_REDLINE_POST_SYNC=device\|stream\|off` (default **device**); B1-off≈B1-device (~−2.6%) → post-sync **not** primary tax; no default ON ([`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md)) |
+| **P12c** PRE_SYNC / host path | **CODE** — set_k before pre-sync; `MLX_REDLINE_PRE_SYNC` default **stream**; `RMS_PROFILE`; gen A/B **PENDING_BENCH**; no default ON ([`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md)) |
+| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — P12c pre-sync / residual ownership |
 
 ## Fire log
+
+### 2026-08-08 — P12c OWN_RMSNORM pre-sync / host path
+
+- **Primary:** Cut redundant host serialization on OWN_RMSNORM: pack+set_k **before** pre-stream drain (safe — pointer patch only); keep pre-sync before replay; POST_SYNC default **device**.  
+- **Code:** `redline_pre_sync()` + `MLX_REDLINE_PRE_SYNC=stream|device|off` (default stream); `MLX_REDLINE_RMS_PROFILE=1` host-phase timers.  
+- **Defaults:** all research flags still OFF; no product default ON.  
+- **Bench:** multi-rep gen A/B **PENDING_BENCH** (lemonade ~96% VRAM).  
+- **Doc:** [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md).  
+- **Next:** free-GPU B0/B1 A/B; if pre remains tax → completion events / same-queue.
+
+### 2026-08-08 — P12b POST_SYNC fence policy (stream-sync decision)
+
+- **Primary:** Thin mid-eval post fence after OWN_RMSNORM/OWN_GLUE retained PM4 without product default ON.  
+- Clear Thought: sequentialthinking + mentalmodel first_principles + debugging cause_elimination.  
+- **First principles:** Redline PM4 ≠ product HIP stream; only `hipDeviceSynchronize` is correct-by-default post fence; `stream`/`off` research-only (may race).  
+- **Code:** `MLX_REDLINE_POST_SYNC=device|stream|off` via `redline_post_sync()` (default **device**); pre-stream drain on OWN_RMSNORM unchanged.  
+- **Measure (prior):** interleaved 0.8B B0/B1-device/B1-off ×3 — off≈device (~−2.6%); post-sync **not** primary tax ([`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) §6).  
+- **This session:** rebuild `chat` OK; long gen A/B **skipped** (`skip_bench=true`).  
+- **Not claimed:** gen t/s ≥2% win; product default ON; stream as correctness fix.  
+- **Next:** P12c pre-sync coalesce / same-queue completion events, or own CustomKernel/strided residual.
 
 ### 2026-08-08 — M2 gen A/B OWN_RMSNORM (B0/B1/B2) no win
 

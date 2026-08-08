@@ -15,6 +15,9 @@
 // P12b: MLX_REDLINE_POST_SYNC=device|stream|off — post-replay fence policy
 //     (default device). Dual-queue: Redline PM4 ≠ product HIP stream; stream/off
 //     are research-only for sync-tax A/B — may race consumers. NOT gen t/s.
+// P12c: OWN_RMSNORM host path — pack+set_k BEFORE pre-sync (overlap with product
+//     GPU producers); MLX_REDLINE_PRE_SYNC=stream|device|off (default stream);
+//     optional MLX_REDLINE_RMS_PROFILE=1 host-phase timers. Default flags OFF.
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
@@ -58,6 +61,11 @@ bool env_exact_one(const char* name) {
 // mid-eval sync tax (OWN_RMSNORM B1 ~−2–5%); they may race HIP consumers.
 enum class RedlinePostSync : uint8_t { Device = 0, Stream = 1, Off = 2 };
 
+// P12c: pre-replay host fence so product HIP producers complete before Redline
+// reads VRAM. Default "stream" matches historical OWN_RMSNORM drain. "off" is
+// research-only (may race). set_k does NOT need this fence (pointer patch only).
+enum class RedlinePreSync : uint8_t { Stream = 0, Device = 1, Off = 2 };
+
 RedlinePostSync post_sync_mode() {
     const char* v = std::getenv("MLX_REDLINE_POST_SYNC");
     if (!v || v[0] == '\0') {
@@ -72,6 +80,45 @@ RedlinePostSync post_sync_mode() {
         return RedlinePostSync::Stream;
     }
     return RedlinePostSync::Device;
+}
+
+RedlinePreSync pre_sync_mode() {
+    const char* v = std::getenv("MLX_REDLINE_PRE_SYNC");
+    if (!v || v[0] == '\0') {
+        return RedlinePreSync::Stream;
+    }
+    if (v[0] == 'o' && v[1] == 'f' && v[2] == 'f' && v[3] == '\0') {
+        return RedlinePreSync::Off;
+    }
+    if (v[0] == 'd' && v[1] == 'e' && v[2] == 'v' && v[3] == 'i' &&
+        v[4] == 'c' && v[5] == 'e' && v[6] == '\0') {
+        return RedlinePreSync::Device;
+    }
+    return RedlinePreSync::Stream;
+}
+
+const char* pre_sync_label() {
+    switch (pre_sync_mode()) {
+        case RedlinePreSync::Off:
+            return "off";
+        case RedlinePreSync::Device:
+            return "device";
+        case RedlinePreSync::Stream:
+        default:
+            return "stream";
+    }
+}
+
+const char* post_sync_label() {
+    switch (post_sync_mode()) {
+        case RedlinePostSync::Off:
+            return "off";
+        case RedlinePostSync::Stream:
+            return "stream";
+        case RedlinePostSync::Device:
+        default:
+            return "device";
+    }
 }
 
 #if defined(MLX_BUILD_ROCM)
@@ -89,6 +136,25 @@ void redline_post_sync(void* hip_stream) {
         case RedlinePostSync::Device:
         default:
             (void)hipDeviceSynchronize();
+            return;
+    }
+}
+
+// Drain product HIP producers immediately before Redline replay reads VRAM.
+void redline_pre_sync(void* hip_stream) {
+    switch (pre_sync_mode()) {
+        case RedlinePreSync::Off:
+            return;
+        case RedlinePreSync::Device:
+            (void)hipDeviceSynchronize();
+            return;
+        case RedlinePreSync::Stream:
+        default:
+            if (hip_stream) {
+                (void)hipStreamSynchronize(static_cast<hipStream_t>(hip_stream));
+            } else {
+                (void)hipDeviceSynchronize();
+            }
             return;
     }
 }
@@ -171,8 +237,14 @@ void* g_rms_mod = nullptr;
 void* g_rms_gpu = nullptr; // keep session gpu for lazy IB build
 bool g_rms_armed = false;
 bool g_rms_logged = false;
+bool g_rms_profile_logged = false;
 uint64_t g_rms_own_count = 0;
 uint64_t g_rms_fallback_count = 0;
+// P12c optional host-phase accumulators (ns); enabled by MLX_REDLINE_RMS_PROFILE=1.
+uint64_t g_rms_ns_setk = 0;
+uint64_t g_rms_ns_pre = 0;
+uint64_t g_rms_ns_replay = 0;
+uint64_t g_rms_ns_post = 0;
 // key = (dtype_code << 24) | n_rows  → retained single-dispatch IB
 std::unordered_map<uint32_t, void*> g_rms_ib_by_key;
 constexpr int kRmsBlock = 256;
@@ -1945,15 +2017,22 @@ bool redline_try_own_rmsnorm_packed(
         return false;
     }
 
-    // Drain prior HIP work on the product stream so VRAM deps are complete.
-    if (hip_stream) {
-        (void)hipStreamSynchronize(static_cast<hipStream_t>(hip_stream));
-    } else {
-        (void)hipDeviceSynchronize();
-    }
+    const bool profile = env_exact_one("MLX_REDLINE_RMS_PROFILE");
+    using clock = std::chrono::steady_clock;
+    auto mark = []() { return clock::now(); };
+    auto ns_since = [](clock::time_point t0) {
+        return static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - t0)
+                .count());
+    };
 
+    // P12c: pack + set_kernargs BEFORE pre-sync. Kernarg patch only stores
+    // device pointers / scalars — it does not read producer VRAM — so this
+    // host work can overlap in-flight product HIP producers. Pre-sync must
+    // still complete immediately before replay (dual-queue producer drain).
     uint8_t karg[512];
     pack_rms_karg(karg, sizeof(karg), x, w, out, eps, axis_size, w_stride);
+    auto t0 = profile ? mark() : clock::time_point{};
     if (g_fn_set_k(ib, 0, 0, karg, 24) != kRlOk) {
         ++g_rms_fallback_count;
         return false;
@@ -1966,24 +2045,52 @@ bool redline_try_own_rmsnorm_packed(
         ++g_rms_fallback_count;
         return false;
     }
+    if (profile) {
+        g_rms_ns_setk += ns_since(t0);
+        t0 = mark();
+    }
+
+    // Drain product HIP producers so VRAM deps are complete before Redline reads.
+    redline_pre_sync(hip_stream);
+    if (profile) {
+        g_rms_ns_pre += ns_since(t0);
+        t0 = mark();
+    }
+
     if (g_fn_replay(ib) != kRlOk) {
         ++g_rms_fallback_count;
         return false;
     }
+    if (profile) {
+        g_rms_ns_replay += ns_since(t0);
+        t0 = mark();
+    }
+
     // P12b: post fence so HIP consumers see Redline writes. Default device
     // (cross-queue). MLX_REDLINE_POST_SYNC=stream|off for tax A/B only.
     redline_post_sync(hip_stream);
+    if (profile) {
+        g_rms_ns_post += ns_since(t0);
+    }
     ++g_rms_own_count;
     if (!g_rms_logged) {
         g_rms_logged = true;
-        const char* psm =
-            (post_sync_mode() == RedlinePostSync::Off)
-                ? "off"
-                : (post_sync_mode() == RedlinePostSync::Stream ? "stream" : "device");
         std::cerr
             << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
-               "(product HIP RMSNorm skipped; mid-eval pre-stream + POST_SYNC="
-            << psm << "; NOT gen t/s)\n";
+               "(product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC="
+            << pre_sync_label() << " POST_SYNC=" << post_sync_label()
+            << "; NOT gen t/s)\n";
+    }
+    // One-shot host-phase profile after ~1 token of packed RMSNorms (~31).
+    if (profile && !g_rms_profile_logged && g_rms_own_count >= 31) {
+        g_rms_profile_logged = true;
+        auto us = [](uint64_t n) { return static_cast<double>(n) / 1000.0; };
+        std::cerr << "[redline] OWN_RMSNORM host profile (n=" << g_rms_own_count
+                  << "): set_k=" << us(g_rms_ns_setk)
+                  << "us pre_sync=" << us(g_rms_ns_pre)
+                  << "us replay=" << us(g_rms_ns_replay)
+                  << "us post_sync=" << us(g_rms_ns_post)
+                  << "us (host wall; NOT gen t/s)\n";
     }
     return true;
 #endif

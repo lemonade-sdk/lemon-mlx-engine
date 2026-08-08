@@ -16,9 +16,9 @@
 //
 
 let meta = #{
-    name: "redline-conscious-loop",
-    description: "LEAN Redline slice (1 agent). Prefer parent for multi-step work.",
-    when_to_use: "Optional 1-agent Redline slice only — not a multi-domain fan-out",
+    name: "redline-lean",
+    description: "LEAN Redline slice: one implementer (or one QR). No domain theater.",
+    when_to_use: "Optional assist for one Redline code/measure slice — prefer parent agent for speed",
     phases: [
         #{ title: "Fire", detail: "one agent does the work" },
     ],

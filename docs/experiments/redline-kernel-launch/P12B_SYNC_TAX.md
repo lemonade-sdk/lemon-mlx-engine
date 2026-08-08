@@ -2,7 +2,8 @@
 
 **Status:** CODE IN (opt-in fence policy) · default fence still **device** · product flags still **OFF**  
 **Date:** 2026-08-08  
-**Depends on:** P12 OWN_RMSNORM · P10 OWN_GLUE · measured B1 gen ~−2–5%
+**Depends on:** P12 OWN_RMSNORM · P10 OWN_GLUE · measured B1 gen ~−2–5%  
+**Decision:** `p12b-stream-sync` — env-gated post fence (`device` default; `stream`/`off` research-only). **Not** a gen t/s claim until remeasured under free GPU; prior §6 shows post-sync is **not** the primary tax.
 
 ---
 
