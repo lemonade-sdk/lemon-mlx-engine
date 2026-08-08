@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **STOPPED** — E0–E2 green + E4 design landed (stop rule 1) |
+| **Loop status** | **IMPLEMENTING P0–P4** — scheduler `019fdfb3d185` every 2m (continuous) · **P0 GREEN** |
 
 ## Board
 
@@ -19,18 +19,45 @@
 | E2 toy multi-kernel | **MEASURED** — N=64 host BoundarySerialized **75µs** vs HIP_eager **120µs** (~1.59×); hipGraph ≈ eager |
 | E3 MLX HSACO inventory | **DONE** — qmm AOT **not** drop-in; JIT `.hsaco` on disk; see [`E3_HSACO.md`](E3_HSACO.md) |
 | E4 design hook | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) (`MLX_REDLINE_DECODE` default OFF) |
-| Engine wire | **NOT STARTED** (design only; future P0+) |
+| **P0 env stub** | **GREEN** — [`P0_STUB.md`](P0_STUB.md); code + CMake OFF + gfx1150 chat smoke logs |
+| **P1 AQL HSACO load** | **IN PROGRESS** — load OK; batch needs ≥2 dispatches ([`logs/p1-load-hsaco-20260807-215230.log`](logs/p1-load-hsaco-20260807-215230.log)) |
+| **P2 session init** | **NOT STARTED** |
+| **P3 micro-op / graph_decode doc** | **NOT STARTED** |
+| **P4 MoE multipath design** | **NOT STARTED** |
+| Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
 
-### 2026-08-02 — E4 design + STOP
+### 2026-08-07 — P0 smoke GREEN (continuous loop)
+
+- **Primary P-step:** P0 complete.  
+- Clear Thought: sequentialthinking, decisionframework (P0 first), metacognitivemonitoring.  
+- **Code:** `src/common/generate.cpp` stub + `CMakeLists.txt` `MLX_LM_WITH_REDLINE=OFF` notes.  
+- **Build:** `cmake --build build --target chat` exit 0.  
+- **Smoke (gfx1150, Qwen3.5-0.8B-4bit):**  
+  - off → 0× `[redline]` [`logs/p0-off-20260807-215209.err`](logs/p0-off-20260807-215209.err)  
+  - `=1` → 1× not-implemented banner [`logs/p0-on-20260807-215209.err`](logs/p0-on-20260807-215209.err)  
+  - XOR pure → fail-closed banner [`logs/p0-xor-pure-20260807-215209.err`](logs/p0-xor-pure-20260807-215209.err)  
+  - `=true` → silent [`logs/p0-true-20260807-215209.err`](logs/p0-true-20260807-215209.err)  
+- **Evidence:** [`P0_STUB.md`](P0_STUB.md).  
+- **Not claimed:** gen t/s; product enable; P1 green.  
+- **Next fire:** P1 dual-dispatch retained AQL (fix single-dispatch InvalidBatchShape).
+
+### 2026-08-08 — P0 implement + P1 scaffold (continuous loop)
+
+- **Primary P-step:** P0 code + P1 harness scaffold.  
+- **Code:** `generate.cpp` env parse + banner; `harness/p1_load_hsaco.rs`.  
+- **P1 attempt:** Executable load OK; FAIL `InvalidBatchShape` (≥2 dispatches required) — see p1 log.  
+- **Loop:** continue until stop A/B/C.
+
+### 2026-08-02 — E4 design + STOP (design loop closed)
 
 - **Primary E-step:** E4.  
 - Clear Thought: sequentialthinking, decisionframework (arch A vs B/C/D), metacognitivemonitoring, collaborative critique.  
 - Design: opt-in `MLX_REDLINE_DECODE=1` → redline-capi / AQL **BoundarySerialized** fixed small-op subgraph; **qmm stays HIP**; no HIP-graph product path; phases P0–P4; kill criteria vs eager only.  
 - Evidence: [`E4_DESIGN.md`](E4_DESIGN.md).  
-- **Stop rule (1):** E0–E2 gfx1150 evidence + E4 design → **scheduler_delete**.  
-- **Not shipped:** product stub in binary; gen t/s claims.
+- **Stop rule (1):** E0–E2 gfx1150 evidence + E4 design → **scheduler_delete** (design loop only).  
+- **Not shipped (then):** product stub in binary; gen t/s claims.
 
 ### 2026-08-02 — E3 MLX HSACO inventory
 

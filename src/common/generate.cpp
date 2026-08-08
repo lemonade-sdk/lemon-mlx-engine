@@ -67,6 +67,49 @@ static void ensure_thread_cpu_stream_encoders() {
     last_n = mx::get_streams().size();
 }
 
+#if defined(MLX_BUILD_ROCM)
+// ---------------------------------------------------------------------------
+// P0 research stub: MLX_REDLINE_DECODE (exp/redline-kernel-launch, E4 design).
+// Default OFF. Exactly "1" logs once; session not implemented until P2+.
+// XOR with MLX_DECODE_GRAPH_PURE=1 → fail-closed eager (log once; no product path).
+// Does NOT set MLX_USE_HIP_GRAPHS / MLX_HIP_GRAPH_DECODE / MLX_DECODE_GRAPH_PURE.
+// ---------------------------------------------------------------------------
+static bool env_exact_one_(const char* name) {
+    const char* v = std::getenv(name);
+    return v && v[0] == '1' && v[1] == '\0';
+}
+
+static bool redline_decode_env_enabled_() {
+    return env_exact_one_("MLX_REDLINE_DECODE");
+}
+
+static bool pure_graph_env_enabled_() {
+    return env_exact_one_("MLX_DECODE_GRAPH_PURE");
+}
+
+// One-shot stderr only. Safe to call every L=1 step; no TPS / timing claims.
+static void maybe_log_redline_p0_stub_() {
+    if (!redline_decode_env_enabled_()) {
+        return;
+    }
+    static bool logged = false;
+    if (logged) {
+        return;
+    }
+    logged = true;
+    if (pure_graph_env_enabled_()) {
+        std::cerr
+            << "[redline] MLX_REDLINE_DECODE=1 and MLX_DECODE_GRAPH_PURE=1: "
+               "fail-closed to eager (XOR until measured; no Redline session)\n";
+        return;
+    }
+    std::cerr
+        << "[redline] MLX_REDLINE_DECODE=1: session not implemented "
+           "(P0 stub — product eager path unchanged; see "
+           "docs/experiments/redline-kernel-launch/E4_DESIGN.md)\n";
+}
+#endif
+
 // MLX_KV_OFFSET_LOG=1: stderr KV max offset every MLX_KV_OFFSET_EVERY (default 64).
 static void maybe_log_kv_offset_(std::vector<KVCache>& cache, int token_count) {
     static const bool enabled = [] {
@@ -575,6 +618,10 @@ mx::array TokenIterator::step(const LMInput::Text& previous) {
     {
         int Lstep = batched.tokens.shape(batched.tokens.ndim() - 1);
         mlx::core::gpu_set_graph_decode_mode(Lstep == 1);
+        // P0: opt-in log only on L=1 decode steps (no session, no path change).
+        if (Lstep == 1) {
+            maybe_log_redline_p0_stub_();
+        }
     }
 #endif
     auto result = context_.call_fn(
@@ -1929,10 +1976,16 @@ std::optional<int> TokenIterator::next() {
     // stable/faster path on gfx1151 (4-bit ~68 tok/s eager vs ~64 pure). Enable
     // with MLX_DECODE_GRAPH_PURE=1 when profiling launch-bound dGPUs (e.g. R9700).
     // Opt-in only when exactly "1" — presence of =0 / =false must stay eager.
+    // XOR: MLX_REDLINE_DECODE=1 + pure=1 → fail-closed eager (E4 §3).
     static const bool pure_enabled = [] {
-        const char* v = std::getenv("MLX_DECODE_GRAPH_PURE");
-        return v && v[0] == '1' && v[1] == '\0';
+        if (redline_decode_env_enabled_() && pure_graph_env_enabled_()) {
+            return false;
+        }
+        return pure_graph_env_enabled_();
     }();
+    // P0 stub log also on pure-disabled XOR / redline-only (next may not hit step
+    // first if pure path took over; ensure one-shot always possible).
+    maybe_log_redline_p0_stub_();
     if (pure_enabled && pure_graph_state_ != 9 && !cache_.empty()) {
         if (pure_graph_cap_ == 0) {
             int off = 0;

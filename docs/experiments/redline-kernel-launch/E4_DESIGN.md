@@ -263,7 +263,8 @@ static bool redline_decode_enabled() {
 | Env name + default OFF | **Specified** |
 | Integration sites | **Cited** (`generate.cpp`, `graph_decode.cpp`) |
 | Phased plan | **P0–P4** |
-| Product wire / stub in binary | **Not shipped** (design sketch only) |
+| Product wire / stub in binary | **P0 shipped** (banner-only) — see [`P0_STUB.md`](P0_STUB.md) |
 | Gen t/s claim | **None** |
 
-**E4 healthy/done criteria:** design landed behind env-OFF semantics — **met** by this document.
+**E4 healthy/done criteria:** design landed behind env-OFF semantics — **met** by this document.  
+**P0 implementation:** complete 2026-08-07 (default OFF + gfx1150 smoke).

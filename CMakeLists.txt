@@ -8,6 +8,35 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(MLX_LM_BUILD_TESTS "Build tests" ON)
 option(MLX_LM_BUILD_EXAMPLES "Build example programs" ON)
 
+# ---------------------------------------------------------------------------
+# Optional Redline (retained AQL) experiment — default OFF (E4_DESIGN.md P0).
+# Runtime master switch is env MLX_REDLINE_DECODE=1 (exact "1"); product path
+# stays eager HIP when unset. This CMake option only controls *linking*
+# redline-capi / libredline_dispatch — not product defaults.
+#
+# Typical research layout (not wired until P1/P2):
+#   CARGO_TARGET_DIR=/tmp/redline-warpfront-target  # prefer warpfront upstream
+#   -DMLX_LM_WITH_REDLINE=ON
+#   target_link_libraries(mlx-lm-common PRIVATE redline_dispatch)  # future
+# Without this option, P2 may still dlopen libredline_dispatch.so only when
+# MLX_REDLINE_DECODE=1 so the default binary stays free of Redline.
+# Do NOT couple to MLX_USE_HIP_GRAPHS / MLX_HIP_GRAPH_DECODE / pure-graph.
+# ---------------------------------------------------------------------------
+option(MLX_LM_WITH_REDLINE
+    "Link redline-capi / libredline_dispatch for decode launch research (OFF)"
+    OFF)
+if(MLX_LM_WITH_REDLINE)
+    message(STATUS
+        "MLX_LM_WITH_REDLINE=ON: redline link not fully wired yet (P0 stub). "
+        "Set MLX_REDLINE_DISPATCH_DIR or use dlopen path; prefer warpfront.")
+    # Future P2 (conceptual — do not invent paths):
+    # if(DEFINED ENV{CARGO_TARGET_DIR})
+    #   link_directories($ENV{CARGO_TARGET_DIR}/release)
+    # endif()
+    # target_link_libraries(mlx-lm-common PRIVATE redline_dispatch)
+    # target_compile_definitions(mlx-lm-common PUBLIC MLX_LM_WITH_REDLINE=1)
+endif()
+
 # Third-party dependencies
 include(FetchContent)
 

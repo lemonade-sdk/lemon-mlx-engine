@@ -125,6 +125,8 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | **E2** | MoE-shaped **fixed** N-launch chain (toy) retained vs HIP | **MEASURED** — [`E2_MULTI.md`](E2_MULTI.md) (~1.5–1.6× host wall BoundarySerialized vs HIP eager; hipGraph ≈ eager) |
 | **E3** | Inventory whether MLX can export HSACO for one QMM | **DONE** — drop-in **not** feasible; JIT CO yes; see [`E3_HSACO.md`](E3_HSACO.md) |
 | **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) |
+| **P0** | Env stub + banner + CMake optional link OFF | **GREEN** — [`P0_STUB.md`](P0_STUB.md) (gfx1150 smoke) |
+| **P1** | Toy/JIT HSACO load + retained AQL replay | **IN PROGRESS** — load OK; ≥2 dispatches required |
 
 **HARD BAN:** No fake TPS; no claiming Redline wins without logs on **this** GPU; no re-opening killed HIP-graph product decode.
 
@@ -140,7 +142,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | Prefer upstream remote | **warpfront/redline** (pwilkin = fork for reading) |
 | Parallel with lm_head C1? | **Yes** — orthogonal (compute cut vs dispatch cut) |
 
-**Overall confidence:** **0.82** on mechanism understanding; **0.90** on compile feasibility on 7.13 (E0); **0.90** on no-op dispatch-floor win (E1/E2); **0.55** on near-term gen-t/s win on gfx1150 (**still unmeasured** — E4 design only).
+**Overall confidence:** **0.82** on mechanism understanding; **0.90** on compile feasibility on 7.13 (E0); **0.90** on no-op dispatch-floor win (E1/E2); **0.95** on P0 default-OFF stub; **0.55** on near-term gen-t/s win on gfx1150 (**still unmeasured** — session not implemented).
 
 ---
 
@@ -157,9 +159,11 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | [`E2_MULTI.md`](E2_MULTI.md) | E2 HIP wall vs retained AQL |
 | [`E3_HSACO.md`](E3_HSACO.md) | MLX qmm / JIT HSACO feasibility |
 | [`E4_DESIGN.md`](E4_DESIGN.md) | `MLX_REDLINE_DECODE` design (default OFF) |
-| [`harness/`](harness/) | E2 HIP + AQL host-wall sources |
+| [`P0_STUB.md`](P0_STUB.md) | P0 env stub + smoke evidence |
+| [`P1_PLAN.md`](P1_PLAN.md) | P1 harness plan |
+| [`harness/`](harness/) | E2 + P1 host-wall / HSACO sources |
 | [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
-| [`logs/`](logs/) | E0–E2 logs + floor CO |
+| [`logs/`](logs/) | E0–E2 + P0 smoke + floor CO |
 
 ## 9. References
 

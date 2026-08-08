@@ -1,0 +1,6 @@
+[p1] hsaco=/home/antmi/lemon-mlx-engine/docs/experiments/redline-kernel-launch/logs/floor_kernel-gfx1150.co
+[p1] symbol=floor_k.kd
+[p1] policy=BoundarySerialized warmup=5 iters=20
+[p1] device=gfx1150
+[p1] Executable::load OK (8144 bytes)
+Error: InvalidBatchShape("single-queue profiling batch requires at least two dispatches")
