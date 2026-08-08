@@ -1,0 +1,50 @@
+TS=20260808-130444
+2026-08-08T13:04:44-07:00
+GPU[0]		: GPU use (%): 2
+GPU[0]		: GTT Total Memory (B): 64424509440
+GPU[0]		: GTT Total Used Memory (B): 16910626816
+               total        used        free      shared  buff/cache   available
+Mem:            83Gi        19Gi        42Gi        50Mi        22Gi        64Gi
+=== 08b-B1-profile 2026-08-08T13:04:44-07:00 ===
+rc=0 Generation: 64 tokens, 113.927 tokens/s, 0.561764s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31): set_k=5.711us pre_sync=1801.59us replay=314.437us post_sync=27.66us (host wall; NOT gen t/s)
+=== 08b-B0-r1 2026-08-08T13:04:49-07:00 ===
+rc=0 Generation: 64 tokens, 115.317 tokens/s, 0.55499s
+=== 08b-B1-r1 2026-08-08T13:04:54-07:00 ===
+rc=0 Generation: 64 tokens, 111.592 tokens/s, 0.573518s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+=== 08b-B1preoff-r1 2026-08-08T13:04:58-07:00 ===
+rc=0 Generation: 64 tokens, 113.661 tokens/s, 0.563079s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=off POST_SYNC=device; NOT gen t/s)
+=== 08b-B0-r2 2026-08-08T13:05:03-07:00 ===
+rc=0 Generation: 64 tokens, 116.685 tokens/s, 0.548483s
+=== 08b-B1-r2 2026-08-08T13:05:08-07:00 ===
+rc=0 Generation: 64 tokens, 113.412 tokens/s, 0.564315s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+=== 08b-B1preoff-r2 2026-08-08T13:05:12-07:00 ===
+rc=0 Generation: 64 tokens, 114.487 tokens/s, 0.559015s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=off POST_SYNC=device; NOT gen t/s)
+=== 08b-B0-r3 2026-08-08T13:05:17-07:00 ===
+rc=0 Generation: 64 tokens, 115.87 tokens/s, 0.552341s
+=== 08b-B1-r3 2026-08-08T13:05:21-07:00 ===
+rc=0 Generation: 64 tokens, 112.485 tokens/s, 0.568962s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+=== 08b-B1preoff-r3 2026-08-08T13:05:26-07:00 ===
+rc=0 Generation: 64 tokens, 114.127 tokens/s, 0.560781s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=off POST_SYNC=device; NOT gen t/s)
+=== 35b-B0 2026-08-08T13:05:31-07:00 ===
+rc=0 Generation: 64 tokens, 29.1017 tokens/s, 2.19918s
+=== 35b-B1 2026-08-08T13:05:39-07:00 ===
+rc=0 Generation: 64 tokens, 28.2036 tokens/s, 2.26921s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+=== 35b-B0b 2026-08-08T13:05:48-07:00 ===
+rc=0 Generation: 64 tokens, 29.0505 tokens/s, 2.20306s

@@ -1,0 +1,16 @@
+Loading model: /home/antmi/.cache/huggingface/hub/models--LemonMLXE--Qwen3.6-35B-A3B-MTP-mlx-4bit/snapshots/5f638dff286ea1a97a6a0b673f50acc9b3c9aa4b
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: , I am trying to make a simple program that will read a text file and print out the contents of the file. I am using the following code:
+
+```cpp
+#include <iostream>
+#include <fstream>
+#include <string>
+using namespace std;
+int main()
+{
+    ifstream in
+
+> 

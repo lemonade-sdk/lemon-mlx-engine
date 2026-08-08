@@ -75,35 +75,51 @@ Log once:
 
 ---
 
-## 5. Bench status
+## 5. Bench status — DONE (cleared GPU / GTT headroom)
 
-| Item | Status |
-|------|--------|
-| Code + rebuild chat | **this slice** |
-| Multi-rep B0 / B1-pre-default / B1-PRE_SYNC=off | **PENDING_BENCH** (VRAM ~96% lemonade; GPU use low but mem full) |
+**TS:** 20260808-130444  
+**Host:** gfx1150 · GTT **60 GiB** total (~16 GiB used at start) · sys mem ~64 GiB available · GPU use ~2%  
+**Note:** lemonade `llama-server` may still be present at low CPU; GTT headroom is the important unlock for large weights.
 
-When GPU free:
+### Host profile (n=31 owns, NOT gen t/s)
 
-```bash
-# B1 with P12c path (defaults)
-export MLX_REDLINE_DECODE=1
-export MLX_REDLINE_LIB=.../libredline_dispatch.so
-export MLX_REDLINE_OWN_RMSNORM=1
-export MLX_REDLINE_RMS_HSACO=.../rms_norm_kernels-gfx1150.co
-# unset PRE_SYNC → stream; unset POST_SYNC → device
-export MLX_REDLINE_RMS_PROFILE=1   # optional host breakdown
-./build/chat "$SNAP08" --max-tokens 64 --temperature 0 --raw
+| Phase | Host µs |
+|-------|--------:|
+| set_k | **5.7** |
+| **pre_sync** | **1802** |
+| replay | 314 |
+| post_sync | **28** |
 
-# Tax isolation only (may race)
-export MLX_REDLINE_PRE_SYNC=off
-```
+### 0.8B gen (interleaved ×3)
 
-Interpret: if B1-pre-off ≈ B0 while B1-pre-stream still slow → pre-sync **is** primary residual tax (still not shippable without a real completion bridge).
+| Stack | r1 | r2 | r3 | **Mean** | vs B0 |
+|-------|---:|---:|---:|---------:|------:|
+| **B0** | 115.3 | 116.7 | 115.9 | **116.0** | — |
+| **B1** P12c default (PRE=stream) | 111.6 | 113.4 | 112.5 | **112.5** | **−3.0%** |
+| **B1 PRE_SYNC=off** (tax iso; may race) | 113.7 | 114.5 | 114.1 | **114.1** | **−1.6%** |
+
+### 35B LemonMLXE
+
+| Stack | gen t/s | vs B0 |
+|-------|--------:|------:|
+| **B0** | **29.10** | — |
+| **B1** P12c default | **28.20** | **−3.1%** |
+| B0b | 29.05 | noise OK |
+
+Logs: `logs/p12c-ab-*-20260808-130444.*`
+
+### Interpretation
+
+1. **pre_sync dominates** host OWN_RMSNORM path (~1.8 ms / 31 owns); post is noise (~28 µs).  
+2. **`PRE_SYNC=off` recovers ~half** of the 0.8B gen gap (−3.0% → −1.6%) but is **not** a product path (races) and still **no ≥2% win**.  
+3. Residual after pre-off (~−1.6%) ≈ replay/set_k/mutex dual-queue overhead.  
+4. 35B same shape (−3.1%). **Default ON still forbidden.**
 
 ---
 
 ## 6. Next
 
-1. **PENDING_BENCH** multi-rep gen A/B when VRAM free.  
-2. If pre remains tax: device-side wait / same-queue / events (not host `off`).  
-3. Keep product defaults OFF.
+1. ~~Multi-rep A/B~~ **DONE**.  
+2. Real fix: **completion events / same-queue** so we do not host-drain every RMSNorm (P12d).  
+3. Keep product defaults OFF.  
+4. Do not ship `PRE_SYNC=off`.

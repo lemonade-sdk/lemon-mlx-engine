@@ -45,7 +45,7 @@
 | Gen A/B OWN_RMSNORM only (M2) | RUN | 0.8B B1 ~−3–5% vs stable B0; B2 slower; [`GEN_AB_OWN_RMSNORM_20260808.md`](GEN_AB_OWN_RMSNORM_20260808.md) |
 | Clean + retry2 rebench | RUN | B1 ~−2–3.5% / B2 ~−8–9%; lemonade still holds VRAM; [`GEN_AB_CLEAN_20260808.md`](GEN_AB_CLEAN_20260808.md) [`GEN_AB_RETRY2_20260808.md`](GEN_AB_RETRY2_20260808.md) |
 | **P12b** POST_SYNC fence policy | CODE | `MLX_REDLINE_POST_SYNC=device\|stream\|off` (default **device**); tax A/B: post-sync **not** primary tax; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) |
-| **P12c** PRE_SYNC / set_k-before-pre | CODE | set_k before pre-sync; `MLX_REDLINE_PRE_SYNC` default **stream**; profile env; gen A/B **PENDING_BENCH**; [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) |
+| **P12c** PRE_SYNC / set_k-before-pre | RUN | set_k-before-pre; profile pre~1.8ms/31; B1 −3.0%; PRE=off −1.6% (not ship); [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) |
 
 ---
 
