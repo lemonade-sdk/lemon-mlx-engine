@@ -1,0 +1,54 @@
+[p2] bin=/tmp/redline-warpfront-target/release/examples/p1_load_hsaco
+[p2] hsaco=/home/antmi/lemon-mlx-engine/docs/experiments/redline-kernel-launch/logs/floor_kernel-gfx1150.co symbol=floor_k.kd
+[p2] N=[2 4 8 16 32 64] policies=[BoundarySerialized SystemEveryDispatch] runs=3 iters=40 warmup=10
+[p2] NOTE: host_median_us only — NOT model gen t/s
+P2_ROW n=2 policy=BoundarySerialized run=1 host_median_us=8.722
+P2_ROW n=2 policy=BoundarySerialized run=2 host_median_us=8.536
+P2_ROW n=2 policy=BoundarySerialized run=3 host_median_us=8.737
+P2_ROW n=4 policy=BoundarySerialized run=1 host_median_us=10.660
+P2_ROW n=4 policy=BoundarySerialized run=2 host_median_us=10.671
+P2_ROW n=4 policy=BoundarySerialized run=3 host_median_us=10.620
+P2_ROW n=8 policy=BoundarySerialized run=1 host_median_us=14.582
+P2_ROW n=8 policy=BoundarySerialized run=2 host_median_us=14.397
+P2_ROW n=8 policy=BoundarySerialized run=3 host_median_us=14.562
+P2_ROW n=16 policy=BoundarySerialized run=1 host_median_us=22.422
+P2_ROW n=16 policy=BoundarySerialized run=2 host_median_us=22.587
+P2_ROW n=16 policy=BoundarySerialized run=3 host_median_us=22.372
+P2_ROW n=32 policy=BoundarySerialized run=1 host_median_us=43.682
+P2_ROW n=32 policy=BoundarySerialized run=2 host_median_us=43.712
+P2_ROW n=32 policy=BoundarySerialized run=3 host_median_us=38.217
+P2_ROW n=64 policy=BoundarySerialized run=1 host_median_us=81.979
+P2_ROW n=64 policy=BoundarySerialized run=2 host_median_us=81.874
+P2_ROW n=64 policy=BoundarySerialized run=3 host_median_us=81.989
+P2_ROW n=2 policy=SystemEveryDispatch run=1 host_median_us=9.803
+P2_ROW n=2 policy=SystemEveryDispatch run=2 host_median_us=9.854
+P2_ROW n=2 policy=SystemEveryDispatch run=3 host_median_us=9.789
+P2_ROW n=4 policy=SystemEveryDispatch run=1 host_median_us=14.001
+P2_ROW n=4 policy=SystemEveryDispatch run=2 host_median_us=13.986
+P2_ROW n=4 policy=SystemEveryDispatch run=3 host_median_us=14.432
+P2_ROW n=8 policy=SystemEveryDispatch run=1 host_median_us=22.477
+P2_ROW n=8 policy=SystemEveryDispatch run=2 host_median_us=22.097
+P2_ROW n=8 policy=SystemEveryDispatch run=3 host_median_us=22.377
+P2_ROW n=16 policy=SystemEveryDispatch run=1 host_median_us=43.817
+P2_ROW n=16 policy=SystemEveryDispatch run=2 host_median_us=38.056
+P2_ROW n=16 policy=SystemEveryDispatch run=3 host_median_us=43.657
+P2_ROW n=32 policy=SystemEveryDispatch run=1 host_median_us=80.211
+P2_ROW n=32 policy=SystemEveryDispatch run=2 host_median_us=80.366
+P2_ROW n=32 policy=SystemEveryDispatch run=3 host_median_us=80.841
+P2_ROW n=64 policy=SystemEveryDispatch run=1 host_median_us=147.743
+P2_ROW n=64 policy=SystemEveryDispatch run=2 host_median_us=147.577
+P2_ROW n=64 policy=SystemEveryDispatch run=3 host_median_us=149.681
+P2_TABLE n policy runs med_of_med_us min_us max_us us_per_dispatch
+P2_SUMMARY n=2 policy=BoundarySerialized runs=3 med_of_med_us=8.722 min_us=8.536 max_us=8.737 us_per_dispatch=4.3610 vs_system_every=1.124x
+P2_SUMMARY n=4 policy=BoundarySerialized runs=3 med_of_med_us=10.660 min_us=10.620 max_us=10.671 us_per_dispatch=2.6650 vs_system_every=1.313x
+P2_SUMMARY n=8 policy=BoundarySerialized runs=3 med_of_med_us=14.562 min_us=14.397 max_us=14.582 us_per_dispatch=1.8202 vs_system_every=1.537x
+P2_SUMMARY n=16 policy=BoundarySerialized runs=3 med_of_med_us=22.422 min_us=22.372 max_us=22.587 us_per_dispatch=1.4014 vs_system_every=1.947x
+P2_SUMMARY n=32 policy=BoundarySerialized runs=3 med_of_med_us=43.682 min_us=38.217 max_us=43.712 us_per_dispatch=1.3651 vs_system_every=1.840x
+P2_SUMMARY n=64 policy=BoundarySerialized runs=3 med_of_med_us=81.979 min_us=81.874 max_us=81.989 us_per_dispatch=1.2809 vs_system_every=1.802x
+P2_SUMMARY n=2 policy=SystemEveryDispatch runs=3 med_of_med_us=9.803 min_us=9.789 max_us=9.854 us_per_dispatch=4.9015
+P2_SUMMARY n=4 policy=SystemEveryDispatch runs=3 med_of_med_us=14.001 min_us=13.986 max_us=14.432 us_per_dispatch=3.5002
+P2_SUMMARY n=8 policy=SystemEveryDispatch runs=3 med_of_med_us=22.377 min_us=22.097 max_us=22.477 us_per_dispatch=2.7971
+P2_SUMMARY n=16 policy=SystemEveryDispatch runs=3 med_of_med_us=43.657 min_us=38.056 max_us=43.817 us_per_dispatch=2.7286
+P2_SUMMARY n=32 policy=SystemEveryDispatch runs=3 med_of_med_us=80.366 min_us=80.211 max_us=80.841 us_per_dispatch=2.5114
+P2_SUMMARY n=64 policy=SystemEveryDispatch runs=3 med_of_med_us=147.743 min_us=147.577 max_us=149.681 us_per_dispatch=2.3085
+P2_OK nsweep complete (host µs only; not gen t/s)

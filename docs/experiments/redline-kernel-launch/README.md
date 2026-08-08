@@ -14,5 +14,6 @@ Research how **[Redline](https://github.com/warpfront/redline)** (user URL typo 
 - **E4 DONE (design):** [`E4_DESIGN.md`](E4_DESIGN.md) — `MLX_REDLINE_DECODE` default **OFF**; AQL fixed small-op subgraph; qmm stays HIP.  
 - **P0 GREEN:** env stub + CMake `MLX_LM_WITH_REDLINE=OFF` + gfx1150 chat smoke — [`P0_STUB.md`](P0_STUB.md).  
 - **P1 GREEN:** floor CO load+replay n=2 BoundarySerialized; host µs only — [`P1_LOAD.md`](P1_LOAD.md).  
-- **Next:** P2 session and/or P3 graph_decode integration doc (stop A needs P3 + quality PASS).  
+- **P2 GREEN:** N-sweep multi-run host wall — N=64 BS ~**82 µs** vs Sys ~**148 µs** (~**1.80×**) — [`P2_NSWEEP.md`](P2_NSWEEP.md).  
+- **Next:** P3 `graph_decode` / kernarg-patch integration doc (stop A). P2b engine session remains plan-only.  
 - **Implementation loop ACTIVE** (P0–P4). No gen t/s claim. No product default ON. Decode HIP graphs remain **product OFF**.

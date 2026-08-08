@@ -19,8 +19,8 @@
 
 ## Residual / next
 
-- P1 not green: single-dispatch batch rejected (`InvalidBatchShape`).  
+- ~~P1 not green: single-dispatch batch rejected (`InvalidBatchShape`).~~ **Resolved** — P1 PASS with n≥2 ([`P1_LOAD.md`](P1_LOAD.md)).  
 - Banner uses non-atomic `static bool` (matches other generate.cpp env logs).  
 - XOR only documents pure-graph env, not `MLX_USE_HIP_GRAPHS` / `MLX_HIP_GRAPH_DECODE` in the pure_enabled gate (banner comment still forbids coupling).
 
-**Reviewer notes:** ship P0; do not product-default-on; next fire = dual-dispatch P1.
+**Reviewer notes:** ship P0; do not product-default-on; P1/P2 measured later — see P1_LOAD / P2_NSWEEP.

@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **IMPLEMENTING P0–P4** — scheduler `019fdfb3d185` · **P0 GREEN · P1 GREEN** (P3 doc still open for stop A) |
+| **Loop status** | **IMPLEMENTING P0–P4** — **P0·P1·P2 GREEN** · P3 doc open (stop A) · scheduler `019fdfb3d185` |
 
 ## Board
 
@@ -21,12 +21,25 @@
 | E4 design hook | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) (`MLX_REDLINE_DECODE` default OFF) |
 | **P0 env stub** | **GREEN** — [`P0_STUB.md`](P0_STUB.md); code + CMake OFF + gfx1150 chat smoke logs |
 | **P1 AQL HSACO load** | **GREEN** — n=2 floor CO load+replay; host_median **8.455 µs** ([`P1_LOAD.md`](P1_LOAD.md)); **not** gen t/s |
-| **P2 session init** | **NOT STARTED** |
-| **P3 micro-op / graph_decode doc** | **NOT STARTED** (needed for stop A with quality PASS) |
+| **P2 N-sweep multi-run** | **GREEN** — N=2..64 × BS/Sys × 3 runs; N=64 BS **81.98 µs** vs Sys **147.7 µs** (~**1.80×**) ([`P2_NSWEEP.md`](P2_NSWEEP.md)) |
+| **P2b engine session init** | **PLAN** — [`P2_PLAN.md`](P2_PLAN.md) (dlopen READY; not this fire) |
+| **P3 graph_decode / kernarg doc** | **NOT STARTED** (needed for stop A with quality PASS) |
 | **P4 MoE multipath design** | **NOT STARTED** |
 | Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
+
+### 2026-08-07 — P2 N-sweep GREEN (continuous loop)
+
+- **Primary P-step:** P2 multi-run N-sweep (loop sequence).  
+- Clear Thought: sequentialthinking, decisionframework (P2 vs P3-first), scientificmethod.  
+- **Harness:** [`harness/p2_nsweep.sh`](harness/p2_nsweep.sh).  
+- **Measure:** BoundarySerialized vs SystemEveryDispatch, N∈{2,4,8,16,32,64}, 3 process runs, host µs only.  
+- **Headline:** N=64 BS med_of_med **81.979 µs** vs Sys **147.743 µs** (**1.80×**); ratio rises with N.  
+- **Log:** [`logs/p2-nsweep-20260807-215606.log`](logs/p2-nsweep-20260807-215606.log).  
+- **Doc:** [`P2_NSWEEP.md`](P2_NSWEEP.md).  
+- **Not claimed:** gen t/s; HIP eager re-bench; engine session (P2b).  
+- **Next:** P3 `graph_decode` integration doc → stop A with quality PASS.
 
 ### 2026-08-07 — P1 load+replay GREEN (same fire window)
 

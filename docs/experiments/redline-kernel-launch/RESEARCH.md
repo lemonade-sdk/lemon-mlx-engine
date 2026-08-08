@@ -127,6 +127,7 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | **E4** | Design-only `MLX_REDLINE_DECODE=1` hook sketch (no product default) | **DONE** — [`E4_DESIGN.md`](E4_DESIGN.md) |
 | **P0** | Env stub + banner + CMake optional link OFF | **GREEN** — [`P0_STUB.md`](P0_STUB.md) (gfx1150 smoke) |
 | **P1** | Toy CO load + retained AQL replay (n≥2) | **GREEN** — [`P1_LOAD.md`](P1_LOAD.md) host_median 8.455 µs (not gen t/s) |
+| **P2** | N-sweep multi-run host wall (BS vs Sys) | **GREEN** — [`P2_NSWEEP.md`](P2_NSWEEP.md) N=64 ~1.80× BS vs Sys (host µs) |
 
 **HARD BAN:** No fake TPS; no claiming Redline wins without logs on **this** GPU; no re-opening killed HIP-graph product decode.
 
@@ -161,7 +162,9 @@ Stable address work in `graph_decode.cpp` is **aligned** with Redline’s “pat
 | [`E4_DESIGN.md`](E4_DESIGN.md) | `MLX_REDLINE_DECODE` design (default OFF) |
 | [`P0_STUB.md`](P0_STUB.md) | P0 env stub + smoke evidence |
 | [`P1_PLAN.md`](P1_PLAN.md) | P1 harness plan |
-| [`harness/`](harness/) | E2 + P1 host-wall / HSACO sources |
+| [`P2_NSWEEP.md`](P2_NSWEEP.md) | P2 N-sweep multi-run host wall |
+| [`P2_PLAN.md`](P2_PLAN.md) | P2b engine session init (plan) |
+| [`harness/`](harness/) | E2 + P1 + P2 nsweep host-wall / HSACO sources |
 | [`INSTALL_UPGRADE.md`](INSTALL_UPGRADE.md) | 7.13 vs 7.14 upgrade notes |
 | [`logs/`](logs/) | E0–E2 + P0 smoke + floor CO |
 
