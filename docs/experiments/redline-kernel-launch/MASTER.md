@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); M2 OWN_RMSNORM gen A/B **no ≥2% win**; P12 PASS; product default ON **forbidden** |
+| **Loop status** | **P13 bridge next** — OWN_GLUE+OWN_RMSNORM code **DONE** (default OFF); gen no ≥2% win (PRE dual-queue); PR work: [`P13_STREAM_BRIDGE_PR.md`](P13_STREAM_BRIDGE_PR.md) |
 
 ## Board
 

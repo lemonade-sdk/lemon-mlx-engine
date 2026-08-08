@@ -60,7 +60,8 @@
 | **P12b** | Cut mid-eval **POST_SYNC** tax (`MLX_REDLINE_POST_SYNC=device\|stream\|off`) | **CODE** — default device; stream/off research-only; B1-off≈B1-device (~−2.6%) → post-sync **not** primary tax; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) | Dual-queue races if off without events |
 | **P12c** | Cut **pre**-stream / host set_k tax on OWN_RMSNORM (set_k-before-pre; `PRE_SYNC` knob) | **MEASURED** — pre dominates; B1 −3.0%; PRE=off recovers half (−1.6%) not shippable; [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) | — |
 | **P12d** | Ordering: post=auto (replay wait); pre=query-then-sync | **CODE** — [`P12D_ORDERING.md`](P12D_ORDERING.md); same-queue still blocked | Residual pre_wait = dual-queue host bubble |
-| **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
+| **P13** | **HIP stream/event bridge** (drop host PRE) — Redline C-API + lemon wire | Spec: [`P13_STREAM_BRIDGE_PR.md`](P13_STREAM_BRIDGE_PR.md) | Spike fails on gfx1150 |
+| **P13b** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
 ### Track B — **Measure honestly** (always)
