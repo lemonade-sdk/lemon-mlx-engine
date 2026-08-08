@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **P0·P1·P2·P2b GREEN · P3 DOC PASS** — stop A criteria met; optional P4 · scheduler `019fdfb3d185` |
+| **Loop status** | **STOPPED (rule A)** — P0+P1 green + P3 doc + quality PASS · scheduler_delete `019fdfb3d185` |
 
 ## Board
 
@@ -28,6 +28,15 @@
 | Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
+
+### 2026-08-07 — P3 doc hardened + stop A (continuous loop)
+
+- **Primary P-step:** P3 integration doc (file:line citations for `graph_decode.cpp` / pure-path `generate.cpp`).  
+- Clear Thought: sequentialthinking, decisionframework (P3 vs P2b/P4), metacognitivemonitoring.  
+- **Evidence:** [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md) + [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) **PASS**.  
+- **Stop A:** P0+P1 gfx1150 logs + P3 doc + quality PASS → **met** → **scheduler_delete** `019fdfb3d185`.  
+- **Not claimed:** gen t/s; product default ON; in-process `rl_gpu_new` full bind (residual).  
+- Optional P4 sketch already on branch ([`P4_MOE_MULTIPATH.md`](P4_MOE_MULTIPATH.md)).
 
 ### 2026-08-08 — P4 MoE multipath sketch
 
