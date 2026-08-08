@@ -1,0 +1,10 @@
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=859 MB, peak=859 MB, cache=2568 B
+[redline] gd_bind PASS input=0x72714dc00540 pos=0x72714dc00370 stable=1 (P6 VRAM ptr; not gen t/s; forward still product)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes phase2-async-used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[redline] OWN_RMSNORM host profile (n=31 TOTAL): set_k=9.55us pre_sync=0us ordered_join=2197.51us post_sync=0.583us ib_host_wait=25.487us | MEAN/call: set_k=0.308065us pre_sync=0us ordered_join=70.8873us post_sync=0.0188065us ib_host_wait=0.822161us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue (NOT pure doorbell; host wall; NOT gen t/s) pre_query_skip=0 pre_wait=31 ib_wait_n=27 dbl_skip_wait=4
+Prompt:     1 tokens, 3.50872 tokens/s, 0.285004s
+Generation: 64 tokens, 112.475 tokens/s, 0.569015s

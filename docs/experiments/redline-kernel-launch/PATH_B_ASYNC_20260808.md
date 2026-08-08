@@ -70,3 +70,19 @@ Path B WaitValue **completes gen** after completion-signal fence (20260808-14425
 | B0b | product | 0 | **116.49** |
 
 **Verdict:** real Path B WaitValue **works** (no hang). Gen still ~−3% vs B0 — **continue** Path B for correctness/PRE cut research; **no ship**.
+
+## Continue fix: dual IB + idle submit (20260808-144637 / 144904)
+
+| Change | Effect |
+|--------|--------|
+| Dual retained IB per shape | `dbl_skip_wait≈4` / `ib_wait_n≈27` on n=31; **ib_host_wait ~15–25 µs total** (was host-serializing every reuse) |
+| Idle `rl_pm4_submit` when `hipStreamQuery` OK | Wired; **pre_query_skip=0** on async (stream never idle after first WaitValue) — no gen win yet |
+| `rl_pm4_submit` publishes completion WaitValue | Required for idle path |
+
+| Arm (144904) | gen t/s |
+|--------------|--------:|
+| B0 / B0b | 115.6 / 116.5 |
+| B1p1 | 110.7 |
+| B1async / r2 | **111.1** / **111.1** |
+
+**Residual tax (honest):** ordered_join still ~68–80 µs/call host wall (doorbell + WaitValue enqueue + dual-queue). GPU critical path still waits RMSNorm via WaitValue. **No ≥2% win.** Next levers: faster retained submit, fewer owns, or own heavier ops — not more hostwait hacks.

@@ -253,6 +253,7 @@ using rl_pm4_replay_after_hip_stream_fn = int32_t (*)(void* ib, void* hip_stream
 using rl_pm4_submit_after_hip_stream_fn = int32_t (*)(void* ib, void* hip_stream);
 using rl_gpu_consumer_wait_hip_stream_fn = int32_t (*)(void* hip_stream);
 using rl_pm4_wait_fn = int32_t (*)(void* ib);
+using rl_pm4_submit_fn = int32_t (*)(void* ib);
 using rl_feature_bits_fn = uint32_t (*)();
 using rl_pm4_ib_set_kernargs_fn = int32_t (*)(
     void* ib,
@@ -275,6 +276,7 @@ rl_pm4_replay_after_hip_stream_fn g_fn_replay_after_hip_p2 = nullptr;
 rl_pm4_submit_after_hip_stream_fn g_fn_submit_after_p2 = nullptr;
 rl_gpu_consumer_wait_hip_stream_fn g_fn_consumer_wait = nullptr;
 rl_pm4_wait_fn g_fn_pm4_wait = nullptr;
+rl_pm4_submit_fn g_fn_pm4_submit = nullptr;
 bool g_hip_stream_bridge = false;
 bool g_hip_stream_phase2 = false;
 bool g_hip_stream_async = false; // symbols for Path B present
@@ -320,8 +322,15 @@ uint64_t g_rms_ns_setk = 0;
 uint64_t g_rms_ns_pre = 0;
 uint64_t g_rms_ns_ordered = 0; // was mislabeled "replay"
 uint64_t g_rms_ns_post = 0;
-// key = (dtype_code << 24) | n_rows  → retained single-dispatch IB
-std::unordered_map<uint32_t, void*> g_rms_ib_by_key;
+uint64_t g_rms_ns_ib_wait = 0; // host rl_pm4_wait for IB reuse (Path B)
+uint64_t g_rms_ib_wait_count = 0;
+uint64_t g_rms_ib_dbl_skip_wait = 0; // dual-buffer avoided host wait
+// key = (dtype_code << 24) | n_rows → dual retained IBs for Path B overlap
+struct RmsIbPair {
+    void* slot[2] = {nullptr, nullptr};
+    uint8_t next = 0; // which slot to try first
+};
+std::unordered_map<uint32_t, RmsIbPair> g_rms_ib_by_key;
 constexpr int kRmsBlock = 256;
 constexpr size_t kRmsKargLive = 40; // 3×u64 + f32 + u32 + i64
 
@@ -1144,26 +1153,19 @@ const char* rms_symbol_for_dtype(int dtype_code) {
     }
 }
 
-// Build or reuse retained IB for (dtype, n_rows). Caller holds g_mu.
+// Forward: defined with HIP stream bridge helpers below.
+bool ensure_ib_ready_for_setk(void* ib);
+
+// Build one retained IB for (dtype, n_rows). Caller holds g_mu.
 // Redline rl_pm4_dispatch grid is **total workitems** (HIP gridDim×blockDim),
 // not HIP gridDim; block is workgroup size. See redline-capi rl_pm4_dispatch.
-void* get_or_build_rms_ib(int dtype_code, uint32_t n_rows) {
+void* build_one_rms_ib(int dtype_code, uint32_t n_rows) {
     if (!g_rms_armed || !g_rms_mod || !g_rms_gpu || !g_fn_b_new || !g_fn_dispatch ||
         !g_fn_finalize || n_rows == 0) {
         return nullptr;
     }
     const char* sym = rms_symbol_for_dtype(dtype_code);
     if (!sym) {
-        return nullptr;
-    }
-    const uint32_t key =
-        (static_cast<uint32_t>(dtype_code) << 24) | (n_rows & 0x00FFFFFFu);
-    auto it = g_rms_ib_by_key.find(key);
-    if (it != g_rms_ib_by_key.end()) {
-        return it->second;
-    }
-    // Cap cache — avoid unbounded growth on wild shapes.
-    if (g_rms_ib_by_key.size() >= 64) {
         return nullptr;
     }
     const uint32_t block = static_cast<uint32_t>(kRmsBlock);
@@ -1201,8 +1203,94 @@ void* get_or_build_rms_ib(int dtype_code, uint32_t n_rows) {
     if (g_fn_finalize(g_rms_gpu, builder, &ib) != kRlOk || !ib) {
         return nullptr;
     }
-    g_rms_ib_by_key[key] = ib;
     return ib;
+}
+
+void free_all_rms_ibs() {
+    for (auto& kv : g_rms_ib_by_key) {
+        for (int s = 0; s < 2; ++s) {
+            if (kv.second.slot[s] && g_fn_ib_free) {
+                g_fn_ib_free(kv.second.slot[s]);
+            }
+        }
+    }
+    g_rms_ib_by_key.clear();
+    g_async_ib_needs_wait.clear();
+}
+
+// Path B: dual retained IBs per shape so set_k/submit can use a free slot while
+// the other is still in flight (product stream WaitValue orders consumers).
+// Non-async: always slot0 (single IB). Caller holds g_mu.
+void* acquire_rms_ib(int dtype_code, uint32_t n_rows, bool dual_for_async) {
+    if (!g_rms_armed || n_rows == 0) {
+        return nullptr;
+    }
+    const uint32_t key =
+        (static_cast<uint32_t>(dtype_code) << 24) | (n_rows & 0x00FFFFFFu);
+    auto it = g_rms_ib_by_key.find(key);
+    if (it == g_rms_ib_by_key.end()) {
+        // Cap cache — dual slots double memory; keep key budget modest.
+        if (g_rms_ib_by_key.size() >= 32) {
+            return nullptr;
+        }
+        RmsIbPair pair;
+        pair.slot[0] = build_one_rms_ib(dtype_code, n_rows);
+        if (!pair.slot[0]) {
+            return nullptr;
+        }
+        if (dual_for_async) {
+            pair.slot[1] = build_one_rms_ib(dtype_code, n_rows);
+            // If second fails, continue single-slot (still correct).
+        }
+        it = g_rms_ib_by_key.emplace(key, pair).first;
+    }
+    RmsIbPair& pair = it->second;
+    // Lazy second slot if async became available after first build.
+    if (dual_for_async && !pair.slot[1]) {
+        pair.slot[1] = build_one_rms_ib(dtype_code, n_rows);
+    }
+
+    auto slot_busy = [](void* ib) -> bool {
+        if (!ib) {
+            return true;
+        }
+        auto wit = g_async_ib_needs_wait.find(ib);
+        return wit != g_async_ib_needs_wait.end() && wit->second;
+    };
+
+    if (!dual_for_async || !pair.slot[1]) {
+        // Single-IB: host-wait prior async if any, then reuse.
+        if (!ensure_ib_ready_for_setk(pair.slot[0])) {
+            return nullptr;
+        }
+        return pair.slot[0];
+    }
+
+    // Dual: prefer a slot that does not need host wait.
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const uint8_t idx = static_cast<uint8_t>((pair.next + attempt) & 1u);
+        void* ib = pair.slot[idx];
+        if (!ib) {
+            continue;
+        }
+        if (!slot_busy(ib)) {
+            pair.next = static_cast<uint8_t>((idx + 1u) & 1u);
+            ++g_rms_ib_dbl_skip_wait;
+            return ib;
+        }
+    }
+    // Both in flight — host-join the next slot (oldest in round-robin).
+    void* ib = pair.slot[pair.next & 1u];
+    if (!ensure_ib_ready_for_setk(ib)) {
+        return nullptr;
+    }
+    pair.next = static_cast<uint8_t>((pair.next + 1u) & 1u);
+    return ib;
+}
+
+// Smoke / simple path: one IB for (dtype, n_rows).
+void* get_or_build_rms_ib(int dtype_code, uint32_t n_rows) {
+    return acquire_rms_ib(dtype_code, n_rows, /*dual_for_async=*/false);
 }
 
 // P13: optional PR-A symbols (hip stream wait + ordered replay + Path B async).
@@ -1212,6 +1300,7 @@ void resolve_hip_stream_bridge(void* lib) {
     g_fn_submit_after_p2 = nullptr;
     g_fn_consumer_wait = nullptr;
     g_fn_pm4_wait = nullptr;
+    g_fn_pm4_submit = nullptr;
     g_hip_stream_bridge = false;
     g_hip_stream_phase2 = false;
     g_hip_stream_async = false;
@@ -1228,6 +1317,7 @@ void resolve_hip_stream_bridge(void* lib) {
     auto* cwait = reinterpret_cast<rl_gpu_consumer_wait_hip_stream_fn>(
         ::dlsym(lib, "rl_gpu_consumer_wait_hip_stream"));
     auto* pwait = reinterpret_cast<rl_pm4_wait_fn>(::dlsym(lib, "rl_pm4_wait"));
+    auto* psubmit = reinterpret_cast<rl_pm4_submit_fn>(::dlsym(lib, "rl_pm4_submit"));
     (void)feat;
     if (after) {
         g_fn_replay_after_hip = after;
@@ -1241,6 +1331,7 @@ void resolve_hip_stream_bridge(void* lib) {
         g_fn_submit_after_p2 = submit2;
         g_fn_consumer_wait = cwait;
         g_fn_pm4_wait = pwait;
+        g_fn_pm4_submit = psubmit; // optional idle-stream fast path
         g_hip_stream_async = true;
     }
     (void)kRlFeatureHipStreamWait;
@@ -1255,10 +1346,16 @@ bool ensure_ib_ready_for_setk(void* ib) {
     if (it == g_async_ib_needs_wait.end() || !it->second) {
         return true;
     }
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
     if (!g_fn_pm4_wait || g_fn_pm4_wait(ib) != kRlOk) {
         ++g_rms_fallback_count;
         return false;
     }
+    g_rms_ns_ib_wait += static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - t0)
+            .count());
+    ++g_rms_ib_wait_count;
     it->second = false;
     return true;
 }
@@ -1414,12 +1511,7 @@ bool try_arm_rmsnorm(void* lib, void* gpu) {
     };
     if (set_prefix(ib) != kRlOk || replay(ib) != kRlOk) {
         g_rms_armed = false;
-        for (auto& kv : g_rms_ib_by_key) {
-            if (kv.second) {
-                ib_free(kv.second);
-            }
-        }
-        g_rms_ib_by_key.clear();
+        free_all_rms_ibs();
         g_rms_mod = nullptr;
         g_rms_gpu = nullptr;
         mod_free(mod);
@@ -1445,12 +1537,7 @@ bool try_arm_rmsnorm(void* lib, void* gpu) {
 
     if (!ok) {
         g_rms_armed = false;
-        for (auto& kv : g_rms_ib_by_key) {
-            if (kv.second) {
-                ib_free(kv.second);
-            }
-        }
-        g_rms_ib_by_key.clear();
+        free_all_rms_ibs();
         g_rms_mod = nullptr;
         g_rms_gpu = nullptr;
         mod_free(mod);
@@ -2145,13 +2232,21 @@ bool redline_try_own_rmsnorm_packed(
         return false;
     }
 
-    void* ib = get_or_build_rms_ib(dtype_code, n_rows);
+    // Path B flags early: dual IB acquire needs to know if async is intended.
+    const RedlinePreSync pre_mode = pre_sync_mode();
+    const bool want_phase2 = env_exact_one("MLX_REDLINE_PHASE2");
+    const bool want_async =
+        want_phase2 && env_exact_one("MLX_REDLINE_PHASE2_ASYNC") && g_hip_stream_async &&
+        hip_stream && pre_mode != RedlinePreSync::Off &&
+        pre_mode != RedlinePreSync::Device;
+    // Hostwait is explicit only — do not silently rewrite ASYNC into host join.
+    const bool async_hostwait = want_async && env_exact_one("MLX_REDLINE_ASYNC_HOSTWAIT");
+
+    // Dual retained IBs when true Path B WaitValue (not hostwait): overlap set_k
+    // on free slot while prior IB is still in flight on the RL queue.
+    void* ib = acquire_rms_ib(dtype_code, n_rows, /*dual_for_async=*/want_async && !async_hostwait);
     if (!ib) {
         ++g_rms_fallback_count;
-        return false;
-    }
-    // Path B: prior async submit on this IB must complete before set_k.
-    if (!ensure_ib_ready_for_setk(ib)) {
         return false;
     }
 
@@ -2190,22 +2285,12 @@ bool redline_try_own_rmsnorm_packed(
 
     // Path B async (opt-in): MLX_REDLINE_PHASE2=1 and MLX_REDLINE_PHASE2_ASYNC=1
     // → submit_after + hipStreamWaitValue32 on product stream (true Path B).
-    // Known hang on gfx1150 (WRITE_DATA may not unblock WaitValue) — still the
-    // meaning of ASYNC; not product default (flags stay opt-in).
-    // Escape hatch only: MLX_REDLINE_ASYNC_HOSTWAIT=1 → host rl_pm4_wait after
-    // submit (proves doorbell; does NOT cut PRE tax; not a gen-win path).
-    // Else phase2 sync (PHASE2=1) or phase1 StreamSynchronize ordered path.
-    const RedlinePreSync pre_mode = pre_sync_mode();
+    // Consumer fence: HSA completion signal (redline b7ebc83+). Dual IBs cut
+    // host rl_pm4_wait on consecutive same-shape owns. ASYNC_HOSTWAIT=1 is
+    // diagnostic only. Else phase2 sync / phase1 ordered path.
     bool used_bridge = false;
     bool used_async = false;
     bool used_async_hostwait = false;
-    const bool want_phase2 = env_exact_one("MLX_REDLINE_PHASE2");
-    const bool want_async =
-        want_phase2 && env_exact_one("MLX_REDLINE_PHASE2_ASYNC") && g_hip_stream_async &&
-        hip_stream && pre_mode != RedlinePreSync::Off &&
-        pre_mode != RedlinePreSync::Device;
-    // Hostwait is explicit only — do not silently rewrite ASYNC into host join.
-    const bool async_hostwait = want_async && env_exact_one("MLX_REDLINE_ASYNC_HOSTWAIT");
 
     if (profile) {
         t0 = mark();
@@ -2213,7 +2298,22 @@ bool redline_try_own_rmsnorm_packed(
 
     if (want_async) {
         ++g_pre_sync_wait;
-        if (g_fn_submit_after_p2(ib, hip_stream) != kRlOk) {
+        // Idle product stream: skip WriteValue+WAIT_REG_MEM (no outstanding
+        // producers). Still publish completion WaitValue for consumers.
+        bool submitted = false;
+        if (g_fn_pm4_submit && hip_stream) {
+            auto* st = static_cast<hipStream_t>(hip_stream);
+            if (hipStreamQuery(st) == hipSuccess) {
+                ++g_pre_query_skip;
+                submitted = (g_fn_pm4_submit(ib) == kRlOk);
+            } else {
+                (void)hipGetLastError();
+            }
+        }
+        if (!submitted) {
+            submitted = (g_fn_submit_after_p2(ib, hip_stream) == kRlOk);
+        }
+        if (!submitted) {
             // Fall back to sync phase2 if available, else phase1.
             if (g_fn_replay_after_hip_p2 &&
                 g_fn_replay_after_hip_p2(ib, hip_stream) == kRlOk) {
@@ -2226,8 +2326,6 @@ bool redline_try_own_rmsnorm_packed(
                 return false;
             }
         } else if (async_hostwait) {
-            // Diagnostic Path B: prove submit_after without GPU WaitValue.
-            // Host joins Redline completion before product reuses outputs / IB.
             g_async_ib_needs_wait[ib] = true;
             if (!g_fn_pm4_wait || g_fn_pm4_wait(ib) != kRlOk) {
                 ++g_rms_fallback_count;
@@ -2239,14 +2337,11 @@ bool redline_try_own_rmsnorm_packed(
         } else {
             g_async_ib_needs_wait[ib] = true;
             if (g_fn_consumer_wait(hip_stream) != kRlOk) {
-                // Consumer wait failed — host-join Redline before return.
                 if (g_fn_pm4_wait) {
                     (void)g_fn_pm4_wait(ib);
                     g_async_ib_needs_wait[ib] = false;
                 }
                 ++g_rms_fallback_count;
-                // Still count as owned if submit succeeded; product HIP is ordered
-                // only after wait — safer to fail open to product? Prefer fail.
                 return false;
             }
             used_bridge = true;
@@ -2357,14 +2452,18 @@ bool redline_try_own_rmsnorm_packed(
                   << "us pre_sync=" << us_total(g_rms_ns_pre)
                   << "us ordered_join=" << us_total(g_rms_ns_ordered)
                   << "us post_sync=" << us_total(g_rms_ns_post)
+                  << "us ib_host_wait=" << us_total(g_rms_ns_ib_wait)
                   << "us | MEAN/call: set_k=" << us_mean(g_rms_ns_setk)
                   << "us pre_sync=" << us_mean(g_rms_ns_pre)
                   << "us ordered_join=" << us_mean(g_rms_ns_ordered)
                   << "us post_sync=" << us_mean(g_rms_ns_post)
-                  << "us | ordered_join=PRE_drain+RL_submit+completion_wait"
+                  << "us ib_host_wait=" << us_mean(g_rms_ns_ib_wait)
+                  << "us | ordered_join=PRE_drain+RL_submit+WaitValue_enqueue"
                      " (NOT pure doorbell; host wall; NOT gen t/s)"
                   << " pre_query_skip=" << g_pre_query_skip
-                  << " pre_wait=" << g_pre_sync_wait << "\n";
+                  << " pre_wait=" << g_pre_sync_wait
+                  << " ib_wait_n=" << g_rms_ib_wait_count
+                  << " dbl_skip_wait=" << g_rms_ib_dbl_skip_wait << "\n";
     }
     return true;
 #endif
