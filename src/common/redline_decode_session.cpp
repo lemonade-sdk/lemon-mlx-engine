@@ -2222,8 +2222,11 @@ bool redline_try_own_rmsnorm_packed(
             << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
                "(product HIP RMSNorm skipped; P12d/P13 bridge="
             << (g_hip_stream_bridge ? "yes" : "no")
-            << (g_hip_stream_phase2 ? "+phase2" : "")
-            << (used_bridge ? " used" : "")
+            << (used_bridge
+                    ? (env_exact_one("MLX_REDLINE_PHASE2") && g_fn_replay_after_hip_p2
+                           ? " phase2-used"
+                           : " phase1-used")
+                    : "")
             << "; set_k-before-pre; PRE_SYNC=" << pre_sync_label()
             << " POST_SYNC=" << post_sync_label() << "; NOT gen t/s)\n";
     }
