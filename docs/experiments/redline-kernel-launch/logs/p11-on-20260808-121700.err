@@ -1,0 +1,94 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=859 MB, peak=859 MB, cache=2568 B
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[launch-inv] enabled (product path; default OFF; NOT gen t/s; tokens=3)
+[launch-inv] tag=L1-token-0 total_dispatches=395 est_host_us~592 (E1-ish floor * N; NOT gen t/s; product path inventory)
+[launch-inv] by_kind:
+       275  kernel
+       120  lib
+[launch-inv] by_prim (top 40):
+       187  est_us~280  QuantizedMatmul
+        90  est_us~135  CustomKernel
+        37  est_us~56  RMSNorm
+        24  est_us~36  Add
+        24  est_us~36  CompiledSigmoidBroadcastBroadcastMultiplyBroadcastBroadcastMultiply
+        12  est_us~18  RoPE
+         6  est_us~9  CompiledSigmoidBroadcastBroadcastMultiply
+         6  est_us~9  Reshape
+         6  est_us~9  ScaledDotProductAttention
+         2  est_us~3  ArgReduce
+         1  est_us~2  Gather
+[launch-inv] by_prim+kind (top 40):
+       187  kernel  QuantizedMatmul
+        90  lib  CustomKernel
+        37  kernel  RMSNorm
+        24  kernel  Add
+        24  lib  CompiledSigmoidBroadcastBroadcastMultiplyBroadcastBroadcastMultiply
+        12  kernel  RoPE
+         6  lib  CompiledSigmoidBroadcastBroadcastMultiply
+         6  kernel  Reshape
+         6  kernel  ScaledDotProductAttention
+         2  kernel  ArgReduce
+         1  kernel  Gather
+[launch-inv] end tag=L1-token-0
+[launch-inv] tag=L1-token-1 total_dispatches=395 est_host_us~592 (E1-ish floor * N; NOT gen t/s; product path inventory)
+[launch-inv] by_kind:
+       275  kernel
+       120  lib
+[launch-inv] by_prim (top 40):
+       187  est_us~280  QuantizedMatmul
+        90  est_us~135  CustomKernel
+        37  est_us~56  RMSNorm
+        24  est_us~36  Add
+        24  est_us~36  CompiledSigmoidBroadcastBroadcastMultiplyBroadcastBroadcastMultiply
+        12  est_us~18  RoPE
+         6  est_us~9  CompiledSigmoidBroadcastBroadcastMultiply
+         6  est_us~9  Reshape
+         6  est_us~9  ScaledDotProductAttention
+         2  est_us~3  ArgReduce
+         1  est_us~2  Gather
+[launch-inv] by_prim+kind (top 40):
+       187  kernel  QuantizedMatmul
+        90  lib  CustomKernel
+        37  kernel  RMSNorm
+        24  kernel  Add
+        24  lib  CompiledSigmoidBroadcastBroadcastMultiplyBroadcastBroadcastMultiply
+        12  kernel  RoPE
+         6  lib  CompiledSigmoidBroadcastBroadcastMultiply
+         6  kernel  Reshape
+         6  kernel  ScaledDotProductAttention
+         2  kernel  ArgReduce
+         1  kernel  Gather
+[launch-inv] end tag=L1-token-1
+[launch-inv] tag=L1-token-2 total_dispatches=395 est_host_us~592 (E1-ish floor * N; NOT gen t/s; product path inventory)
+[launch-inv] by_kind:
+       275  kernel
+       120  lib
+[launch-inv] by_prim (top 40):
+       187  est_us~280  QuantizedMatmul
+        90  est_us~135  CustomKernel
+        37  est_us~56  RMSNorm
+        24  est_us~36  Add
+        24  est_us~36  CompiledSigmoidBroadcastBroadcastMultiplyBroadcastBroadcastMultiply
+        12  est_us~18  RoPE
+         6  est_us~9  CompiledSigmoidBroadcastBroadcastMultiply
+         6  est_us~9  Reshape
+         6  est_us~9  ScaledDotProductAttention
+         2  est_us~3  ArgReduce
+         1  est_us~2  Gather
+[launch-inv] by_prim+kind (top 40):
+       187  kernel  QuantizedMatmul
+        90  lib  CustomKernel
+        37  kernel  RMSNorm
+        24  kernel  Add
+        24  lib  CompiledSigmoidBroadcastBroadcastMultiplyBroadcastBroadcastMultiply
+        12  kernel  RoPE
+         6  lib  CompiledSigmoidBroadcastBroadcastMultiply
+         6  kernel  Reshape
+         6  kernel  ScaledDotProductAttention
+         2  kernel  ArgReduce
+         1  kernel  Gather
+[launch-inv] end tag=L1-token-2
+Prompt:     1 tokens, 1.86104 tokens/s, 0.537333s
+Generation: 6 tokens, 130.163 tokens/s, 0.0460959s

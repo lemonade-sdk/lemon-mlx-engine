@@ -1,0 +1,287 @@
+diff --git a/mlx/backend/rocm/device.cpp b/mlx/backend/rocm/device.cpp
+index f71cd702..664cbfc4 100644
+--- a/mlx/backend/rocm/device.cpp
++++ b/mlx/backend/rocm/device.cpp
+@@ -17,6 +17,8 @@
+ #include <mutex>
+ #include <sstream>
+ #include <string>
++#include <unordered_map>
++#include <utility>
+ #include <vector>
+ 
+ namespace mlx::core::rocm {
+@@ -38,28 +40,180 @@ inline bool is_empty_dim(dim3 dim) {
+ static std::atomic<bool> g_graph_decode_mode{false};
+ 
+ bool use_hip_graphs() {
+-  // The rebuild-every-eval graph-build path is a net loss vs eager (and the
+-  // prefill variant segfaults on RDNA3.5). Decode uses build-once
+-  // capture/replay (decode_capture_*) and prefill uses the WMMA GEMM — neither
+-  // goes through here — so this path is permanently off.
++  // Default OFF. The rebuild-every-eval graph-build path was a net loss vs
++  // eager and historically segfaulted on RDNA3.5 prefill; pure decode uses
++  // decode_capture_* instead. Opt-in restored for honest prefill-graph A/B
++  // (lemon-mlx prefill-hip-graph experiment):
++  //   MLX_HIP_GRAPH_PREFILL=1  — multi-token / non-decode-mode evals
++  //   MLX_HIP_GRAPH_DECODE=1   — L=1 when graph_decode_mode is on
++  //   MLX_USE_HIP_GRAPHS=1     — both
++  // Pair with MLX_GRAPH_PREFILL_REPLAY=1 to ExecUpdate stable prefill-chunk
++  // topologies. Leave unset for product (eager).
+   //
+-  // Train graphs: also hard-off until a TrainArena (see RocmAllocator
+-  // train_arena_*) wraps the step tape with stable addresses. Flipping this
+-  // without an arena reintroduces aperture violations / wrong loss.
+-  return false;
++  // Train graphs: also require a TrainArena (stable addresses) or aperture
++  // violations / wrong loss return.
++  static const bool legacy = [] {
++    const char* e = std::getenv("MLX_USE_HIP_GRAPHS");
++    return e && (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0);
++  }();
++  static const bool prefill = legacy || [] {
++    const char* e = std::getenv("MLX_HIP_GRAPH_PREFILL");
++    return e && (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0);
++  }();
++  static const bool decode = legacy || [] {
++    const char* e = std::getenv("MLX_HIP_GRAPH_DECODE");
++    return e && (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0);
++  }();
++  return g_graph_decode_mode.load(std::memory_order_relaxed) ? decode : prefill;
+ }
+ 
+ // Count of inline (graph-splitting) launches — library GEMM / JIT / memset run
+ // outside the graph via launch_kernel. Declared extern in device.h.
+ std::atomic<long> g_inline_launches_{0};
++// Product HIP host-dispatch inventory (P11 / redline-kernel-launch). Counts
++// eager path sites only when MLX_LAUNCH_INV=1 or MLX_REDLINE_LAUNCH_INV=1.
++// NOT gen t/s. Default OFF (zero overhead when unset).
++std::atomic<long> g_hip_launches_{0};
+ // True while a full decode-step stream capture is in progress. The worker's
+ // completion signaling uses hipLaunchHostFunc, which is NOT stream-capturable
+ // (and a captured host node would re-fire on every replay). While capturing we
+ // skip the host callback and signal completion inline instead (see Worker).
+ std::atomic<bool> g_decode_capturing{false};
+-void set_current_prim(const char*) {}
++
++// P11 launch inventory state (process lifetime when enabled).
++thread_local const char* g_current_prim = "unknown";
++static std::mutex g_inv_mu;
++// key: "prim\tkind" → count
++static std::unordered_map<std::string, long> g_inv_by_key;
++static std::unordered_map<std::string, long> g_inv_by_prim;
++static std::unordered_map<std::string, long> g_inv_by_kind;
++
++bool launch_inv_enabled() {
++  static const bool on = [] {
++    const char* a = std::getenv("MLX_LAUNCH_INV");
++    if (a && a[0] == '1' && a[1] == '\0')
++      return true;
++    const char* b = std::getenv("MLX_REDLINE_LAUNCH_INV");
++    return b && b[0] == '1' && b[1] == '\0';
++  }();
++  return on;
++}
++
++void launch_inv_reset() {
++  g_hip_launches_.store(0, std::memory_order_relaxed);
++  std::lock_guard<std::mutex> lock(g_inv_mu);
++  g_inv_by_key.clear();
++  g_inv_by_prim.clear();
++  g_inv_by_kind.clear();
++}
++
++void launch_inv_dump(const char* tag) {
++  if (!launch_inv_enabled()) {
++    return;
++  }
++  const char* t = (tag && tag[0]) ? tag : "inv";
++  long total = g_hip_launches_.load(std::memory_order_relaxed);
++  std::vector<std::pair<long, std::string>> by_prim;
++  std::vector<std::pair<long, std::string>> by_kind;
++  std::vector<std::pair<long, std::string>> by_key;
++  {
++    std::lock_guard<std::mutex> lock(g_inv_mu);
++    by_prim.reserve(g_inv_by_prim.size());
++    for (const auto& kv : g_inv_by_prim) {
++      by_prim.emplace_back(kv.second, kv.first);
++    }
++    by_kind.reserve(g_inv_by_kind.size());
++    for (const auto& kv : g_inv_by_kind) {
++      by_kind.emplace_back(kv.second, kv.first);
++    }
++    by_key.reserve(g_inv_by_key.size());
++    for (const auto& kv : g_inv_by_key) {
++      by_key.emplace_back(kv.second, kv.first);
++    }
++  }
++  auto cmp = [](const auto& a, const auto& b) {
++    if (a.first != b.first)
++      return a.first > b.first;
++    return a.second < b.second;
++  };
++  std::sort(by_prim.begin(), by_prim.end(), cmp);
++  std::sort(by_kind.begin(), by_kind.end(), cmp);
++  std::sort(by_key.begin(), by_key.end(), cmp);
++
++  // Host-dispatch inventory only. Floor ~1–2 µs/disp is E1 toy floor, NOT gen t/s.
++  constexpr double k_est_us_per = 1.5;
++  fprintf(
++      stderr,
++      "[launch-inv] tag=%s total_dispatches=%ld est_host_us~%.0f "
++      "(E1-ish floor * N; NOT gen t/s; product path inventory)\n",
++      t,
++      total,
++      static_cast<double>(total) * k_est_us_per);
++  fprintf(stderr, "[launch-inv] by_kind:\n");
++  for (const auto& kv : by_kind) {
++    fprintf(stderr, "  %8ld  %s\n", kv.first, kv.second.c_str());
++  }
++  fprintf(stderr, "[launch-inv] by_prim (top 40):\n");
++  int n = 0;
++  for (const auto& kv : by_prim) {
++    if (n++ >= 40)
++      break;
++    double est = static_cast<double>(kv.first) * k_est_us_per;
++    fprintf(
++        stderr,
++        "  %8ld  est_us~%.0f  %s\n",
++        kv.first,
++        est,
++        kv.second.c_str());
++  }
++  fprintf(stderr, "[launch-inv] by_prim+kind (top 40):\n");
++  n = 0;
++  for (const auto& kv : by_key) {
++    if (n++ >= 40)
++      break;
++    // key is "prim\tkind"
++    const std::string& s = kv.second;
++    auto tab = s.find('\t');
++    std::string prim = tab == std::string::npos ? s : s.substr(0, tab);
++    std::string kind =
++        tab == std::string::npos ? "?" : s.substr(tab + 1);
++    fprintf(
++        stderr,
++        "  %8ld  %s  %s\n",
++        kv.first,
++        kind.c_str(),
++        prim.c_str());
++  }
++  fprintf(stderr, "[launch-inv] end tag=%s\n", t);
++  fflush(stderr);
++}
++
++void set_current_prim(const char* name) {
++  g_current_prim = (name && name[0]) ? name : "unknown";
++}
++
+ void record_inline_launch() {
+   g_inline_launches_.fetch_add(1, std::memory_order_relaxed);
++  // Graph-split residual is still a product host dispatch when graphs are on.
++  record_hip_launch("inline");
++}
++
++void record_hip_launch(const char* kind) {
++  if (!launch_inv_enabled()) {
++    return;
++  }
++  const char* k = (kind && kind[0]) ? kind : "unknown";
++  const char* p = g_current_prim ? g_current_prim : "unknown";
++  g_hip_launches_.fetch_add(1, std::memory_order_relaxed);
++  std::string prim(p);
++  std::string kind_s(k);
++  std::string key = prim;
++  key.push_back('\t');
++  key += kind_s;
++  std::lock_guard<std::mutex> lock(g_inv_mu);
++  g_inv_by_key[key] += 1;
++  g_inv_by_prim[prim] += 1;
++  g_inv_by_kind[kind_s] += 1;
+ }
+ 
+ // Per-arch op/MB caps for the build graph. Tunable via env.
+@@ -553,6 +707,7 @@ void CommandEncoder::add_kernel_node_raw(
+     void** params) {
+   if (!use_hip_graphs()) {
+     device_.make_current();
++    record_hip_launch("kernel");
+     CHECK_HIP_ERROR(hipLaunchKernel(
+         func, grid_dim, block_dim, params, smem_bytes, stream_));
+     node_count_++;
+@@ -672,6 +827,7 @@ void CommandEncoder::add_module_kernel_node(
+     std::shared_ptr<void> args_keepalive) {
+   if (!use_hip_graphs()) {
+     device_.make_current();
++    record_hip_launch("module");
+     CHECK_HIP_ERROR(hipModuleLaunchKernel(
+         reinterpret_cast<hipFunction_t>(func),
+         grid_dim.x,
+@@ -1226,6 +1382,19 @@ namespace mlx::core {
+ long decode_inline_launch_count() {
+   return rocm::g_inline_launches_.load(std::memory_order_relaxed);
+ }
++
++long decode_hip_launch_count() {
++  return rocm::g_hip_launches_.load(std::memory_order_relaxed);
++}
++
++void decode_launch_inv_reset() {
++  rocm::launch_inv_reset();
++}
++
++void decode_launch_inv_dump(const char* tag) {
++  rocm::launch_inv_dump(tag);
++}
++
+ // Full decode-step stream-capture bridge.
+ bool decode_capture_begin() {
+   return rocm::get_command_encoder(default_stream(default_device()))
+diff --git a/mlx/backend/rocm/device.h b/mlx/backend/rocm/device.h
+index fad1f176..a7b4f7ba 100644
+--- a/mlx/backend/rocm/device.h
++++ b/mlx/backend/rocm/device.h
+@@ -41,9 +41,17 @@ bool use_hip_graphs();
+ 
+ // Inline (graph-splitting) launch counter; see device.cpp diagnostics.
+ extern std::atomic<long> g_inline_launches_;
+-// Diagnostics: tag inline launches by the primitive currently in eval_gpu.
++// Product HIP launch inventory (MLX_LAUNCH_INV=1 or MLX_REDLINE_LAUNCH_INV=1).
++extern std::atomic<long> g_hip_launches_;
++// Diagnostics: tag launches by the primitive currently in eval_gpu.
+ void set_current_prim(const char* name);
+ void record_inline_launch();
++// Count one product host→device dispatch site (eager hipLaunchKernel /
++// hipModuleLaunchKernel / launch_kernel residual). No-op unless launch inv on.
++void record_hip_launch(const char* kind);
++bool launch_inv_enabled();
++void launch_inv_reset();
++void launch_inv_dump(const char* tag);
+ 
+ class CommandEncoder {
+  public:
+@@ -485,6 +493,7 @@ void CommandEncoder::launch_kernel(F&& func) {
+     record_inline_launch();
+     return;
+   }
++  record_hip_launch("lib");
+   func(static_cast<hipStream_t>(stream_));
+   node_count_++;
+ }
+diff --git a/mlx/backend/rocm/eval.cpp b/mlx/backend/rocm/eval.cpp
+index 0bb032b1..f86cc523 100644
+--- a/mlx/backend/rocm/eval.cpp
++++ b/mlx/backend/rocm/eval.cpp
+@@ -66,9 +66,9 @@ void eval(array& arr) {
+   // whatever device is current (often device 0) while kernels run on the
+   // stream's device, stranding the model on the wrong GPU.
+   encoder.device().make_current();
+-  if (rocm::use_hip_graphs()) {
+-    rocm::set_current_prim(arr.primitive().name());
+-  }
++  // Always tag current prim so MLX_LAUNCH_INV can attribute product launches
++  // on the eager path (graphs default OFF). Cheap pointer store.
++  rocm::set_current_prim(arr.primitive().name());
+   {
+     std::vector<array> inputs;
+     if (arr.is_tracer()) {

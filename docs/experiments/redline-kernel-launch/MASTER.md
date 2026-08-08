@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); P10 OWN_GLUE retained; OWN_GLUE-only gen ≈ baseline; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); P11 inventory **PASS** (395 disp/L1 0.8B); P10 OWN_GLUE retained; product default ON **forbidden** |
 
 ## Board
 
@@ -37,9 +37,21 @@
 | Gen t/s A/B 0.8B | **RUN** — ~115–117 t/s; no clear win ([`GEN_AB_20260808.md`](GEN_AB_20260808.md)) |
 | Gen t/s A/B **35B LemonMLXE** | **RUN** — ~27–29 t/s; session≈base; sidecar≈base/slightly slower ([`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md)) |
 | Gen t/s A/B **OWN_GLUE only** | **RUN** — 0.8B ~116–117; 35B ~29.0–29.2 ≈ baseline ([`GEN_AB_OWN_GLUE_20260808.md`](GEN_AB_OWN_GLUE_20260808.md)) |
-| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — replace product launches; P11 inventory → P12 next multi-launch own |
+| **P11 launch inventory** | **PASS** — env-gated; 0.8B L=1 **395** dispatches (QMM 187, CustomKernel 90, RMSNorm 37, …); NOT gen t/s ([`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md)) |
+| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — P12 own next multi-launch non-qmm chain |
 
 ## Fire log
+
+### 2026-08-08 — P11 product HIP launch inventory PASS
+
+- **Primary:** Env-gated count of product CommandEncoder HIP dispatch sites per L=1 token; table in docs.  
+- Clear Thought: sequentialthinking, decisionframework (A P11), metacognitivemonitoring, scientificmethod (H-p11 **supported**).  
+- **Code:** MLX `record_hip_launch` + `set_current_prim`; engine L=1 window dump; patch `patches/p11-launch-inv-mlx-rocm.patch`.  
+- **Measure (0.8B):** **395** dispatches/token stable; QMM 187 / CustomKernel 90 / RMSNorm 37 / Add 24 / elementwise compiled 30 / RoPE 12.  
+- **Logs:** `logs/p11-{off,on}-20260808-121700.err`.  
+- **Doc:** [`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md) + [`QUALITY_REVIEW_P11.md`](QUALITY_REVIEW_P11.md) **PASS**.  
+- **Not claimed:** gen t/s win; default ON; qmm ownership.  
+- **Next:** P12 own multi-launch non-qmm product chain (default OFF) + correctness; then M2.
 
 ### 2026-08-08 — ROADMAP + OWN_GLUE-only gen A/B
 

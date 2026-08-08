@@ -31,6 +31,10 @@ void decode_arena_reset_to_floor();
 void decode_arena_end();
 bool decode_arena_overflowed();
 long decode_inline_launch_count();
+// P11: product HIP host-dispatch inventory (MLX_LAUNCH_INV=1).
+long decode_hip_launch_count();
+void decode_launch_inv_reset();
+void decode_launch_inv_dump(const char* tag);
 // Full decode-step stream capture (build-once / replay).
 bool decode_capture_begin();
 bool decode_capture_end_record(int slot);
@@ -87,6 +91,21 @@ static bool redline_decode_env_enabled_() {
 
 static bool pure_graph_env_enabled_() {
     return env_exact_one_("MLX_DECODE_GRAPH_PURE");
+}
+
+// P11: per L=1 token product HIP launch inventory (default OFF).
+// MLX_LAUNCH_INV=1 or MLX_REDLINE_LAUNCH_INV=1; optional MLX_LAUNCH_INV_TOKENS
+// (default 4) limits how many decode tokens are tabulated.
+static bool launch_inv_env_enabled_() {
+    return env_exact_one_("MLX_LAUNCH_INV") ||
+           env_exact_one_("MLX_REDLINE_LAUNCH_INV");
+}
+
+static int launch_inv_token_limit_() {
+    const char* e = std::getenv("MLX_LAUNCH_INV_TOKENS");
+    if (!e || !e[0]) return 4;
+    int n = std::atoi(e);
+    return n > 0 ? n : 4;
 }
 #endif
 
@@ -1996,8 +2015,43 @@ std::optional<int> TokenIterator::next() {
 #endif
 
     auto previous_y = y_;
+#if defined(MLX_BUILD_ROCM)
+    // P11: window product HIP dispatches for this L=1 emit (emit previous_y
+    // materializes prior sample; step builds next). Counts host dispatch sites
+    // only — NOT gen t/s. Skip after MLX_LAUNCH_INV_TOKENS (default 4).
+    const bool do_inv = launch_inv_env_enabled_();
+    static int inv_tok_done = 0;
+    const int inv_lim = do_inv ? launch_inv_token_limit_() : 0;
+    const bool inv_this = do_inv && inv_tok_done < inv_lim;
+    if (inv_this) {
+        mlx::core::decode_launch_inv_reset();
+        static bool inv_banner = false;
+        if (!inv_banner) {
+            std::cerr << "[launch-inv] enabled (product path; default OFF; "
+                         "NOT gen t/s; tokens="
+                      << inv_lim << ")\n";
+            inv_banner = true;
+        }
+    }
+#endif
     auto token = step(previous_y);
     y_ = LMInput::Text(token);
+#if defined(MLX_BUILD_ROCM)
+    if (inv_this) {
+        // Force full retire of this step's sample so the window isolates one
+        // L=1 forward (not pipelined with previous_y). Still emit previous_y.
+        mx::eval(token);
+        mx::eval(previous_y.tokens);
+        char tag[64];
+        std::snprintf(tag, sizeof(tag), "L1-token-%d", inv_tok_done);
+        mlx::core::decode_launch_inv_dump(tag);
+        inv_tok_done++;
+        token_count_++;
+        measure_prefill_boundary_();
+        maybe_log_kv_offset_(cache_, token_count_);
+        return previous_y.tokens.item<int32_t>();
+    }
+#endif
     if (g_sync_decode) {
         // Diagnostic: fully retire each forward before building the next.
         // Still emit previous_y — sync only forces the new sample to complete

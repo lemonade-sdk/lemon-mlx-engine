@@ -2,7 +2,7 @@
 
 **Branch:** `exp/redline-kernel-launch`  
 **Host target:** gfx1150 (890M) · lemon-mlx-engine ROCm  
-**Revised:** 2026-08-08 (Clear Thought: sequentialthinking, Pareto, decisionframework)
+**Revised:** 2026-08-08 (P11 launch inv PASS — 395 disp/L1 on 0.8B; Clear Thought + inventory)
 
 ---
 
@@ -38,7 +38,9 @@
 | P5–P7b | DONE | In-proc session + sidecar correctness |
 | **P8** SMALL_OP | DONE | Uses product VRAM; still **extra** PM4 |
 | **P9–P10** OWN_GLUE retained | DONE | **Replaces** product pos/token glue HIP |
+| **P11** launch inventory | DONE | 0.8B L=1 ≈ **395** dispatches; table in [`P11_LAUNCH_INV.md`](P11_LAUNCH_INV.md) |
 | Gen A/B 0.8B / 35B / all-flags | RUN | No win when additive flags on |
+| Gen A/B OWN_GLUE only (M1) | RUN | ≈ baseline (glue too small vs 395) |
 
 ---
 
@@ -48,8 +50,8 @@
 
 | ID | Work | Success | Kill if |
 |----|------|---------|---------|
-| **P11** | **Launch inventory** per L=1 token (MLX_PROFILE / inline counters): how many HIP launches; which ops | Table: op → count → estimated µs | Cannot instrument |
-| **P12** | Own **next real multi-launch chain** used every token (prefer engine or JIT HSACO elementwise fused chain), **replace** product path when `MLX_REDLINE_OWN_*=1` | Correctness vs eager; optional gen A/B | No multi-launch chain found |
+| **P11** | **Launch inventory** per L=1 token | **DONE** — 395/token 0.8B; QMM 187, CustomKernel 90, RMSNorm 37, … | — |
+| **P12** | Own **next real multi-launch chain** used every token (prefer **non-qmm**: RMSNorm/elementwise/RoPE/CustomKernel cluster; or fused JIT), **replace** product path when `MLX_REDLINE_OWN_*=1` | Correctness vs eager; optional gen A/B (M2) | No multi-launch chain found |
 | **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
@@ -109,8 +111,9 @@ Each fire must:
 
 ## 7. Immediate next (this revision)
 
-1. **M1** OWN_GLUE-only gen A/B (0.8B + 35B) — evidence without additive small_op.  
-2. **P11** launch inventory design/code.  
-3. **P12** pick first multi-dispatch product/JIT chain to own.  
+1. ~~**M1** OWN_GLUE-only gen A/B~~ — DONE (≈ baseline).  
+2. ~~**P11** launch inventory~~ — DONE (395/L1 on 0.8B).  
+3. **P12** own first multi-dispatch **non-qmm** product/JIT chain (RMSNorm / elementwise / RoPE / CustomKernel cluster) — default OFF + correctness.  
+4. **M2** gen A/B after that ownership.  
 
 “Redline everywhere” = **grow the set of product ops that fall through to Redline**, op by op — not enable every research env at once.
