@@ -295,10 +295,13 @@ See companion section in chat / summary below — mirrored here:
 
 ## 12. Immediate next actions (human / loop)
 
-1. File or open **PR-A spike** in redline: stream→waitable on gfx1150.  
+1. Continue **phase 2b** on **https://github.com/antmikinka/redline** branch `exp/hip-stream-bridge` (local `/home/antmi/redline`, `origin` = antmikinka).  
 2. Keep lemon-mlx **defaults OFF**; do not pile flags.  
-3. After spike: implement PR-A MVP → PR-B → gen A/B.  
-4. If spike fails: write KILL note; freeze OWN_RMSNORM as correctness-only.
+3. **When phase 2b development is complete (or each green increment):**  
+   - `git commit` on redline `exp/hip-stream-bridge`  
+   - **`git push origin exp/hip-stream-bridge`** to **antmikinka/redline** (never force-push)  
+   - If lemon-mlx changed: commit+push `exp/redline-kernel-launch`  
+4. Smoke + optional B0/B1; if spike/2b fails: KILL note; freeze OWN_RMSNORM as correctness-only.
 
 ---
 
