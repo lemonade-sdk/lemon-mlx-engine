@@ -1,0 +1,7 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=16.2 GB, peak=16.2 GB, cache=272 MB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Prompt:     1 tokens, 0.624315 tokens/s, 1.60176s
+Generation: 64 tokens, 28.6783 tokens/s, 2.23165s

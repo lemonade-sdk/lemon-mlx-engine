@@ -2,7 +2,7 @@
 
 **Branch:** `exp/redline-kernel-launch`  
 **Host target:** gfx1150 (890M) · lemon-mlx-engine ROCm  
-**Revised:** 2026-08-08 (M2 OWN_RMSNORM gen A/B — B1 no ≥2% win; default OFF)
+**Revised:** 2026-08-08 (retry2 rebench under lemonade VRAM — same B1/B2 shape; default OFF)
 
 ---
 
