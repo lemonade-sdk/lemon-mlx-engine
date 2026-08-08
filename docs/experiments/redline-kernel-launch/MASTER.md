@@ -31,9 +31,16 @@
 | **P7 L1 retained sidecar** | **PASS** — `sidecar=PASS` 136/136 + armed; L=1 hook; call_fn still product ([`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md)) |
 | **P7b full-gen L=1 verify** | **PASS** — model load + L=1 ticks; `fullgen PASS n=17 side_obs=153 side_exp=153`; call_fn still product ([`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
-| Gen t/s A/B (same-build eager) | **RUN** — ~115–117 t/s all modes (no clear win); see [`GEN_AB_20260808.md`](GEN_AB_20260808.md) |
+| Gen t/s A/B 0.8B | **RUN** — ~115–117 t/s; no clear win ([`GEN_AB_20260808.md`](GEN_AB_20260808.md)) |
+| Gen t/s A/B **35B LemonMLXE** | **RUN** — ~27–29 t/s; session≈base; sidecar≈base/slightly slower ([`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md)) |
 
 ## Fire log
+
+### 2026-08-08 — Gen t/s A/B LemonMLXE 35B
+
+- **Model:** LemonMLXE/Qwen3.6-35B-A3B-MTP-mlx-4bit (16.2 GB active).  
+- **Result:** baseline **29.15** / session **29.00** / sidecar **27.14** / baseline2 **27.60** t/s (64 tok). No clear Redline win; sidecar correctness PASS.  
+- **Doc:** [`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md).
 
 ### 2026-08-08 — P7b full-gen L=1 sidecar verify PASS
 

@@ -1,0 +1,9 @@
+[redline] session READY (P2/P5/P6/P7/P8; forward still product; abi=1 gpu_new=ok micro=skip)
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=16.2 GB, peak=16.2 GB, cache=272 MB
+[redline] gd_bind PASS input=0x713650c01078 pos=0x713650c00fd8 stable=1 (P6 VRAM ptr; not gen t/s; forward still product)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Prompt:     7 tokens, 4.57621 tokens/s, 1.52965s
+Generation: 64 tokens, 29.0012 tokens/s, 2.2068s
