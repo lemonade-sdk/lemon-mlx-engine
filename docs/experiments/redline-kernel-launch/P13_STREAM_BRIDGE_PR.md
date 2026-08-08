@@ -65,7 +65,7 @@ Work spans **at least two** codebases. Do **not** open a lone HIP PR without a R
 
 | # | Repo | PR title (draft) | Owner skill |
 |---|------|------------------|-------------|
-| **PR-A** | **redline** (`/home/antmi/redline`, warpfront / pwilkin) | `capi: HIP stream/event wait + optional async replay` | Redline/HSA/PM4 |
+| **PR-A** | **redline** — **[`antmikinka/redline`](https://github.com/antmikinka/redline)** branch `exp/hip-stream-bridge` (base: pwilkin; local `/home/antmi/redline`) | `capi: HIP stream wait + replay_after_hip_stream` (phase1 host join; phase2 device wait) | Redline/HSA/PM4 |
 | **PR-B** | **lemon-mlx-engine** (`exp/redline-kernel-launch`) | `redline: use stream bridge; drop host PRE when armed` | MLX ROCm wire |
 | **PR-C** (conditional) | **ROCm/HIP** or HSA runtime | Only if PR-A needs a missing primitive (stream→signal export, external wait) | ROCm |
 

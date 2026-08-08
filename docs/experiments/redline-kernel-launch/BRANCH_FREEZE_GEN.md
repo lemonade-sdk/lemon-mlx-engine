@@ -22,6 +22,19 @@ PRE tax is **host join of product HIP producers** before a **different** Redline
 
 ## Next venue
 
-**Redline repo** branch for **PR-A** → install new `.so` → lemon-mlx **PR-B** (small wire) → gen A/B.
+| Item | Value |
+|------|--------|
+| **Redline fork (use this)** | https://github.com/antmikinka/redline |
+| **Base** | https://github.com/pwilkin/redline (~8 commits behind warpfront; OK for `redline-capi`) |
+| **PR-A branch** | `exp/hip-stream-bridge` (phase1 landed; install `.so` → lemon PR-B already wires it) |
+| **Upstream reference only** | https://github.com/warpfront/redline |
 
-Until then: product defaults stay **OFF**; optional OWN_GLUE for ownership without big gen loss.
+```bash
+cd /home/antmi/redline   # origin = antmikinka/redline
+git checkout exp/hip-stream-bridge
+cargo build -p redline-capi --release
+cp -a target/release/libredline_dispatch.so /tmp/redline-warpfront-target/release/
+# lemon-mlx: MLX_REDLINE_LIB=... expect log bridge=yes used
+```
+
+Product defaults stay **OFF**; optional OWN_GLUE for ownership without big gen loss.

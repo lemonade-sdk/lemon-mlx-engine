@@ -5,7 +5,7 @@
 | **Branch** | `exp/redline-kernel-launch` |
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
-| **Project** | Redline (warpfront upstream / pwilkin fork) |
+| **Project** | Redline — **working fork** [`antmikinka/redline`](https://github.com/antmikinka/redline) (from [`pwilkin/redline`](https://github.com/pwilkin/redline)); upstream reference [`warpfront/redline`](https://github.com/warpfront/redline) (~8 commits ahead on hipgraph/CI) |
 | **Loop status** | **P13 bridge next** — OWN_GLUE+OWN_RMSNORM code **DONE** (default OFF); gen no ≥2% win (PRE dual-queue); PR work: [`P13_STREAM_BRIDGE_PR.md`](P13_STREAM_BRIDGE_PR.md) |
 
 ## Board
