@@ -1,0 +1,43 @@
+TS=20260808-130807 binary=2026-08-08 12:59:46.339931643 -0700
+2026-08-08T13:08:07-07:00
+GPU[0]		: GPU use (%): 3
+GPU[0]		: GTT Total Memory (B): 64424509440
+GPU[0]		: GTT Total Used Memory (B): 16907218944
+=== 08b-B0-r1 mode=b0 2026-08-08T13:08:07-07:00 ===
+rc=0 Generation: 64 tokens, 115.22 tokens/s, 0.555461s
+=== 08b-B2-r1 mode=b2 2026-08-08T13:08:11-07:00 ===
+rc=0 Generation: 64 tokens, 105.648 tokens/s, 0.605785s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x7622efc00008 input=0x7622efc00000 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=293.591000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=71.224000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1435.37 retained_us_per=4.59644 speedup=312.279x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 tick (product graph_decode_input VRAM val=5834; retained PM4; call_fn still product; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=65 side_obs=19961 side_exp=19961 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+=== 08b-B0-r2 mode=b0 2026-08-08T13:08:16-07:00 ===
+rc=0 Generation: 64 tokens, 116.126 tokens/s, 0.551124s
+=== 08b-B2-r2 mode=b2 2026-08-08T13:08:21-07:00 ===
+rc=0 Generation: 64 tokens, 104.705 tokens/s, 0.611243s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x71e584200008 input=0x71e584200010 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=333.576000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=71.975000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1431.38 retained_us_per=4.53147 speedup=315.875x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 tick (product graph_decode_input VRAM val=5834; retained PM4; call_fn still product; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=65 side_obs=19961 side_exp=19961 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+=== 08b-B0-r3 mode=b0 2026-08-08T13:08:25-07:00 ===
+rc=0 Generation: 64 tokens, 116.685 tokens/s, 0.548486s
+=== 08b-B2-r3 mode=b2 2026-08-08T13:08:30-07:00 ===
+rc=0 Generation: 64 tokens, 105.034 tokens/s, 0.609329s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x7d96b2000008 input=0x7d96b2000000 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=286.388000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=73.077000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1423.36 retained_us_per=4.61038 speedup=308.729x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 tick (product graph_decode_input VRAM val=5834; retained PM4; call_fn still product; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=65 side_obs=19961 side_exp=19961 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+=== 35b-B0 mode=b0 2026-08-08T13:08:35-07:00 ===
+rc=0 Generation: 64 tokens, 29.1284 tokens/s, 2.19717s
+=== 35b-B2 mode=b2 2026-08-08T13:08:43-07:00 ===
+rc=0 Generation: 64 tokens, 27.0028 tokens/s, 2.37012s
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x7d57e8200008 input=0x7d57e8200000 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=286.638000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=71.163000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1408.56 retained_us_per=4.60144 speedup=306.113x N=64 (NOT gen t/s) rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 tick (product graph_decode_input VRAM val=5834; retained PM4; call_fn still product; NOT gen t/s)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC=stream POST_SYNC=device; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=65 side_obs=250942 side_exp=250942 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+=== 35b-B0b mode=b0 2026-08-08T13:08:52-07:00 ===
+rc=0 Generation: 64 tokens, 28.9449 tokens/s, 2.2111s
