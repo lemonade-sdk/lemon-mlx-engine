@@ -12,12 +12,11 @@
 //     builder/finalize per product glue call). Default still OFF.
 // P12: MLX_REDLINE_OWN_RMSNORM=1 — Redline PM4 owns packed product RMSNorm
 //     launches (multi-instance non-qmm family; mid-eval stream sync). Default OFF.
-// P12b: MLX_REDLINE_POST_SYNC=device|stream|off — post-replay fence policy
-//     (default device). Dual-queue: Redline PM4 ≠ product HIP stream; stream/off
-//     are research-only for sync-tax A/B — may race consumers. NOT gen t/s.
-// P12c: OWN_RMSNORM host path — pack+set_k BEFORE pre-sync (overlap with product
-//     GPU producers); MLX_REDLINE_PRE_SYNC=stream|device|off (default stream);
-//     optional MLX_REDLINE_RMS_PROFILE=1 host-phase timers. Default flags OFF.
+// P12b/P12d POST: MLX_REDLINE_POST_SYNC=auto|device|stream|off (default auto).
+//     auto/off: no extra host fence after rl_pm4_replay (API already waits).
+// P12c/P12d PRE: set_k-before-pre; MLX_REDLINE_PRE_SYNC=stream|force|device|off
+//     (default stream = hipStreamQuery then Sync if needed). RMS_PROFILE=1 timers.
+//     Same-queue HIP attach not in redline-capi (documented P12d limit).
 
 #include <mlx-lm/common/graph_decode.h>
 #include <mlx-lm/common/redline_decode_session.h>
@@ -55,23 +54,34 @@ bool env_exact_one(const char* name) {
     return v && v[0] == '1' && v[1] == '\0';
 }
 
-// P12b: post-replay host fence after Redline retained PM4 on product path.
-// Dual-queue: Redline completion is not on the product HIP stream, so only
-// "device" is correct-by-default. "stream" and "off" exist to measure the
-// mid-eval sync tax (OWN_RMSNORM B1 ~−2–5%); they may race HIP consumers.
-enum class RedlinePostSync : uint8_t { Device = 0, Stream = 1, Off = 2 };
+// P12b/P12d: post-replay host fence after Redline retained PM4.
+// redline-capi: rl_pm4_replay = submit + wait for wave retirement. Default
+// "auto" skips an extra host fence (was double-wait). "device"/"stream" force
+// extra fences for paranoid cross-engine A/B; "off" same as auto for post.
+enum class RedlinePostSync : uint8_t {
+    Auto = 0,   // P12d default: trust rl_pm4_replay wait
+    Device = 1,
+    Stream = 2,
+    Off = 3,
+};
 
-// P12c: pre-replay host fence so product HIP producers complete before Redline
-// reads VRAM. Default "stream" matches historical OWN_RMSNORM drain. "off" is
-// research-only (may race). set_k does NOT need this fence (pointer patch only).
-enum class RedlinePreSync : uint8_t { Stream = 0, Device = 1, Off = 2 };
+// P12c/P12d: pre-replay host fence so product HIP producers complete before
+// Redline reads VRAM. Default "stream" = Query then Sync if not ready (P12d).
+// "force" = always Synchronize (P12c historical). "device"/"off" as before.
+enum class RedlinePreSync : uint8_t {
+    Stream = 0, // P12d: query-then-sync
+    Force = 1,  // always hipStreamSynchronize (legacy stream behavior)
+    Device = 2,
+    Off = 3,
+};
 
 RedlinePostSync post_sync_mode() {
     const char* v = std::getenv("MLX_REDLINE_POST_SYNC");
-    if (!v || v[0] == '\0') {
-        return RedlinePostSync::Device;
+    if (!v || v[0] == '\0' ||
+        (v[0] == 'a' && v[1] == 'u' && v[2] == 't' && v[3] == 'o' &&
+         v[4] == '\0')) {
+        return RedlinePostSync::Auto;
     }
-    // Accept device|stream|off (case-sensitive short names).
     if (v[0] == 'o' && v[1] == 'f' && v[2] == 'f' && v[3] == '\0') {
         return RedlinePostSync::Off;
     }
@@ -79,7 +89,11 @@ RedlinePostSync post_sync_mode() {
         v[4] == 'a' && v[5] == 'm' && v[6] == '\0') {
         return RedlinePostSync::Stream;
     }
-    return RedlinePostSync::Device;
+    if (v[0] == 'd' && v[1] == 'e' && v[2] == 'v' && v[3] == 'i' &&
+        v[4] == 'c' && v[5] == 'e' && v[6] == '\0') {
+        return RedlinePostSync::Device;
+    }
+    return RedlinePostSync::Auto;
 }
 
 RedlinePreSync pre_sync_mode() {
@@ -94,6 +108,15 @@ RedlinePreSync pre_sync_mode() {
         v[4] == 'c' && v[5] == 'e' && v[6] == '\0') {
         return RedlinePreSync::Device;
     }
+    // force = always Synchronize (pre-P12d stream behavior)
+    if (v[0] == 'f' && v[1] == 'o' && v[2] == 'r' && v[3] == 'c' &&
+        v[4] == 'e' && v[5] == '\0') {
+        return RedlinePreSync::Force;
+    }
+    if (v[0] == 's' && v[1] == 't' && v[2] == 'r' && v[3] == 'e' &&
+        v[4] == 'a' && v[5] == 'm' && v[6] == '\0') {
+        return RedlinePreSync::Stream;
+    }
     return RedlinePreSync::Stream;
 }
 
@@ -103,9 +126,11 @@ const char* pre_sync_label() {
             return "off";
         case RedlinePreSync::Device:
             return "device";
+        case RedlinePreSync::Force:
+            return "force";
         case RedlinePreSync::Stream:
         default:
-            return "stream";
+            return "stream"; // query-then-sync
     }
 }
 
@@ -116,15 +141,23 @@ const char* post_sync_label() {
         case RedlinePostSync::Stream:
             return "stream";
         case RedlinePostSync::Device:
-        default:
             return "device";
+        case RedlinePostSync::Auto:
+        default:
+            return "auto";
     }
 }
+
+// P12d profile: how often pre-sync skipped via hipStreamQuery.
+uint64_t g_pre_query_skip = 0;
+uint64_t g_pre_sync_wait = 0;
 
 #if defined(MLX_BUILD_ROCM)
 void redline_post_sync(void* hip_stream) {
     switch (post_sync_mode()) {
+        case RedlinePostSync::Auto:
         case RedlinePostSync::Off:
+            // P12d: rl_pm4_replay already waited for Redline waves.
             return;
         case RedlinePostSync::Stream:
             if (hip_stream) {
@@ -134,26 +167,46 @@ void redline_post_sync(void* hip_stream) {
             }
             return;
         case RedlinePostSync::Device:
-        default:
             (void)hipDeviceSynchronize();
             return;
     }
 }
 
 // Drain product HIP producers immediately before Redline replay reads VRAM.
+// P12d stream mode: hipStreamQuery — Synchronize only if work still pending.
 void redline_pre_sync(void* hip_stream) {
     switch (pre_sync_mode()) {
         case RedlinePreSync::Off:
             return;
         case RedlinePreSync::Device:
             (void)hipDeviceSynchronize();
+            ++g_pre_sync_wait;
             return;
-        case RedlinePreSync::Stream:
-        default:
+        case RedlinePreSync::Force:
             if (hip_stream) {
                 (void)hipStreamSynchronize(static_cast<hipStream_t>(hip_stream));
             } else {
                 (void)hipDeviceSynchronize();
+            }
+            ++g_pre_sync_wait;
+            return;
+        case RedlinePreSync::Stream:
+        default:
+            if (hip_stream) {
+                auto* st = static_cast<hipStream_t>(hip_stream);
+                const hipError_t q = hipStreamQuery(st);
+                if (q == hipSuccess) {
+                    // All prior work on this stream already complete.
+                    ++g_pre_query_skip;
+                    return;
+                }
+                // hipErrorNotReady or other → full drain (correctness).
+                (void)hipGetLastError(); // clear sticky NotReady if needed
+                (void)hipStreamSynchronize(st);
+                ++g_pre_sync_wait;
+            } else {
+                (void)hipDeviceSynchronize();
+                ++g_pre_sync_wait;
             }
             return;
     }
@@ -2066,8 +2119,7 @@ bool redline_try_own_rmsnorm_packed(
         t0 = mark();
     }
 
-    // P12b: post fence so HIP consumers see Redline writes. Default device
-    // (cross-queue). MLX_REDLINE_POST_SYNC=stream|off for tax A/B only.
+    // P12d: post fence (default auto = no-op; rl_pm4_replay already waited).
     redline_post_sync(hip_stream);
     if (profile) {
         g_rms_ns_post += ns_since(t0);
@@ -2077,7 +2129,8 @@ bool redline_try_own_rmsnorm_packed(
         g_rms_logged = true;
         std::cerr
             << "[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 "
-               "(product HIP RMSNorm skipped; P12c set_k-before-pre; PRE_SYNC="
+               "(product HIP RMSNorm skipped; P12d query-pre + set_k-before-pre; "
+               "PRE_SYNC="
             << pre_sync_label() << " POST_SYNC=" << post_sync_label()
             << "; NOT gen t/s)\n";
     }
@@ -2090,7 +2143,9 @@ bool redline_try_own_rmsnorm_packed(
                   << "us pre_sync=" << us(g_rms_ns_pre)
                   << "us replay=" << us(g_rms_ns_replay)
                   << "us post_sync=" << us(g_rms_ns_post)
-                  << "us (host wall; NOT gen t/s)\n";
+                  << "us pre_query_skip=" << g_pre_query_skip
+                  << " pre_wait=" << g_pre_sync_wait
+                  << " (host wall; NOT gen t/s)\n";
     }
     return true;
 #endif

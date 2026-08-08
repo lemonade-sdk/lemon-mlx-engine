@@ -1,0 +1,10 @@
+[redline] session READY (P2–P12; forward still product; abi=1 gpu_new=ok micro=skip glue=skip rms_multi=PASS_n4 rms=PASS rms_armed=1 smoke_f32=[1,2,3,4] retained=1 (OWN_RMSNORM packed product path; NOT gen t/s))
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=859 MB, peak=859 MB, cache=2568 B
+[redline] gd_bind PASS input=0x787832600540 pos=0x787832600370 stable=1 (P6 VRAM ptr; not gen t/s; forward still product)
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d query-pre + set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[redline] OWN_RMSNORM host profile (n=31): set_k=5.179us pre_sync=2548.34us replay=346.001us post_sync=2.992us pre_query_skip=0 pre_wait=31 (host wall; NOT gen t/s)
+Prompt:     1 tokens, 3.51872 tokens/s, 0.284194s
+Generation: 64 tokens, 109.521 tokens/s, 0.584364s

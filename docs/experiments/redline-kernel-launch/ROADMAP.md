@@ -58,7 +58,8 @@
 | **P11** | **Launch inventory** per L=1 token | **DONE** — 395/token 0.8B; QMM 187, CustomKernel 90, RMSNorm 37, … | — |
 | **P12** | Own **packed RMSNorm** multi-instance product launches (`OWN_RMSNORM=1`) | **DONE** — arm smoke PASS; inv 37→6; gen text OK; M2 DONE (no gen win) | Strided residual; mid-eval sync tax |
 | **P12b** | Cut mid-eval **POST_SYNC** tax (`MLX_REDLINE_POST_SYNC=device\|stream\|off`) | **CODE** — default device; stream/off research-only; B1-off≈B1-device (~−2.6%) → post-sync **not** primary tax; [`P12B_SYNC_TAX.md`](P12B_SYNC_TAX.md) | Dual-queue races if off without events |
-| **P12c** | Cut **pre**-stream / host set_k tax on OWN_RMSNORM (set_k-before-pre; `PRE_SYNC` knob) | **CODE** — safe reorder + `MLX_REDLINE_PRE_SYNC` (default stream) + `RMS_PROFILE`; gen A/B **PENDING_BENCH**; [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) | Races if PRE_SYNC=off; no ≥2% win yet |
+| **P12c** | Cut **pre**-stream / host set_k tax on OWN_RMSNORM (set_k-before-pre; `PRE_SYNC` knob) | **MEASURED** — pre dominates; B1 −3.0%; PRE=off recovers half (−1.6%) not shippable; [`P12C_PRE_SYNC.md`](P12C_PRE_SYNC.md) | — |
+| **P12d** | Ordering: post=auto (replay wait); pre=query-then-sync | **CODE** — [`P12D_ORDERING.md`](P12D_ORDERING.md); same-queue still blocked | Residual pre_wait = dual-queue host bubble |
 | **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
 | **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
 
@@ -124,8 +125,9 @@ Each fire must:
 3. ~~**P12** OWN_RMSNORM packed~~ — DONE (31/37 owned; strided 6 residual; mid-eval sync tax).  
 4. ~~**M2** gen A/B OWN_RMSNORM~~ — DONE 0.8B: B1 **no ≥2% win** (~−3–5% stable pairs); B2 ~−13%; keep default OFF.  
 5. ~~**P12b** POST_SYNC fence policy + tax isolation~~ — **CODE** (default device; off≈device → post not primary tax).  
-6. ~~**P12c** set_k-before-pre + `PRE_SYNC`~~ — **CODE**; multi-rep gen A/B **PENDING_BENCH** (lemonade VRAM).  
-7. Free-GPU B0/B1 A/B for P12c; if pre remains tax → completion events / same-queue **or** own next residual (CustomKernel / strided RMSNorm) — still default OFF.  
+6. ~~**P12c** set_k-before-pre + PRE_SYNC A/B~~ — **DONE** GTT-clear host: B1 −3.0%; PRE=off −1.6% (not ship); pre host ~1.8ms/31 owns.  
+7. ~~**P12d** query-pre + POST auto~~ — **CODE**; measure B0/B1; same-queue still upstream.  
+8. Own next residual (CustomKernel / strided) **or** Redline HIP-stream bind if API appears — still default OFF.  
 8. Optional 35B B0/B1 when claiming 35B relevance (GPU free).
 
 “Redline everywhere” = **grow the set of product ops that fall through to Redline**, op by op — not enable every research env at once.
