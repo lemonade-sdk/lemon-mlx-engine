@@ -36,7 +36,7 @@ enum class RedlineSessionState {
 // Never enables HIP graphs. Never claims gen t/s. Does not change call_fn.
 RedlineSessionState redline_session_ensure_init();
 
-// One-shot stderr banner for P0/P2/P5/P6/P7/P8 (safe every step).
+// One-shot stderr banner for P0/P2/P5–P9 (safe every step).
 void maybe_log_redline_session_status();
 
 // P6: one-shot probe of stable graph_decode_input/pos buffer pointers
@@ -61,6 +61,15 @@ void maybe_redline_sidecar_verify();
 // Does not set graph_external_pos (product RoPE stays host-offset).
 // Does not replace call_fn. NOT gen t/s.
 void maybe_redline_small_op_l1(mlx::core::array& previous_token);
+
+// P9: own product decode glue launches (replace mlx HIP for these ops only).
+// When MLX_REDLINE_DECODE=1 and MLX_REDLINE_OWN_GLUE=1 and glue CO armed,
+// set_graph_decode_pos / advance / set_graph_decode_input_from route here
+// instead of gpu_kv_pos_* / gpu_scalar_copy_i32. Returns true if Redline
+// handled the launch (caller must not fall back). Default OFF. NOT gen t/s.
+bool redline_try_own_pos_set(mlx::core::array& pos, int v);
+bool redline_try_own_pos_inc(mlx::core::array& pos, int delta);
+bool redline_try_own_scalar_copy_i32(mlx::core::array& dst, mlx::core::array& src);
 
 // Human-readable last error / status detail (empty if none / disabled).
 const std::string& redline_session_last_error();

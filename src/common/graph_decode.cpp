@@ -1,5 +1,6 @@
 // Copyright © 2025
 #include "mlx-lm/common/graph_decode.h"
+#include "mlx-lm/common/redline_decode_session.h"
 #include <cstdlib>
 
 namespace mx = mlx::core;
@@ -46,6 +47,10 @@ void set_graph_decode_pos(int offset) {
     // Mutate the pos buffer in place via a raw kernel.
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     auto& p = graph_decode_pos();
+    // P9: optional Redline ownership of this product glue launch.
+    if (redline_try_own_pos_set(p, offset)) {
+        return;
+    }
     mx::gpu_kv_pos_set(p, offset);
     mx::synchronize(mx::default_stream(mx::default_device()));
 #else
@@ -60,6 +65,9 @@ void set_graph_decode_pos(int offset) {
 void advance_graph_decode_pos(int delta) {
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     auto& p = graph_decode_pos();
+    if (redline_try_own_pos_inc(p, delta)) {
+        return;
+    }
     mx::gpu_kv_pos_increment(p, delta);
 #else
     set_graph_decode_pos(0);  // non-ROCm has no graph path
@@ -84,6 +92,10 @@ void set_graph_decode_input_from(mx::array& token) {
 #if defined(MLX_BUILD_ROCM) && MLX_BUILD_ROCM
     auto& dst = graph_decode_input();
     // token may be [1] or [1,1]; the kernel copies element 0 either way.
+    // P9: optional Redline ownership of product scalar-copy glue.
+    if (redline_try_own_scalar_copy_i32(dst, token)) {
+        return;
+    }
     mx::gpu_scalar_copy_i32(dst, token);
 #else
     (void)token;

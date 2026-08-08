@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (post–Stop A)** — P5–P7b+**P8 small-op** PASS; gen t/s A/B **RUN** (no clear win; sidecar not product replace); product default ON **forbidden** |
+| **Loop status** | **ACTIVE (post–Stop A)** — P5–P8+**P9 OWN_GLUE** PASS; gen t/s A/B health-check **RUN** (no win); product default ON **forbidden** |
 
 ## Board
 
@@ -31,11 +31,23 @@
 | **P7 L1 retained sidecar** | **PASS** — `sidecar=PASS` 136/136 + armed; L=1 hook; call_fn still product ([`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md)) |
 | **P7b full-gen L=1 verify** | **PASS** — model load + L=1 ticks; `fullgen PASS n=17 side_obs=153 side_exp=153`; call_fn still product ([`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md)) |
 | **P8 engine-owned small op** | **PASS** — live `graph_decode_input` VRAM L=1; fullgen token-sum **15185/15185** n=17; call_fn still product ([`P8_SMALL_OP.md`](P8_SMALL_OP.md)) |
+| **P9 OWN_GLUE product glue** | **PASS** — Redline owns pos_set/inc/scalar_copy when `OWN_GLUE=1`; arm **set=7 inc=10 copy=42**; call_fn still product ([`P9_OWN_GLUE.md`](P9_OWN_GLUE.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B win (≥2%) |
 | Gen t/s A/B 0.8B | **RUN** — ~115–117 t/s; no clear win ([`GEN_AB_20260808.md`](GEN_AB_20260808.md)) |
 | Gen t/s A/B **35B LemonMLXE** | **RUN** — ~27–29 t/s; session≈base; sidecar≈base/slightly slower ([`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md)) |
 
 ## Fire log
+
+### 2026-08-08 — P9 OWN_GLUE product decode glue PASS
+
+- **Primary:** First real product-path ownership — `set_graph_decode_pos` / `advance` / `set_graph_decode_input_from` route to Redline PM4 when `MLX_REDLINE_OWN_GLUE=1` (default OFF).  
+- Clear Thought: sequentialthinking, decisionframework (P9 vs A/B/D/E), metacognitivemonitoring, scientificmethod (H-p9-own-glue supported).  
+- **Code:** `harness/glue_kernels.hip` + CO; `try_arm_glue`; `redline_try_own_*`; `graph_decode.cpp` route; try_to_lock deadlock avoid.  
+- **Smoke:** off 0×; **`glue=PASS glue_armed=1 set=7 inc=10 copy=42`** + live OWN_GLUE; xor fail-closed.  
+- **Logs:** `logs/p9-{off,on-glue,xor}-20260808-115626.err`.  
+- **Doc:** [`P9_OWN_GLUE.md`](P9_OWN_GLUE.md) + [`QUALITY_REVIEW_P9.md`](QUALITY_REVIEW_P9.md) **PASS**.  
+- **Not claimed:** gen t/s ≥2% win; default ON; call_fn/qmm replace.  
+- **Next:** optional gen A/B OWN_GLUE vs eager (product glue path changed); retained-IB optimize; larger product replace still needed for realistic win.
 
 ### 2026-08-08 — P8 engine-owned small op PASS (product graph_decode VRAM)
 
