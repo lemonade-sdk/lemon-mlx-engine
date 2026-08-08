@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **IMPLEMENTING P0–P4** — **P0·P1·P2 GREEN** · P3 doc open (stop A) · scheduler `019fdfb3d185` |
+| **Loop status** | **P0·P1·P2·P2b GREEN · P3 DOC PASS** — stop A criteria met; optional P4 · scheduler `019fdfb3d185` |
 
 ## Board
 
@@ -22,12 +22,21 @@
 | **P0 env stub** | **GREEN** — [`P0_STUB.md`](P0_STUB.md); code + CMake OFF + gfx1150 chat smoke logs |
 | **P1 AQL HSACO load** | **GREEN** — n=2 floor CO load+replay; host_median **8.455 µs** ([`P1_LOAD.md`](P1_LOAD.md)); **not** gen t/s |
 | **P2 N-sweep multi-run** | **GREEN** — N=2..64 × BS/Sys × 3 runs; N=64 BS **81.98 µs** vs Sys **147.7 µs** (~**1.80×**) ([`P2_NSWEEP.md`](P2_NSWEEP.md)) |
-| **P2b engine session init** | **PLAN** — [`P2_PLAN.md`](P2_PLAN.md) (dlopen READY; not this fire) |
-| **P3 graph_decode / kernarg doc** | **NOT STARTED** (needed for stop A with quality PASS) |
-| **P4 MoE multipath design** | **NOT STARTED** |
+| **P2b engine session init** | **GREEN** — dlopen + `rl_abi_version`; `session READY`; residual `gpu_new=null` in MLX process ([`P2_INIT.md`](P2_INIT.md)) |
+| **P3 graph_decode / kernarg doc** | **PASS (design)** — [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md) + [`QUALITY_REVIEW_P3.md`](QUALITY_REVIEW_P3.md) |
+| **P4 MoE multipath design** | **OPTIONAL NEXT** |
 | Engine product wire / default ON | **FORBIDDEN until measured** |
 
 ## Fire log
+
+### 2026-08-08 — P2b session init GREEN + P3 design PASS
+
+- **Primary:** P2b engine dlopen session + P3 graph_decode design doc (stop A).  
+- **Code:** `redline_decode_session.{h,cpp}`; `generate.cpp` + early `chat.cpp` probe; CMake `CMAKE_DL_LIBS`.  
+- **Smoke:** off silent; on `session READY abi=1 gpu_new=null...`; XOR fail-closed — `logs/p2-*-20260807-215745.err`.  
+- **Residual:** in-process `rl_gpu_new` null when MLX-linked; standalone C smoke OK.  
+- **P3:** kernarg-patch design + quality PASS (no product wire).  
+- **Stop A:** P0+P1 green + P3 doc quality PASS — **met**. Optional: P4 MoE multipath.
 
 ### 2026-08-07 — P2 N-sweep GREEN (continuous loop)
 

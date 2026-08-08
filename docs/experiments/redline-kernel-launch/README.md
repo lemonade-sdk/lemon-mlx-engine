@@ -15,5 +15,6 @@ Research how **[Redline](https://github.com/warpfront/redline)** (user URL typo 
 - **P0 GREEN:** env stub + CMake `MLX_LM_WITH_REDLINE=OFF` + gfx1150 chat smoke — [`P0_STUB.md`](P0_STUB.md).  
 - **P1 GREEN:** floor CO load+replay n=2 BoundarySerialized; host µs only — [`P1_LOAD.md`](P1_LOAD.md).  
 - **P2 GREEN:** N-sweep multi-run host wall — N=64 BS ~**82 µs** vs Sys ~**148 µs** (~**1.80×**) — [`P2_NSWEEP.md`](P2_NSWEEP.md).  
-- **Next:** P3 `graph_decode` / kernarg-patch integration doc (stop A). P2b engine session remains plan-only.  
-- **Implementation loop ACTIVE** (P0–P4). No gen t/s claim. No product default ON. Decode HIP graphs remain **product OFF**.
+- **P2b GREEN:** engine dlopen session READY (abi smoke; residual gpu_new) — [`P2_INIT.md`](P2_INIT.md).  
+- **P3 DESIGN PASS:** graph_decode kernarg-patch integration — [`P3_GRAPH_DECODE.md`](P3_GRAPH_DECODE.md).  
+- **Stop A met** (P0+P1+P3 doc). Optional P4. No gen t/s claim. No product default ON. Decode HIP graphs remain **product OFF**.

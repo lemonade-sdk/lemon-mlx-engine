@@ -147,9 +147,15 @@ add_library(mlx-lm-common
     src/common/chat_template.cpp
     src/common/gated_delta.cpp
     src/common/graph_decode.cpp
+    src/common/redline_decode_session.cpp
     src/llm/models/mtp_head.cpp
     src/llm/models/mtp_moe.cpp
 )
+# P2 Redline session uses dlopen (libdl); no hard link to redline unless
+# MLX_LM_WITH_REDLINE=ON (still not fully wired — dlopen path is primary).
+if(UNIX AND NOT APPLE)
+    target_link_libraries(mlx-lm-common PUBLIC ${CMAKE_DL_LIBS})
+endif()
 # NOTE: src/common/mtp_delta_kernel.cpp intentionally excluded from build.
 # Contains dead code (mtp_delta_fused / mtp_draft_forward) not wired into
 # generate.cpp. Left on disk for future ROCm optimization work.

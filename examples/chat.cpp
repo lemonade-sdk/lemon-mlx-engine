@@ -6,6 +6,7 @@
 #include <mlx-lm/common/generate.h>
 #include <mlx-lm/common/model_container.h>
 #include <mlx-lm/common/quantized_linear.h>
+#include <mlx-lm/common/redline_decode_session.h>
 #include <mlx/mlx.h>
 #include <vector>
 #if defined(MLX_BUILD_ROCM)
@@ -164,6 +165,11 @@ int main(int argc, char* argv[]) {
 
     // Handle --list-devices / --device before anything touches HIP/MLX.
     select_or_list_gpu(argc, argv);
+
+    // P2 Redline: prefer session probe *before* MLX load so rl_gpu_new can bind
+    // ROCr (post-MLX probe may leave gpu_new=null). No-op unless env=1.
+    // Does not enable HIP graphs or change product defaults.
+    mlx_lm::maybe_log_redline_session_status();
 
     auto args = parse_args(argc, argv);
 
