@@ -1,0 +1,9 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[redline] session READY (P2–P10; forward still product; abi=1 gpu_new=ok micro=skip glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1421.83 retained_us_per=4.536 speedup=313.454x N=64 (NOT gen t/s))
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=859 MB, peak=859 MB, cache=2568 B
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; NOT gen t/s)
+[redline] gd_bind PASS input=0x799444400010 pos=0x799444400008 stable=1 (P6 VRAM ptr; not gen t/s; forward still product)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+Prompt:     7 tokens, 10.9534 tokens/s, 0.639072s
+Generation: 64 tokens, 116.743 tokens/s, 0.548214s

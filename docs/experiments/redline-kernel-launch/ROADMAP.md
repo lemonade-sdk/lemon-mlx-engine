@@ -1,0 +1,116 @@
+# Redline continuous roadmap (living)
+
+**Branch:** `exp/redline-kernel-launch`  
+**Host target:** gfx1150 (890M) · lemon-mlx-engine ROCm  
+**Revised:** 2026-08-08 (Clear Thought: sequentialthinking, Pareto, decisionframework)
+
+---
+
+## 0. North star (honest)
+
+**Goal:** Make Redline **own real product decode launches** that are **launch-bound**, so gen t/s can rise vs eager HIP — without inventing TPS, without product default ON until measured ≥2%.
+
+**Not the goal:** Flip every `MLX_REDLINE_*` flag (that adds work and often **slows** gen).  
+**Not the goal yet:** Full model / qmm on Redline (E3: AOT qmm is pointer-launch, not drop-in HSACO).
+
+---
+
+## 1. First principles
+
+| Fact | Implication |
+|------|-------------|
+| Token time ≈ **matmul + launch + sync** | Only replacing **costly** launches (or many small ones) moves gen t/s |
+| E1/E2/P2: retained AQL ~**1.5–1.9×** vs system/HIP on **toy multi-dispatch** | Mechanism is real |
+| E3: **qmm not drop-in** | “Redline everywhere” ≠ load qmm CO next week |
+| All-flags ON gen A/B: **slower** | SMALL_OP/SIDECAR are **additive**; still full `call_fn` |
+| P9–P10: **OWN_GLUE** replaces real product HIP glue | First true product-path ownership |
+
+**Pareto:** ~80% of 35B token time is still compute (qmm/attn). Glue is **necessary infrastructure**, not the gen win by itself.
+
+---
+
+## 2. Done (keep; do not re-litigate)
+
+| Phase | Status | Product ownership? |
+|-------|--------|--------------------|
+| E0–E4 | DONE | Design + floors |
+| P0–P4 | DONE | Env OFF, floors, design |
+| P5–P7b | DONE | In-proc session + sidecar correctness |
+| **P8** SMALL_OP | DONE | Uses product VRAM; still **extra** PM4 |
+| **P9–P10** OWN_GLUE retained | DONE | **Replaces** product pos/token glue HIP |
+| Gen A/B 0.8B / 35B / all-flags | RUN | No win when additive flags on |
+
+---
+
+## 3. Living roadmap (revise each loop)
+
+### Track A — **Own more product launches** (primary)
+
+| ID | Work | Success | Kill if |
+|----|------|---------|---------|
+| **P11** | **Launch inventory** per L=1 token (MLX_PROFILE / inline counters): how many HIP launches; which ops | Table: op → count → estimated µs | Cannot instrument |
+| **P12** | Own **next real multi-launch chain** used every token (prefer engine or JIT HSACO elementwise fused chain), **replace** product path when `MLX_REDLINE_OWN_*=1` | Correctness vs eager; optional gen A/B | No multi-launch chain found |
+| **P13** | **Encoder / CommandEncoder shim** (E4 option B) for JIT module launches only | Measured launch cut or KILL | Too invasive without win |
+| **P14** | Revisit **qmm** only via recompile/export plan (E3 high friction) | Explicit design gate | Drop-in still impossible |
+
+### Track B — **Measure honestly** (always)
+
+| ID | Work | Notes |
+|----|------|-------|
+| **M1** | Gen A/B **OWN_GLUE only** (no SMALL_OP/SIDECAR) | Isolates ownership tax/benefit |
+| **M2** | Gen A/B after each **new owned** product op | Same build, 0.8B + 35B LemonMLXE |
+| **M3** | Never claim microbench µs as gen t/s | Hard ban |
+
+### Track C — **Hygiene** (secondary)
+
+| ID | Work |
+|----|------|
+| **H1** | Default all research flags OFF; document recommended stacks |
+| **H2** | Rebuild checklist after every code change |
+| **H3** | Deprecate “turn everything on” as a performance strategy |
+
+---
+
+## 4. Recommended stacks (operators)
+
+| Intent | Env |
+|--------|-----|
+| **Product default** | *(all unset)* |
+| **Own glue only** | `DECODE=1` `OWN_GLUE=1` `GLUE_HSACO=…` `LIB=…` |
+| **Correctness lab** | + `HSACO` + `SMALL_OP=1` (expect gen **slower**) |
+| **Forbidden combo** | `DECODE=1` + `MLX_DECODE_GRAPH_PURE=1` (XOR) |
+
+---
+
+## 5. Stop / kill criteria (program)
+
+| Outcome | Action |
+|---------|--------|
+| Owned product path gen t/s ≥ **+2%** vs eager, quality OK | Discuss product default / PR |
+| Owned path regresses gen without quality gain | KILL that path; document |
+| 3 empty fires / hard blocker ×2 | Pause loop; revise roadmap |
+| qmm-only strategy | **Rejected** until export tool exists |
+
+---
+
+## 6. Continuous loop mandate
+
+Each fire must:
+
+1. Clear Thought (sequential + decision/scientific + metacog)  
+2. Quintuple domain check (or simulated supervisor review)  
+3. **One** net-new item from Track A or B (prefer A)  
+4. Update this ROADMAP if priorities change  
+5. Commit; no force-push; no fake TPS  
+
+**Slogan (accurate):** *Replace product launches, don’t pile flags.*
+
+---
+
+## 7. Immediate next (this revision)
+
+1. **M1** OWN_GLUE-only gen A/B (0.8B + 35B) — evidence without additive small_op.  
+2. **P11** launch inventory design/code.  
+3. **P12** pick first multi-dispatch product/JIT chain to own.  
+
+“Redline everywhere” = **grow the set of product ops that fall through to Redline**, op by op — not enable every research env at once.

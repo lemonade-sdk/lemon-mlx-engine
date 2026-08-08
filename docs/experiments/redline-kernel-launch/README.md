@@ -4,7 +4,7 @@
 
 Research how **[Redline](https://github.com/warpfront/redline)** (user URL typo `pwilikin` → actual **`pwilkin/redline`** fork of **warpfront/redline**) can speed **kernel dispatch / launch floor** for ROCm decode — complementary to lm_head two-stage work.
 
-→ **Start here:** [`RESEARCH.md`](RESEARCH.md)
+→ **Start here:** [`ROADMAP.md`](ROADMAP.md) · [`RESEARCH.md`](RESEARCH.md)
 
 ### Status
 - **E0 BUILD_OK** on host ROCm Core **7.13.0** / gfx1150. [`E0_HOST_BUILD.md`](E0_HOST_BUILD.md).  

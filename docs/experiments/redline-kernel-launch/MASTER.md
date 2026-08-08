@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (post–Stop A)** — P5–P9+**P10 RETAINED_GLUE** PASS; gen t/s A/B health-check **RUN** (no win); product default ON **forbidden** |
+| **Loop status** | **ACTIVE (ownership roadmap)** — see [`ROADMAP.md`](ROADMAP.md); P10 OWN_GLUE retained; OWN_GLUE-only gen ≈ baseline; product default ON **forbidden** |
 
 ## Board
 
@@ -36,8 +36,17 @@
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B win (≥2%) |
 | Gen t/s A/B 0.8B | **RUN** — ~115–117 t/s; no clear win ([`GEN_AB_20260808.md`](GEN_AB_20260808.md)) |
 | Gen t/s A/B **35B LemonMLXE** | **RUN** — ~27–29 t/s; session≈base; sidecar≈base/slightly slower ([`GEN_AB_35B_20260808.md`](GEN_AB_35B_20260808.md)) |
+| Gen t/s A/B **OWN_GLUE only** | **RUN** — 0.8B ~116–117; 35B ~29.0–29.2 ≈ baseline ([`GEN_AB_OWN_GLUE_20260808.md`](GEN_AB_OWN_GLUE_20260808.md)) |
+| **Living roadmap** | [`ROADMAP.md`](ROADMAP.md) — replace product launches; P11 inventory → P12 next multi-launch own |
 
 ## Fire log
+
+### 2026-08-08 — ROADMAP + OWN_GLUE-only gen A/B
+
+- Clear Thought: sequentialthinking, Pareto, decisionframework.  
+- **ROADMAP.md:** “Replace product launches, don’t pile flags.” Tracks A/B/C; P11–P14.  
+- **M1 measure:** OWN_GLUE only ≈ baseline (0.8B 116.7 vs 116.1; 35B 29.2 vs 29.0).  
+- **Next loop:** P11 launch inventory → P12 own heavier multi-launch product chain.
 
 ### 2026-08-08 — P10 retained OWN_GLUE PASS (~300× host wall vs one-shot)
 
