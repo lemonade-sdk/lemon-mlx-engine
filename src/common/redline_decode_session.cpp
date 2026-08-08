@@ -733,4 +733,51 @@ void maybe_redline_sidecar_l1() {
 #endif
 }
 
+void maybe_redline_sidecar_verify() {
+#if !defined(MLX_BUILD_ROCM)
+    return;
+#else
+    // P7b: full-gen L=1 correctness — D2H side_acc vs host sum(1..n).
+    // Default OFF path: no-op unless DECODE+SIDECAR exact "1" and armed ticks.
+    // Does not replace call_fn. NOT gen t/s.
+    if (!env_exact_one("MLX_REDLINE_DECODE") || !env_exact_one("MLX_REDLINE_SIDECAR")) {
+        return;
+    }
+    if (env_exact_one("MLX_DECODE_GRAPH_PURE")) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (!g_sidecar_ready || !g_side_acc || g_sidecar_n == 0) {
+        return;
+    }
+
+    (void)hipDeviceSynchronize();
+    unsigned int side_obs = 0;
+    if (hipMemcpy(
+            &side_obs,
+            g_side_acc,
+            sizeof(unsigned int),
+            hipMemcpyDeviceToHost) != hipSuccess) {
+        std::cerr
+            << "[redline] sidecar L1 fullgen FAIL_hipMemcpy n=" << g_sidecar_n
+            << " (call_fn still product; NOT gen t/s)\n";
+        return;
+    }
+
+    const uint64_t side_exp = g_sidecar_expected;
+    // Acc kernel is u32; expected fits for small max_tokens research runs.
+    const bool pass =
+        (static_cast<uint64_t>(side_obs) == side_exp) &&
+        (side_exp ==
+         (static_cast<uint64_t>(g_sidecar_n) * (static_cast<uint64_t>(g_sidecar_n) + 1ULL)) /
+             2ULL);
+
+    std::cerr << "[redline] sidecar L1 fullgen "
+              << (pass ? "PASS" : "FAIL") << " n=" << g_sidecar_n
+              << " side_obs=" << side_obs << " side_exp=" << side_exp
+              << " (retained PM4 L=1 ticks; call_fn still product; NOT gen t/s)\n";
+#endif
+}
+
 } // namespace mlx_lm

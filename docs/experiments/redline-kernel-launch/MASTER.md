@@ -6,7 +6,7 @@
 | **Parent** | `fix/mtp-stream-p0` @ `875a39d` |
 | **Sibling** | `exp/mtp-t1-lmhead-graph` (same parent) |
 | **Project** | Redline (warpfront upstream / pwilkin fork) |
-| **Loop status** | **ACTIVE (post–Stop A)** — P5+P6+**P7 sidecar** PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
+| **Loop status** | **ACTIVE (post–Stop A)** — P5+P6+P7+**P7b fullgen** PASS; gen t/s A/B still **not** run; product default ON **forbidden** |
 
 ## Board
 
@@ -29,10 +29,22 @@
 | **P5 in-process C-API micro** | **PASS** — chat session `micro=PASS` 2080/2080; host_total_us labeled NOT gen t/s ([`P5_INPROC_MICRO.md`](P5_INPROC_MICRO.md)) |
 | **P6 graph_decode bind** | **PASS** — VRAM ptrs stable + **bake pos as PM4 acc** micro 2080/2080 ([`P6_GRAPH_DECODE_BIND.md`](P6_GRAPH_DECODE_BIND.md)) |
 | **P7 L1 retained sidecar** | **PASS** — `sidecar=PASS` 136/136 + armed; L=1 hook; call_fn still product ([`P7_SIDECAR_L1.md`](P7_SIDECAR_L1.md)) |
+| **P7b full-gen L=1 verify** | **PASS** — model load + L=1 ticks; `fullgen PASS n=17 side_obs=153 side_exp=153`; call_fn still product ([`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md)) |
 | Engine product wire / default ON | **FORBIDDEN until measured** gen A/B |
 | Gen t/s A/B (same-build eager) | **NOT RUN** |
 
 ## Fire log
+
+### 2026-08-08 — P7b full-gen L=1 sidecar verify PASS
+
+- **Primary:** Full-gen L=1 retained-PM4 correctness under local Qwen3.5-0.8B-4bit load; D2H `side_acc` vs triangular sum.  
+- Clear Thought: sequentialthinking, decisionframework (A fullgen vs B/D/E), metacognitivemonitoring, scientificmethod (H-p7b-fullgen-acc).  
+- **Code:** `maybe_redline_sidecar_verify`; `TokenIterator` dtor wire; header API.  
+- **Smoke:** off 0×; **fullgen PASS n=17 side_obs=153 side_exp=153**; xor fail-closed.  
+- **Logs:** `logs/p7b-{off,on-fullgen,xor}-20260808-114354.err`.  
+- **Doc:** [`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md) + [`QUALITY_REVIEW_P7B.md`](QUALITY_REVIEW_P7B.md) **PASS**.  
+- **Not claimed:** gen t/s A/B; default ON; product op replace.  
+- **Next:** real engine-owned small op (default OFF) **or** gen A/B only after product-path ownership.
 
 ### 2026-08-08 — P7 L1 sidecar arm PASS
 

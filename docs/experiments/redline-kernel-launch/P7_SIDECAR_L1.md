@@ -62,5 +62,5 @@ Expected arm smoke: `sum(1..16)=136`. Host µs labeled **NOT gen t/s**.
 
 ## 6. Next
 
-- Optional: verify L=1 ticks against side_acc after full model run (when model load works).  
+- **Done (P7b):** full-gen L=1 verify — [`P7B_FULLGEN_VERIFY.md`](P7B_FULLGEN_VERIFY.md) **PASS** `n=17` 153/153.  
 - Gen t/s A/B only after a **product-owned** op is replaced by Redline.

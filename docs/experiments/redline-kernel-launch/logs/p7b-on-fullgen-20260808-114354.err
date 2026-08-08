@@ -1,0 +1,10 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[redline] session READY (P2/P5/P6/P7; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x7e2e63c00008 input=0x7e2e63c00010 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=296.166000 (NOT gen t/s) sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=70.793000 (NOT gen t/s) sidecar_armed=1)
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=859 MB, peak=859 MB, cache=2568 B
+[redline] gd_bind PASS input=0x7e2e63c00010 pos=0x7e2e63c00008 stable=1 (P6 VRAM ptr; not gen t/s; forward still product)
+[redline] sidecar L1 tick (retained PM4; call_fn still product; NOT gen t/s)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[redline] sidecar L1 fullgen PASS n=17 side_obs=153 side_exp=153 (retained PM4 L=1 ticks; call_fn still product; NOT gen t/s)
+Prompt:     1 tokens, 3.18674 tokens/s, 0.3138s
+Generation: 16 tokens, 118.566 tokens/s, 0.134946s

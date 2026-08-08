@@ -40,6 +40,12 @@ void maybe_probe_redline_graph_decode_bind();
 // Does not replace call_fn. NOT gen t/s.
 void maybe_redline_sidecar_l1();
 
+// P7b: D2H side_acc vs host triangular sum after L=1 ticks (full-gen verify).
+// No-op unless DECODE=1 + SIDECAR=1 + armed and at least one L=1 tick ran.
+// Logs [redline] sidecar L1 fullgen PASS|FAIL once per call. NOT gen t/s.
+// Does not replace call_fn. Safe from TokenIterator destructor / end of gen.
+void maybe_redline_sidecar_verify();
+
 // Human-readable last error / status detail (empty if none / disabled).
 const std::string& redline_session_last_error();
 

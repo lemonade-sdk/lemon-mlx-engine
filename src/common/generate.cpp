@@ -870,6 +870,9 @@ void TokenIterator::teardown_pure_graph_() {
 }
 
 TokenIterator::~TokenIterator() {
+    // P7b: after L=1 ticks (if any), D2H-verify sidecar acc vs triangular sum.
+    // No-op unless MLX_REDLINE_DECODE=1 + SIDECAR=1 + armed. NOT gen t/s.
+    maybe_redline_sidecar_verify();
     teardown_pure_graph_();
 }
 
