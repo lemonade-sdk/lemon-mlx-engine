@@ -1,0 +1,2 @@
+[redline] MLX_REDLINE_DECODE=1 and MLX_DECODE_GRAPH_PURE=1: fail-closed to eager (XOR until measured; no Redline session)
+Error: HTTP error 401 for https://huggingface.co/api/models/--model/revision/main

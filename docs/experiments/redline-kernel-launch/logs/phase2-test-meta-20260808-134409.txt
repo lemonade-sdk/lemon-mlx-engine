@@ -1,0 +1,17 @@
+TS=20260808-134409
+2026-08-08T13:44:09-07:00
+feat 0x1003
+=== B0 ===
+Generation: 64 tokens, 117.053 tokens/s, 0.546761s
+=== B1p ===
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes+phase2 used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+[redline] OWN_RMSNORM host profile (n=31): set_k=4.006us pre_sync=124.274us replay=13160.4us post_sync=3.735us pre_query_skip=0 pre_wait=31 (host wall; NOT gen t/s)
+Generation: 64 tokens, 108.215 tokens/s, 0.591416s
+=== B1a ===
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes+phase2 used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 108.789 tokens/s, 0.588296s
+=== B1b ===
+[redline] OWN_RMSNORM packed launch handled by Redline retained PM4 (product HIP RMSNorm skipped; P12d/P13 bridge=yes+phase2 used; set_k-before-pre; PRE_SYNC=stream POST_SYNC=auto; NOT gen t/s)
+Generation: 64 tokens, 107.095 tokens/s, 0.597602s
+=== B0b ===
+Generation: 64 tokens, 117.342 tokens/s, 0.545412s

@@ -1,0 +1,3 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[redline] session READY (P2/P5/P6/P7/P8; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x7a3859000008 input=0x7a3859000000 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=292.338000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=70.943000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1)
+Error: HTTP error 401 for https://huggingface.co/api/models/--model/revision/main

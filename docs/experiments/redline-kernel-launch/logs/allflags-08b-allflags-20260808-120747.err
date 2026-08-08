@@ -1,0 +1,11 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[redline] session READY (P2–P10; forward still product; abi=1 gpu_new=ok gd_bind=PASS pos=0x76f951c00008 input=0x76f951c00018 gd_post=stable micro=PASS observed=2080 expected=2080 tokens=64 host_total_us=289.323000 (NOT gen t/s) small_op=want sidecar=PASS side_obs=136 side_exp=136 side_tokens=16 side_host_us=78.076000 (NOT gen t/s) sidecar_armed=1 small_op_armed=1 glue=PASS glue_armed=1 retained=1 set=7 inc=10 copy=42 oneshot_us_per=1367.02 retained_us_per=4.50203 speedup=303.644x N=64 (NOT gen t/s))
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=859 MB, peak=859 MB, cache=2568 B
+[redline] OWN_GLUE pos_set handled by Redline retained PM4 (product HIP glue skipped; NOT gen t/s)
+[redline] gd_bind PASS input=0x76f951c00018 pos=0x76f951c00008 stable=1 (P6 VRAM ptr; not gen t/s; forward still product)
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[redline] small_op L1 tick (product graph_decode_input VRAM val=271; retained PM4; call_fn still product; NOT gen t/s)
+[redline] small_op L1 fullgen PASS n=64 side_obs=1021006 side_exp=1021006 (product graph_decode_input token-sum; call_fn still product; NOT gen t/s)
+Prompt:     7 tokens, 16.5384 tokens/s, 0.423257s
+Generation: 64 tokens, 107.057 tokens/s, 0.59781s
