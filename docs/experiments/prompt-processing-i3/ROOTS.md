@@ -22,13 +22,15 @@ Effects: position mismatch, corrupted/overwritten context, after 1–N turns for
         kv_cache_ = ctx.new_cache_fn(generate_params_);
 ```
 
-Every CLI turn now:
+Every CLI turn **by default** still:
 
 1. Rebuild the complete message list (`build_messages`).
-2. New KV via `new_cache_fn`.
-3. Apply chat template to the **full** history.
+2. Apply chat template to the **full** history.
+3. New KV via `new_cache_fn`.
 4. Generate.
-5. Append user/assistant; **clear** the iterator cache (`kv_cache_.clear()` after `take_cache()`).
+5. Append user/assistant; **clear** KV.
+
+Opt-in residual (`MLX_CHAT_RESIDUAL=1` / `GenerateParameters.chat_residual`) may keep KV only after an exact last-template token prefix. Refuse (Mamba / Compound / rotating / quantized) **must** allocate a fresh KV — never full-template onto leftover cache. See [`RESOLUTION.md`](RESOLUTION.md).
 
 This is **correctness over efficiency**. HTTP multi-turn was never the same class: client sends full history; server starts a **fresh** KV per request.
 

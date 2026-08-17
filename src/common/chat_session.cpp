@@ -146,8 +146,10 @@ bool ChatSession::residual_kv_rollback_ok(const std::vector<KVCache>& caches) {
         return false;
     }
     for (const auto& c : caches) {
-        // Mamba / non-trimmable layers cannot roll back via set_position.
-        if (!c.is_trimmable()) {
+        // Rotating / quantized: is_trimmable false. Mamba + CompoundCache:
+        // set_position does not roll back recurrent state (Compound still
+        // reports trimmable via the KV sub-cache).
+        if (!c.is_trimmable() || c.as_mamba() != nullptr) {
             return false;
         }
     }
@@ -212,18 +214,38 @@ void ChatSession::generate_impl(
         const char* residual_note = "full";
         std::vector<int> prefill_tokens = tokens;
 
-        if (residual_opt && residual_kv_rollback_ok(kv_cache_) &&
-            !last_templated_tokens_.empty()) {
+        // Fail closed: leftover residual KV must never see a full template.
+        // Residual off after residual on, or non-rollbackable layers (Mamba /
+        // Compound / rotating / quantized) → drop KV and full-prefill.
+        const bool rollback_ok = residual_kv_rollback_ok(kv_cache_);
+        if (!residual_opt && !kv_cache_.empty()) {
+            kv_cache_.clear();
+            last_templated_tokens_.clear();
+            last_residual_instructions_.reset();
+            residual_note = "full";
+        } else if (residual_opt && !last_templated_tokens_.empty() && !rollback_ok) {
+            kv_cache_.clear();
+            last_templated_tokens_.clear();
+            last_residual_instructions_.reset();
+            residual_note = "nontrim-fallback-full";
+        } else if (residual_opt && rollback_ok && !last_templated_tokens_.empty()) {
             const bool system_same = (instructions_ == last_residual_instructions_);
             const size_t prefix = token_lcp(last_templated_tokens_, tokens);
             // Exact last-template prefix + nonempty suffix = append-only delta.
-            // Partial LCP (rewritten thinking/tools/history) → full re-prefill.
             const bool prefix_ok = system_same &&
                 prefix == last_templated_tokens_.size() && prefix < tokens.size();
+            bool offsets_ok = true;
             if (prefix_ok) {
                 for (auto& c : kv_cache_) {
                     c.set_position(prefix);
+                    const size_t pos = c.get_position();
+                    // Empty stub caches stay at 0; real caches must match prefix.
+                    if (pos != 0 && pos != prefix) {
+                        offsets_ok = false;
+                    }
                 }
+            }
+            if (prefix_ok && offsets_ok) {
                 prefill_tokens.assign(tokens.begin() + static_cast<std::ptrdiff_t>(prefix),
                                       tokens.end());
                 residual_note = "lcp-suffix";
@@ -231,13 +253,16 @@ void ChatSession::generate_impl(
                 kv_cache_.clear();
                 last_templated_tokens_.clear();
                 last_residual_instructions_.reset();
-                residual_note = "lcp-fallback-full";
+                residual_note = prefix_ok ? "offset-fallback-full" : "lcp-fallback-full";
             }
         }
 
         if (kv_cache_.empty()) {
             kv_cache_ = ctx.new_cache_fn(generate_params_);
-            if (std::strcmp(residual_note, "lcp-suffix") != 0) {
+            if (std::strcmp(residual_note, "lcp-suffix") != 0 &&
+                std::strcmp(residual_note, "nontrim-fallback-full") != 0 &&
+                std::strcmp(residual_note, "offset-fallback-full") != 0 &&
+                std::strcmp(residual_note, "lcp-fallback-full") != 0) {
                 residual_note = residual_opt ? residual_note : "full";
             }
         }
@@ -295,12 +320,10 @@ void ChatSession::generate_impl(
         messages_.push_back(chat::ChatMessage::assistant(assistant_response));
 
         kv_cache_ = iter.take_cache();
-        if (residual_opt) {
-            // Keep residual KV + exact last full-template tokens for next LCP.
+        if (residual_opt && residual_kv_rollback_ok(kv_cache_)) {
             last_templated_tokens_ = tokens;
             last_residual_instructions_ = instructions_;
         } else {
-            // I3-safe default: drop cache; next turn re-prefills from messages_.
             kv_cache_.clear();
             last_templated_tokens_.clear();
             last_residual_instructions_.reset();

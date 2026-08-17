@@ -605,3 +605,165 @@ TEST_CASE("ChatSession residual rehydrate then LCP on later turn",
     CHECK(prefill_token_counts[1] == 20); // 52-32 suffix
     CHECK(cache_creates == c1);
 }
+
+TEST_CASE("ChatSession residual refuses Mamba and allocates fresh KV",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    std::vector<int> prefill_token_counts;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-mamba";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{MambaCache{}}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_token_counts.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'm'); };
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+           const nlohmann::json*) {
+            const int n = static_cast<int>(messages.size()) * 10 + 2;
+            std::vector<int> toks(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                toks[static_cast<size_t>(i)] = 100 + i;
+            }
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("My name is Ada.");
+    const int c1 = cache_creates;
+    (void)session.respond("What is my name?");
+    REQUIRE(prefill_token_counts.size() == 2);
+    CHECK(prefill_token_counts[1] == 32); // full, not suffix
+    CHECK(cache_creates > c1);
+}
+
+TEST_CASE("ChatSession residual refuses CompoundCache",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    std::vector<int> prefill_lens;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-compound";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{CompoundCache{}}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_lens.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'c'); };
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+           const nlohmann::json*) {
+            const int n = static_cast<int>(messages.size()) * 10 + 2;
+            std::vector<int> toks(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                toks[static_cast<size_t>(i)] = 100 + i;
+            }
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("Ada");
+    const int c1 = cache_creates;
+    (void)session.respond("Name?");
+    REQUIRE(prefill_lens.size() == 2);
+    CHECK(prefill_lens[1] == 32);
+    CHECK(cache_creates > c1);
+}
+
+TEST_CASE("ChatSession residual off next turn drops leftover KV",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    std::vector<int> prefill_lens;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-toggle-off";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_lens.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 't'); };
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+           const nlohmann::json*) {
+            const int n = static_cast<int>(messages.size()) * 10 + 2;
+            std::vector<int> toks(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                toks[static_cast<size_t>(i)] = 100 + i;
+            }
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("Ada");
+    CHECK(prefill_lens.back() == 12);
+
+    params.chat_residual = false;
+    session.set_generate_parameters(params);
+    const int c1 = cache_creates;
+    (void)session.respond("Name?");
+    REQUIRE(prefill_lens.size() == 2);
+    CHECK(prefill_lens[1] == 32); // full template, not suffix
+    CHECK(cache_creates > c1);
+}
+
+TEST_CASE("GenerateParameters chat_residual defaults off", "[chat_session]") {
+    GenerateParameters params;
+    CHECK(params.chat_residual == false);
+}
