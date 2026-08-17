@@ -172,6 +172,8 @@ private:
     std::vector<KVCache> kv_cache_;
     /// Exact tokens last prefilled via the chat template (not generated ids).
     std::vector<int> last_templated_tokens_;
+    /// System instructions at last residual keep (polarity / system change → full).
+    std::optional<std::string> last_residual_instructions_;
 
     std::vector<chat::ChatMessage> messages_;
     // Re-hydrate buffer; folded into messages_ on first generate

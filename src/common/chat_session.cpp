@@ -78,6 +78,7 @@ void ChatSession::clear() {
     cache_state_ = CacheState::Empty;
     kv_cache_.clear();
     last_templated_tokens_.clear();
+    last_residual_instructions_.reset();
     messages_.clear();
     pending_history_.clear();
 #if defined(MLX_BUILD_ROCM)
@@ -183,7 +184,7 @@ void ChatSession::generate_impl(
         // double-prefills. Optional MLX_CHAT_RESIDUAL=1: keep last KV and
         // append-prefill only the token suffix after an exact LCP with
         // last_templated_tokens_ (never full-template onto residual without LCP).
-        const bool residual_opt = [] {
+        const bool residual_opt = generate_params_.chat_residual || [] {
             const char* e = std::getenv("MLX_CHAT_RESIDUAL");
             return e && e[0] == '1' && e[1] == '\0';
         }();
@@ -213,9 +214,12 @@ void ChatSession::generate_impl(
 
         if (residual_opt && residual_kv_rollback_ok(kv_cache_) &&
             !last_templated_tokens_.empty()) {
+            const bool system_same = (instructions_ == last_residual_instructions_);
             const size_t prefix = token_lcp(last_templated_tokens_, tokens);
-            const bool have_suffix = prefix < tokens.size();
-            const bool prefix_ok = prefix > 0 && have_suffix;
+            // Exact last-template prefix + nonempty suffix = append-only delta.
+            // Partial LCP (rewritten thinking/tools/history) → full re-prefill.
+            const bool prefix_ok = system_same &&
+                prefix == last_templated_tokens_.size() && prefix < tokens.size();
             if (prefix_ok) {
                 for (auto& c : kv_cache_) {
                     c.set_position(prefix);
@@ -226,6 +230,7 @@ void ChatSession::generate_impl(
             } else {
                 kv_cache_.clear();
                 last_templated_tokens_.clear();
+                last_residual_instructions_.reset();
                 residual_note = "lcp-fallback-full";
             }
         }
@@ -293,10 +298,12 @@ void ChatSession::generate_impl(
         if (residual_opt) {
             // Keep residual KV + exact last full-template tokens for next LCP.
             last_templated_tokens_ = tokens;
+            last_residual_instructions_ = instructions_;
         } else {
             // I3-safe default: drop cache; next turn re-prefills from messages_.
             kv_cache_.clear();
             last_templated_tokens_.clear();
+            last_residual_instructions_.reset();
         }
 
         const auto info_full = iter.completion_info(

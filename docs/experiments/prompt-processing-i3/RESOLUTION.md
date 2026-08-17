@@ -30,8 +30,8 @@ Low-level KV (`update`, `set_position`, `trim`, TokenIterator external-cache) al
 | Phase | What | Gate |
 |-------|------|------|
 | **0** | Turn log: `template_tok`, `prefill_tok`, `prefill_s`, `hist_msgs`, `residual=` | `MLX_CHAT_TURN_LOG=1` (also on when residual=1) |
-| **1** | LCP residual: keep `last_templated_tokens_` + KV; `set_position(LCP)`; prefill **suffix only**; else full | **`MLX_CHAT_RESIDUAL=1`** default **off** |
-| **2** | Expand Ada-name / rehydrate tests + field matrix (thinking + temp 0.7 + GDN) | before default ON |
+| **1** | LCP residual: keep `last_templated_tokens_` + KV; accept only if LCP **== last template length** + suffix + same system; `set_position`; suffix prefill | **`MLX_CHAT_RESIDUAL=1`** or `GenerateParameters.chat_residual` — default **off** |
+| **2** | Ada-name / rewrite-fallback / rehydrate residual unit tests (stub model) | **landed** on this branch; field matrix (thinking + temp 0.7 + GDN) still **before default ON** |
 | **3** | Server prefix cache; incremental templates | orthogonal |
 
 Residual refuses Mamba / non-`is_trimmable` layers (`set_position` is a no-op there).
