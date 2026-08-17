@@ -66,6 +66,8 @@ origin/main  ──┬── fix/mtp-product          (#77 OPEN)     lean produc
 | **`fix/mtp-stream-p0`** | `6a59066` | **+45** (diverged base) | **Full WIP tip:** StreamGuard → C1–C15 ladder → RS → residuals → Maxwell → review docs; **all probe .txt** | No — use #77 for review |
 | **`exp/mtp-stream-full`** | `6a59066` (same as above) | +45 | Explicit **experiment archive alias** of full tip | No |
 | **`exp/prefill-hip-graph`** | `b99cb2f` | +1 | Prefill F1–F3 docs/A-B only (missed ≥10% pp/s bar); mlx `use_hip_graphs` opt-in patch note | Optional draft docs PR only |
+| **`exp/redline-kernel-launch`** | child of **`fix/mtp-stream-p0`** @ `875a39d` (+56) | Redline retained-PM4 / dispatch-floor research |
+| **`exp/prompt-processing-i3`** | **true sibling** of redline-kernel-launch — **same parent** `fix/mtp-stream-p0` @ `875a39d` (0 Redline commits) | I3 cluster archive + ChatSession residual/append-prefill (default full re-prefill; `MLX_CHAT_RESIDUAL=1`) |
 
 ### Experiment doc trees on full tip
 

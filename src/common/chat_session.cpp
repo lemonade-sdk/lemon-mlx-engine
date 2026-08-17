@@ -3,6 +3,9 @@
 #include <mlx-lm/common/chat_session.h>
 #include <mlx/mlx.h>
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <stdexcept>
 
 namespace mlx_lm {
@@ -74,8 +77,13 @@ void ChatSession::stream_details(
 void ChatSession::clear() {
     cache_state_ = CacheState::Empty;
     kv_cache_.clear();
+    last_templated_tokens_.clear();
     messages_.clear();
     pending_history_.clear();
+#if defined(MLX_BUILD_ROCM)
+    mx::synchronize();
+#endif
+    mx::clear_cache();
 }
 
 const std::vector<chat::ChatMessage>& ChatSession::message_history() const {
@@ -117,12 +125,32 @@ std::vector<chat::ChatMessage> ChatSession::build_messages(
 void ChatSession::trim_cache(int n) {
     if (kv_cache_.empty() || n <= 0) return;
 
-    // No-op between turns (kv_cache_ is cleared after each generate).
     for (auto& cache : kv_cache_) {
         if (cache.is_trimmable()) {
             cache.trim(n);
         }
     }
+}
+
+size_t ChatSession::token_lcp(const std::vector<int>& a, const std::vector<int>& b) {
+    const size_t n = std::min(a.size(), b.size());
+    size_t i = 0;
+    for (; i < n && a[i] == b[i]; ++i) {
+    }
+    return i;
+}
+
+bool ChatSession::residual_kv_rollback_ok(const std::vector<KVCache>& caches) {
+    if (caches.empty()) {
+        return false;
+    }
+    for (const auto& c : caches) {
+        // Mamba / non-trimmable layers cannot roll back via set_position.
+        if (!c.is_trimmable()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // -- Private: core generation -------------------------------------------------
@@ -151,8 +179,19 @@ void ChatSession::generate_impl(
                              pending_history_.end());
             pending_history_.clear();
         }
-        // Fresh KV every turn — residual reuse + full re-template double-prefills.
-        kv_cache_ = ctx.new_cache_fn(generate_params_);
+        // Default: fresh KV every turn — residual reuse + full re-template
+        // double-prefills. Optional MLX_CHAT_RESIDUAL=1: keep last KV and
+        // append-prefill only the token suffix after an exact LCP with
+        // last_templated_tokens_ (never full-template onto residual without LCP).
+        const bool residual_opt = [] {
+            const char* e = std::getenv("MLX_CHAT_RESIDUAL");
+            return e && e[0] == '1' && e[1] == '\0';
+        }();
+        const bool turn_log = residual_opt || [] {
+            const char* e = std::getenv("MLX_CHAT_TURN_LOG");
+            return e && e[0] == '1' && e[1] == '\0';
+        }();
+
         cache_state_ = CacheState::KVCache;
 
         DefaultMessageGenerator msg_gen;
@@ -168,16 +207,44 @@ void ChatSession::generate_impl(
             throw std::runtime_error("ChatSession: chat template produced no tokens");
         }
 
-        auto token_array = mx::array(
-            tokens.data(),
-            {static_cast<int>(tokens.size())},
-            mx::int32);
+        const int prompt_token_count = static_cast<int>(tokens.size());
+        const char* residual_note = "full";
+        std::vector<int> prefill_tokens = tokens;
 
-        int prompt_token_count = static_cast<int>(tokens.size());
+        if (residual_opt && residual_kv_rollback_ok(kv_cache_) &&
+            !last_templated_tokens_.empty()) {
+            const size_t prefix = token_lcp(last_templated_tokens_, tokens);
+            const bool have_suffix = prefix < tokens.size();
+            const bool prefix_ok = prefix > 0 && have_suffix;
+            if (prefix_ok) {
+                for (auto& c : kv_cache_) {
+                    c.set_position(prefix);
+                }
+                prefill_tokens.assign(tokens.begin() + static_cast<std::ptrdiff_t>(prefix),
+                                      tokens.end());
+                residual_note = "lcp-suffix";
+            } else {
+                kv_cache_.clear();
+                last_templated_tokens_.clear();
+                residual_note = "lcp-fallback-full";
+            }
+        }
+
+        if (kv_cache_.empty()) {
+            kv_cache_ = ctx.new_cache_fn(generate_params_);
+            if (std::strcmp(residual_note, "lcp-suffix") != 0) {
+                residual_note = residual_opt ? residual_note : "full";
+            }
+        }
+
+        auto token_array = mx::array(
+            prefill_tokens.data(),
+            {static_cast<int>(prefill_tokens.size())},
+            mx::int32);
 
         LMInput lm_input(token_array);
 
-        // External-cache + params ctor (fresh cache; MTP still via params).
+        // External-cache + params ctor (fresh or residual; MTP still via params).
         TokenIterator iter(
             ctx, lm_input, std::move(kv_cache_), generate_params_);
 
@@ -222,12 +289,28 @@ void ChatSession::generate_impl(
         messages_.push_back(chat::ChatMessage::user(prompt));
         messages_.push_back(chat::ChatMessage::assistant(assistant_response));
 
-        // Drop iterator cache; next turn re-prefills from messages_.
         kv_cache_ = iter.take_cache();
-        kv_cache_.clear();
+        if (residual_opt) {
+            // Keep residual KV + exact last full-template tokens for next LCP.
+            last_templated_tokens_ = tokens;
+        } else {
+            // I3-safe default: drop cache; next turn re-prefills from messages_.
+            kv_cache_.clear();
+            last_templated_tokens_.clear();
+        }
+
+        const auto info_full = iter.completion_info(
+            static_cast<int>(prefill_tokens.size()));
+        if (turn_log) {
+            std::cerr << "[chat-session] turn hist_msgs=" << turn_messages.size()
+                      << " template_tok=" << prompt_token_count
+                      << " prefill_tok=" << prefill_tokens.size()
+                      << " prefill_s=" << info_full.prompt_time
+                      << " gen_tok=" << info_full.generation_token_count
+                      << " residual=" << residual_note << "\n";
+        }
 
         if (on_complete) {
-            auto info_full = iter.completion_info(prompt_token_count);
             GenerateInfo info;
             info.prompt_tokens = info_full.prompt_token_count;
             info.generated_tokens = info_full.generation_token_count;

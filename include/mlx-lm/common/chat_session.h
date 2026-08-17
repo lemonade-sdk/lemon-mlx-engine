@@ -28,6 +28,10 @@ namespace mlx_lm {
 ///   - Multi-turn message history
 ///   - Full re-prefill of templated history into a fresh KV each turn
 ///     (same strategy as HTTP chat: full messages + new cache per call)
+///   - Optional residual / append-prefill when MLX_CHAT_RESIDUAL=1: keep KV
+///     across turns only if the new full-template token vector shares an exact
+///     prefix with last_templated_tokens_ (never full-template onto residual
+///     without that LCP). Default remains full re-prefill (I3-safe).
 ///   - Streaming token-by-token output via callbacks
 ///
 /// Thread safety: ChatSession itself is NOT thread-safe. Each session should be
@@ -127,7 +131,8 @@ public:
     void set_generate_parameters(const GenerateParameters& params) { generate_params_ = params; }
 
 private:
-    /// Conversation phase (KV is not retained across turns).
+    /// Conversation phase. Default path does not retain KV across turns.
+    /// Residual mode (MLX_CHAT_RESIDUAL=1) may keep kv_cache_ + last tokens.
     enum class CacheState {
         Empty,     // No history
         KVCache,   // Active session; history in messages_ after successful turns
@@ -150,15 +155,23 @@ private:
     /// Trim n positions from kv_cache_ (unused by default multi-turn path).
     void trim_cache(int n);
 
+    /// Longest common prefix of two token sequences.
+    static size_t token_lcp(const std::vector<int>& a, const std::vector<int>& b);
+
+    /// True when every layer can set_position (not Mamba / non-trimmable).
+    static bool residual_kv_rollback_ok(const std::vector<KVCache>& caches);
+
     // -- Members --------------------------------------------------------------
 
     std::shared_ptr<ModelContainer> model_;
     std::optional<std::string> instructions_;
     GenerateParameters generate_params_;
 
-    // Conversation phase; kv_cache_ is ephemeral within a turn only
+    // Conversation phase; default path: kv_cache_ is ephemeral within a turn
     CacheState cache_state_ = CacheState::Empty;
     std::vector<KVCache> kv_cache_;
+    /// Exact tokens last prefilled via the chat template (not generated ids).
+    std::vector<int> last_templated_tokens_;
 
     std::vector<chat::ChatMessage> messages_;
     // Re-hydrate buffer; folded into messages_ on first generate
