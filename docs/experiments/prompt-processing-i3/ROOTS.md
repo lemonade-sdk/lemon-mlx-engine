@@ -30,7 +30,7 @@ Every CLI turn **by default** still:
 4. Generate.
 5. Append user/assistant; **clear** KV.
 
-Opt-in residual (`MLX_CHAT_RESIDUAL=1` / `GenerateParameters.chat_residual`) may keep KV only after an exact last-template token prefix. Refuse (Mamba / Compound / rotating / quantized) **must** allocate a fresh KV — never full-template onto leftover cache. See [`RESOLUTION.md`](RESOLUTION.md).
+Production residual (`GenerateParameters.chat_residual` default **true**; `MLX_CHAT_RESIDUAL=0` opt-out) keeps KV only after an exact token prefix (seq-append / lcp-suffix / body-suffix). Compound / rotating / quantized **must** allocate a fresh KV — never full-template onto leftover cache. See [`RESOLUTION.md`](RESOLUTION.md).
 
 This is **correctness over efficiency**. HTTP multi-turn was never the same class: client sends full history; server starts a **fresh** KV per request.
 

@@ -15,6 +15,7 @@
 #include <mlx/mlx.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -277,10 +278,10 @@ TEST_CASE("GenerateParameters defaults", "[chat_session]") {
     CHECK(params.repetition_context_size == 20);
 }
 
-// Multi-turn: full history re-prefill + new_cache_fn each turn.
+// Multi-turn default: prefix-stable stub suffix-prefills (product path).
 // Stub template length = messages * 10 + 2 framing.
 
-TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
+TEST_CASE("ChatSession multi-turn default residual suffix-prefills",
         "[chat_session][multi_turn]") {
     constexpr int kVocabSize = 8;
     constexpr int kForcedToken = 3;  // non-EOS
@@ -296,7 +297,7 @@ TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
 
     ctx.new_cache_fn = [&](const GenerateParameters&) {
         cache_creates++;
-        return std::vector<KVCache>{};
+        return std::vector<KVCache>{KVCache{}};
     };
     ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
         prefill_token_counts.push_back(static_cast<int>(input.text.tokens.size()));
@@ -341,13 +342,13 @@ TEST_CASE("ChatSession multi-turn full re-prefill uses fresh cache",
     const int caches_after_turn1 = cache_creates;
     REQUIRE(caches_after_turn1 >= 1);
 
-    // Turn 2: user+assistant+user → 3 msgs → 32 stub tokens; fresh cache.
+    // Turn 2: 32-token template, last 12 is exact prefix → 20 suffix, same cache.
     (void)session.respond("What is my name?");
     REQUIRE(template_message_counts.size() == 2);
     CHECK(template_message_counts[1] == 3);
     REQUIRE(prefill_token_counts.size() == 2);
-    CHECK(prefill_token_counts[1] == 32);
-    CHECK(cache_creates > caches_after_turn1);
+    CHECK(prefill_token_counts[1] == 20);
+    CHECK(cache_creates == caches_after_turn1);
 
     REQUIRE(session.message_history().size() == 4);
     CHECK(session.message_history()[0].content == "My name is Ada.");
@@ -368,7 +369,7 @@ TEST_CASE("ChatSession history re-hydration folds into messages_ for later turns
     ctx.eos_token_ids = std::vector<int>{kEosToken};
     ctx.new_cache_fn = [&](const GenerateParameters&) {
         cache_creates++;
-        return std::vector<KVCache>{};
+        return std::vector<KVCache>{KVCache{}};
     };
     ctx.prepare_fn = [](const LMInput& input, std::vector<KVCache>&, int) {
         return PrepareResult::tokens(input.text);
@@ -398,6 +399,7 @@ TEST_CASE("ChatSession history re-hydration folds into messages_ for later turns
     GenerateParameters params;
     params.temperature = 0.0f;
     params.max_tokens = 1;
+    params.chat_residual = false;
     ChatSession session(container, std::move(history), std::nullopt, params);
 
     // Pending history visible before first generate.
@@ -606,7 +608,7 @@ TEST_CASE("ChatSession residual rehydrate then LCP on later turn",
     CHECK(cache_creates == c1);
 }
 
-TEST_CASE("ChatSession residual refuses Mamba and allocates fresh KV",
+TEST_CASE("ChatSession residual LCP suffix-prefills pure Mamba via snapshot",
           "[chat_session][multi_turn][residual]") {
     constexpr int kVocabSize = 8;
     constexpr int kForcedToken = 3;
@@ -653,8 +655,8 @@ TEST_CASE("ChatSession residual refuses Mamba and allocates fresh KV",
     const int c1 = cache_creates;
     (void)session.respond("What is my name?");
     REQUIRE(prefill_token_counts.size() == 2);
-    CHECK(prefill_token_counts[1] == 32); // full, not suffix
-    CHECK(cache_creates > c1);
+    CHECK(prefill_token_counts[1] == 20); // suffix, snapshot restore
+    CHECK(cache_creates == c1);
 }
 
 TEST_CASE("ChatSession residual refuses CompoundCache",
@@ -683,6 +685,58 @@ TEST_CASE("ChatSession residual refuses CompoundCache",
         return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
     };
     ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'c'); };
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+           const nlohmann::json*) {
+            const int n = static_cast<int>(messages.size()) * 10 + 2;
+            std::vector<int> toks(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                toks[static_cast<size_t>(i)] = 100 + i;
+            }
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("Ada");
+    const int c1 = cache_creates;
+    (void)session.respond("Name?");
+    REQUIRE(prefill_lens.size() == 2);
+    CHECK(prefill_lens[1] == 32);
+    CHECK(cache_creates > c1);
+}
+
+TEST_CASE("ChatSession residual refuses CompoundCache with Rotating KV",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    std::vector<int> prefill_lens;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-compound-rotating";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{
+            KVCache{CompoundCache{MambaCache{}, RotatingKVCache(16, 4)}}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_lens.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'r'); };
     ctx.apply_chat_template_fn =
         [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
            const nlohmann::json*) {
@@ -763,7 +817,245 @@ TEST_CASE("ChatSession residual off next turn drops leftover KV",
     CHECK(cache_creates > c1);
 }
 
-TEST_CASE("GenerateParameters chat_residual defaults off", "[chat_session]") {
+TEST_CASE("ChatSession residual LCP suffix-prefills GDN hybrid Mamba+KV",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    std::vector<int> prefill_token_counts;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-gdn-hybrid";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{MambaCache{}}, KVCache{KVCacheSimple{}}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_token_counts.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'g'); };
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+           const nlohmann::json*) {
+            const int n = static_cast<int>(messages.size()) * 10 + 2;
+            std::vector<int> toks(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                toks[static_cast<size_t>(i)] = 100 + i;
+            }
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
     GenerateParameters params;
-    CHECK(params.chat_residual == false);
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("My name is Ada.");
+    const int c1 = cache_creates;
+    (void)session.respond("What is my name?");
+    REQUIRE(prefill_token_counts.size() == 2);
+    CHECK(prefill_token_counts[1] == 20);
+    CHECK(cache_creates == c1);
+}
+
+TEST_CASE("ChatSession residual seq-appends when template extends cached sequence",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    int turn = 0;
+    std::vector<int> prefill_token_counts;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-seq-append";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{MambaCache{}}, KVCache{KVCacheSimple{}}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_token_counts.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 's'); };
+    ctx.apply_chat_template_fn =
+        [&](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+            const nlohmann::json*) {
+            ++turn;
+            if (turn == 1) {
+                std::vector<int> toks(12);
+                for (int i = 0; i < 12; ++i) toks[static_cast<size_t>(i)] = 100 + i;
+                return toks;
+            }
+            // T1 (12) + generated token 3 + 19 new tokens.
+            std::vector<int> toks(32);
+            for (int i = 0; i < 12; ++i) toks[static_cast<size_t>(i)] = 100 + i;
+            toks[12] = kForcedToken;
+            for (int i = 13; i < 32; ++i) toks[static_cast<size_t>(i)] = 200 + i;
+            (void)messages;
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("Ada");
+    CHECK(prefill_token_counts[0] == 12);
+    const int c1 = cache_creates;
+    (void)session.respond("Name?");
+    REQUIRE(prefill_token_counts.size() == 2);
+    CHECK(prefill_token_counts[1] == 19); // 32 - (12+1 generated)
+    CHECK(cache_creates == c1);
+}
+
+TEST_CASE("ChatSession residual body-suffix when thinking template rewrites assistant",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    int turn = 0;
+    std::vector<int> call_prefill;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-body-suffix";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{MambaCache{}}, KVCache{KVCacheSimple{}}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        call_prefill.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [&](const LMInput::Text& input, std::vector<KVCache>*,
+                      const LMOutput::State*) {
+        call_prefill.push_back(static_cast<int>(input.tokens.size()));
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'b'); };
+    ctx.apply_chat_template_fn =
+        [&](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+            const nlohmann::json*) {
+            ++turn;
+            // T1: body 10 + gen-prompt 2. T2: body 10 + rewritten asst 8 + user 10 + gen 2
+            // so T2 does NOT start with T1 (thinking rewrite).
+            if (turn == 1) {
+                std::vector<int> toks(12);
+                for (int i = 0; i < 12; ++i) toks[static_cast<size_t>(i)] = 100 + i;
+                return toks;
+            }
+            std::vector<int> toks(30);
+            for (int i = 0; i < 10; ++i) toks[static_cast<size_t>(i)] = 100 + i;
+            for (int i = 10; i < 30; ++i) toks[static_cast<size_t>(i)] = 300 + i;
+            (void)messages;
+            return toks;
+        };
+    ctx.apply_chat_template_body_fn =
+        [&](const std::vector<std::unordered_map<std::string, std::string>>&,
+            const nlohmann::json*) {
+            if (turn == 1) {
+                std::vector<int> b(10);
+                for (int i = 0; i < 10; ++i) b[static_cast<size_t>(i)] = 100 + i;
+                return b;
+            }
+            std::vector<int> b(28);
+            for (int i = 0; i < 10; ++i) b[static_cast<size_t>(i)] = 100 + i;
+            for (int i = 10; i < 28; ++i) b[static_cast<size_t>(i)] = 300 + i;
+            return b;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::nullopt, params);
+    (void)session.respond("Ada");
+    const int c1 = cache_creates;
+    call_prefill.clear();
+    (void)session.respond("Name?");
+    REQUIRE(cache_creates == c1);
+    REQUIRE_FALSE(call_prefill.empty());
+    const int biggest = *std::max_element(call_prefill.begin(), call_prefill.end());
+    CHECK(biggest == 18); // body delta, not full 30-token template
+}
+
+TEST_CASE("ChatSession residual falls back when system polarity flips",
+          "[chat_session][multi_turn][residual]") {
+    constexpr int kVocabSize = 8;
+    constexpr int kForcedToken = 3;
+    constexpr int kEosToken = 2;
+    int cache_creates = 0;
+    std::vector<int> prefill_lens;
+
+    ModelContext ctx;
+    ctx.model_id = "fake-polarity";
+    ctx.eos_token_ids = std::vector<int>{kEosToken};
+    ctx.new_cache_fn = [&](const GenerateParameters&) {
+        cache_creates++;
+        return std::vector<KVCache>{KVCache{}};
+    };
+    ctx.prepare_fn = [&](const LMInput& input, std::vector<KVCache>&, int) {
+        prefill_lens.push_back(static_cast<int>(input.text.tokens.size()));
+        return PrepareResult::tokens(input.text);
+    };
+    ctx.call_fn = [](const LMInput::Text&, std::vector<KVCache>*,
+                     const LMOutput::State*) {
+        std::vector<float> logits(kVocabSize, 0.0f);
+        logits[kForcedToken] = 10.0f;
+        return LMOutput(mx::array(logits.data(), {1, 1, kVocabSize}, mx::float32));
+    };
+    ctx.decode_fn = [](const std::vector<int>& t) { return std::string(t.size(), 'p'); };
+    ctx.apply_chat_template_fn =
+        [](const std::vector<std::unordered_map<std::string, std::string>>& messages,
+           const nlohmann::json*) {
+            const int n = static_cast<int>(messages.size()) * 10 + 2;
+            std::vector<int> toks(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                toks[static_cast<size_t>(i)] = 100 + i;
+            }
+            return toks;
+        };
+
+    auto container = std::make_shared<ModelContainer>(std::move(ctx));
+    GenerateParameters params;
+    params.temperature = 0.0f;
+    params.max_tokens = 1;
+    params.chat_residual = true;
+    ChatSession session(container, std::string("sys-a"), params);
+    (void)session.respond("Ada");
+    const int c1 = cache_creates;
+    session.set_instructions("sys-b");
+    (void)session.respond("Name?");
+    REQUIRE(prefill_lens.size() == 2);
+    CHECK(prefill_lens[1] == 42); // system + 3 hist + new user = 4*10+2
+    CHECK(cache_creates > c1);
+}
+
+TEST_CASE("GenerateParameters chat_residual defaults on", "[chat_session]") {
+    GenerateParameters params;
+    CHECK(params.chat_residual == true);
 }

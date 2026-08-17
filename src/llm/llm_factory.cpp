@@ -340,6 +340,13 @@ ModelContext load_llm_from_directory(
                     messages, /*add_generation_prompt=*/true, *extra_ctx, tools);
                 return tokenizer->encode(rendered);
             };
+            ctx.apply_chat_template_body_fn = [shared_tmpl, tokenizer, extra_ctx](
+                const std::vector<Message>& messages,
+                const nlohmann::json* tools) -> std::vector<int> {
+                auto rendered = shared_tmpl->apply(
+                    messages, /*add_generation_prompt=*/false, *extra_ctx, tools);
+                return tokenizer->encode(rendered);
+            };
         }
         return ctx;
     }
@@ -412,6 +419,13 @@ ModelContext load_llm_from_directory(
             const nlohmann::json* tools) -> std::vector<int> {
             auto rendered = shared_tmpl->apply(
                 messages, /*add_generation_prompt=*/true, *extra_ctx, tools);
+            return tokenizer->encode(rendered);
+        };
+        ctx.apply_chat_template_body_fn = [shared_tmpl, tokenizer, extra_ctx](
+            const std::vector<Message>& messages,
+            const nlohmann::json* tools) -> std::vector<int> {
+            auto rendered = shared_tmpl->apply(
+                messages, /*add_generation_prompt=*/false, *extra_ctx, tools);
             return tokenizer->encode(rendered);
         };
     } else if (tokenizer) {
@@ -641,6 +655,13 @@ ModelContext load_mtp_delta_model(
             const nlohmann::json* tools) -> std::vector<int> {
             auto rendered = shared_tmpl->apply(
                 messages, /*add_generation_prompt=*/true, *extra_ctx, tools);
+            return tokenizer->encode(rendered);
+        };
+        ctx.apply_chat_template_body_fn = [shared_tmpl, tokenizer, extra_ctx](
+            const std::vector<Message>& messages,
+            const nlohmann::json* tools) -> std::vector<int> {
+            auto rendered = shared_tmpl->apply(
+                messages, /*add_generation_prompt=*/false, *extra_ctx, tools);
             return tokenizer->encode(rendered);
         };
     }

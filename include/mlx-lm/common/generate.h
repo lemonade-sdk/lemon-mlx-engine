@@ -360,6 +360,11 @@ public:
     // Move the KV cache out of the iterator (for multi-turn reuse).
     std::vector<KVCache> take_cache() { return std::move(cache_); }
 
+    // After prepare(): copy Mamba/GDN conv+SSM state at the template boundary
+    // so ChatSession can restore instead of set_position (a no-op on Mamba).
+    void copy_mamba_snapshots(
+        std::vector<std::optional<MambaCache::Snapshot>>& out) const;
+
 private:
     // Add batch dimension to tokens only (mask stays as-is).
     // Equivalent to Swift's `previous[text: .newAxis]`.
@@ -500,6 +505,16 @@ private:
     // Get the current draft token count (adaptive or fixed).
     int current_draft_count() const;
 };
+
+void prefill_all_tokens(
+    ModelContext& context,
+    const std::vector<int>& tokens,
+    std::vector<KVCache>& cache,
+    int window_size);
+
+void copy_mamba_snapshots_from(
+    const std::vector<KVCache>& cache,
+    std::vector<std::optional<MambaCache::Snapshot>>& out);
 
 // ---------------------------------------------------------------------------
 // Streaming generate() — drives a TokenIterator with a callback.

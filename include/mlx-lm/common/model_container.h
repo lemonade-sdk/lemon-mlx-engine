@@ -48,6 +48,10 @@ struct ModelContext {
     std::function<std::vector<int>(
         const std::vector<std::unordered_map<std::string, std::string>>&,
         const nlohmann::json* /*tools*/)> apply_chat_template_fn;
+    // Same template with add_generation_prompt=false (stable history body).
+    std::function<std::vector<int>(
+        const std::vector<std::unordered_map<std::string, std::string>>&,
+        const nlohmann::json* /*tools*/)> apply_chat_template_body_fn;
 
     // Configuration
     std::string model_id;

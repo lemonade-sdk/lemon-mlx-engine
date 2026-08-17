@@ -839,6 +839,75 @@ void TokenIterator::teardown_pure_graph_() {
 #endif
 }
 
+void copy_mamba_snapshots_from(
+    const std::vector<KVCache>& cache,
+    std::vector<std::optional<MambaCache::Snapshot>>& out)
+{
+    out.clear();
+    out.reserve(cache.size());
+    for (const auto& c : cache) {
+        if (const auto* m = c.as_mamba()) {
+            auto snap = m->snapshot();
+            if (snap.states[0].has_value()) {
+                snap.states[0] = mx::contiguous(snap.states[0].value());
+                mx::eval(snap.states[0].value());
+            }
+            if (snap.states[1].has_value()) {
+                snap.states[1] = mx::contiguous(snap.states[1].value());
+                mx::eval(snap.states[1].value());
+            }
+            out.emplace_back(std::move(snap));
+        } else {
+            out.emplace_back(std::nullopt);
+        }
+    }
+}
+
+void TokenIterator::copy_mamba_snapshots(
+    std::vector<std::optional<MambaCache::Snapshot>>& out) const
+{
+    copy_mamba_snapshots_from(cache_, out);
+}
+
+void prefill_all_tokens(
+    ModelContext& context,
+    const std::vector<int>& tokens,
+    std::vector<KVCache>& cache,
+    int window_size)
+{
+    if (tokens.empty()) {
+        return;
+    }
+    StreamGuard sg(generation_stream());
+    const int step = window_size > 0 ? window_size : 512;
+    size_t offset = 0;
+    while (offset < tokens.size()) {
+        const size_t n = std::min(static_cast<size_t>(step), tokens.size() - offset);
+        const int ni = static_cast<int>(n);
+        auto arr = mx::array(tokens.data() + offset, {1, ni}, mx::int32);
+        LMInput::Text text(arr);
+        context.call_fn(text, &cache, nullptr);
+        std::vector<mx::array> to_eval;
+        for (auto& c : cache) {
+            auto s = c.state();
+            to_eval.insert(to_eval.end(), s.begin(), s.end());
+            if (auto* m = c.as_mamba()) {
+                if ((*m)[0].has_value()) {
+                    to_eval.push_back((*m)[0].value());
+                }
+                if ((*m)[1].has_value()) {
+                    to_eval.push_back((*m)[1].value());
+                }
+            }
+        }
+        if (!to_eval.empty()) {
+            mx::eval(to_eval);
+        }
+        mx::clear_cache();
+        offset += n;
+    }
+}
+
 TokenIterator::~TokenIterator() {
     teardown_pure_graph_();
 }

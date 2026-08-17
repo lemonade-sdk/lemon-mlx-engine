@@ -46,11 +46,11 @@ struct GenerateParameters {
     // Draft tokens per outer step.
     int n_draft_tokens = 1;
 
-    // ChatSession only: keep residual KV across turns and append-prefill the
-    // token suffix when the new full-template output has last_templated_tokens_
-    // as an exact prefix. Default false (full re-prefill / I3-safe). Also
-    // enabled by MLX_CHAT_RESIDUAL=1.
-    bool chat_residual = false;
+    // ChatSession: reuse residual KV across turns. Prefill only the exact
+    // token suffix (seq-append / lcp-suffix / body-suffix). Full re-prefill
+    // is the fail-closed fallback, not the product. MLX_CHAT_RESIDUAL=0
+    // forces off; =1 forces on.
+    bool chat_residual = true;
 };
 
 } // namespace mlx_lm

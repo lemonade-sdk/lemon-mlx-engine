@@ -453,6 +453,8 @@ public:
 
     // Check if the underlying cache is a QuantizedKVCache.
     bool is_quantized() const { return std::get_if<QuantizedKVCache>(&impl_) != nullptr; }
+    // CompoundCache: as_mamba() is non-null but set_position is a no-op.
+    bool is_compound() const { return std::get_if<CompoundCache>(&impl_) != nullptr; }
 
 private:
     CacheVariant impl_;

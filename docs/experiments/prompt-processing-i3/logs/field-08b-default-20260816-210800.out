@@ -1,0 +1,36 @@
+Loading model: /home/antmi/.cache/huggingface/hub/models--mlx-community--Qwen3.5-0.8B-4bit/snapshots/da28692b5f139cb0ec58a356b437486b7dac7462
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Request**:
+    *   Input: "My name is Ada."
+    *   Context: This is a simple statement.
+    *   Intent: The user is likely testing the AI as a persona or simply sharing a name.
+    *   Constraint
+
+> 
+Assistant: Thinking Process:
+1.  **Analyze the input**: The user is asking "What is my name? Answer in one short sentence."
+2.  **Compare with previous turn**: In the previous turn, the user asked "What is my name? Answer in one short sentence."
+    *   The
+
+> 
+Assistant: The user is asking me to "repeat just the first name."
+Since I don't know the user's actual identity or the specific context in which this is being asked in this particular conversation, I need to follow the constraint "Answer in one short sentence."
+The user's request in this turn is "Repeat just
+
+> 
+Assistant: Thinking Process:
+1.  **Analyze the input**: The user is now asking "Now spell it backwards."
+2.  **Compare with previous turns**: The user's request in this turn is "Repeat just".
+3.  **Constraint**: The user's request in this turn is "Repeat just
+
+> 
+Assistant: Thinking Process:
+1.  **Analyze the input**: The user is now asking "Confirm in five words or fewer."
+2.  **Compare with previous turns**: The user's request in this turn is "Confirm in five words or fewer."
+3.  **Constraint**: The user's request in
+
+> 

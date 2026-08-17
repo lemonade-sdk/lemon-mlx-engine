@@ -1,0 +1,53 @@
+Loading model: /home/antmi/.cache/huggingface/hub/models--mlx-community--Qwen3.5-0.8B-4bit/snapshots/da28692b5f139cb0ec58a356b437486b7dac7462
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Input: "My name is Ada."
+    *   Intent: The user is establishing identity.
+    *   Context: No specific instruction, interaction, or constraint is provided.
+    *   Task: Respond appropriately.
+
+
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   The user is asking "What is my name? Answer in one short sentence."
+    *   The first part is a request to identify their own name (my name is...?).
+    *   The second part is a constraint
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   The user is asking "What is my name? Answer in one short sentence."
+    *   The first part is a request to identify their own name (my name is...?).
+    *   The second part is a constraint
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   The user is asking "Now spell it backwards."
+    *   The previous context was about me.
+    *   The user is now asking me to spell it backwards.
+
+2.  **Identify the Intent:**
+
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   The user is asking me to confirm my name.
+    *   The previous context mentions my name.
+    *   The user is now asking me to confirm my name.
+
+2.  **Identify the Intent:**
+
+
+> 

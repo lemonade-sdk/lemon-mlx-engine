@@ -26,12 +26,9 @@ namespace mlx_lm {
 ///
 /// ChatSession manages:
 ///   - Multi-turn message history
-///   - Full re-prefill of templated history into a fresh KV each turn
-///     (same strategy as HTTP chat: full messages + new cache per call)
-///   - Optional residual / append-prefill when MLX_CHAT_RESIDUAL=1: keep KV
-///     across turns only if the new full-template token vector shares an exact
-///     prefix with last_templated_tokens_ (never full-template onto residual
-///     without that LCP). Default remains full re-prefill (I3-safe).
+///   - Residual KV across turns: prefill only an exact token suffix
+///     (seq-append / lcp-suffix / body-suffix). Full re-prefill only when
+///     that prefix check fails. MLX_CHAT_RESIDUAL=0 disables reuse.
 ///   - Streaming token-by-token output via callbacks
 ///
 /// Thread safety: ChatSession itself is NOT thread-safe. Each session should be
@@ -131,8 +128,8 @@ public:
     void set_generate_parameters(const GenerateParameters& params) { generate_params_ = params; }
 
 private:
-    /// Conversation phase. Default path does not retain KV across turns.
-    /// Residual mode (MLX_CHAT_RESIDUAL=1) may keep kv_cache_ + last tokens.
+    /// Conversation phase. Default path keeps kv_cache_ + last tokens when
+    /// the next template is an exact prefix extension.
     enum class CacheState {
         Empty,     // No history
         KVCache,   // Active session; history in messages_ after successful turns
@@ -158,8 +155,12 @@ private:
     /// Longest common prefix of two token sequences.
     static size_t token_lcp(const std::vector<int>& a, const std::vector<int>& b);
 
-    /// True when every layer can set_position (not Mamba / non-trimmable).
+    /// True when residual can be kept: pure-Mamba layers (snapshot restore)
+    /// and trimmable attention. Compound / rotating / quantized refuse.
     static bool residual_kv_rollback_ok(const std::vector<KVCache>& caches);
+
+    /// Restore Mamba snapshots + attention set_position to last template end.
+    bool restore_residual_to_template(std::vector<KVCache>& caches, size_t prefix);
 
     // -- Members --------------------------------------------------------------
 
@@ -172,6 +173,12 @@ private:
     std::vector<KVCache> kv_cache_;
     /// Exact tokens last prefilled via the chat template (not generated ids).
     std::vector<int> last_templated_tokens_;
+    /// last_templated_tokens_ plus ids actually stepped into the cache.
+    std::vector<int> last_sequence_tokens_;
+    /// add_generation_prompt=false tokens at last keep (Qwen thinking-safe).
+    std::vector<int> last_body_tokens_;
+    /// Mamba/GDN state after last restore point (body or full template).
+    std::vector<std::optional<MambaCache::Snapshot>> last_mamba_snapshots_;
     /// System instructions at last residual keep (polarity / system change → full).
     std::optional<std::string> last_residual_instructions_;
 

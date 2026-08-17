@@ -1,0 +1,43 @@
+Loading model: /home/antmi/.cache/huggingface/hub/models--mlx-community--Qwen3.5-0.8B-4bit/snapshots/da28692b5f139cb0ec58a356b437486b7dac7462
+Type your message (or 'quit' to exit):
+
+> 
+Assistant: Thinking Process:
+1.  **Analyze the Input:**
+    *   Input: "My name is Ada."
+    *   Context: The user has just stated their name.
+    *   Intent: The user might be testing if I recognize their identity, might be sharing information, might be in
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   Input: "My name is Ada."
+    *   Context: The user has just stated their name.
+    *   Intent: The user is likely asking me to answer the question "What is my name?" based on the
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   Input: "Repeat just the first name."
+    *   Context: The user is asking me to repeat the first name mentioned in the previous turns (which is Ada).
+    *   Intent: The user wants the name to
+
+> 
+Assistant: Thinking Process:
+1.  **Analyze the Input:**
+    *   Input: "Now spell it backwards."
+    *   Context: The user is asking me to reverse the spelling of something.
+    *   Intent: The user wants "Ada" spelled backwards.
+    *   Constraint:
+
+> 
+Assistant: Thinking Process:
+
+1.  **Analyze the Input:**
+    *   Input: "Confirm in five words or fewer."
+    *   Goal: The user is asking me to confirm the previous request (which was about the name "Ada").
+    *   Goal: The user wants the name "
+
+> 
