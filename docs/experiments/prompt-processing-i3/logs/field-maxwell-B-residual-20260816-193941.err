@@ -1,0 +1,26 @@
+[mlx-rocm] bound HIP device 0: gfx1150 (AMD Radeon 890M Graphics) cus=8 warp=32 lds=64KB
+[MTP] skipping optional MTP head build (set MLX_LOAD_MTP_HEAD=1 to enable)
+[chat] MLX_SKIP_WARMUP=1 — skipping dummy forward
+Model loaded. Memory: active=16.2 GB, peak=16.2 GB, cache=272 MB
+[mlx-rocm] gfx1150 native_wmma=1 cus=8 warp=32 low_cu=1 host_WARP_SIZE=32
+[hipBLASLt caps] device 0 (gfx1150): bf16=1 fp8_e4m3=0 fp8_e5m2=0 int8=1
+[chat-session] turn hist_msgs=1 template_tok=37 prefill_tok=37 prefill_s=2.12512 gen_tok=384 residual=full
+
+Prompt:     37 tokens, 17.4108 tokens/s, 2.12512s
+Generation: 384 tokens, 29.4436 tokens/s, 13.0419s
+[chat-session] turn hist_msgs=3 template_tok=449 prefill_tok=449 prefill_s=3.50573 gen_tok=384 residual=full
+
+Prompt:     449 tokens, 128.076 tokens/s, 3.50573s
+Generation: 384 tokens, 29.4682 tokens/s, 13.031s
+[chat-session] turn hist_msgs=5 template_tok=862 prefill_tok=862 prefill_s=6.66758 gen_tok=384 residual=full
+
+Prompt:     862 tokens, 129.282 tokens/s, 6.66758s
+Generation: 384 tokens, 29.13 tokens/s, 13.1823s
+[chat-session] turn hist_msgs=7 template_tok=1276 prefill_tok=1276 prefill_s=10.2535 gen_tok=384 residual=full
+
+Prompt:     1276 tokens, 124.445 tokens/s, 10.2535s
+Generation: 384 tokens, 29.1492 tokens/s, 13.1736s
+[chat-session] turn hist_msgs=9 template_tok=1689 prefill_tok=1689 prefill_s=13.4207 gen_tok=384 residual=full
+
+Prompt:     1689 tokens, 125.851 tokens/s, 13.4207s
+Generation: 384 tokens, 29.0103 tokens/s, 13.2367s
